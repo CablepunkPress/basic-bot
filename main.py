@@ -183,7 +183,6 @@ async def chat_with_gemini(session_id: str, user_message: str) -> str:
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=1.0, # Keep at 1.0 for Gemini 3 per Google
-                thinking_level="high", # Options for Gemini 3 Flash Preview: "minimal", "low", "medium", "high (dynamic)"
             )
         )
         
