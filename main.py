@@ -11,7 +11,7 @@ from google.genai import types
 # ----------------------
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "oravec-io")
 LOCATION = "us-east5"
-MODEL_NAME = "gemini-3-flash-preview"
+MODEL_NAME = "gemini-2.5-flash"
 
 # ----------------------
 # Logging setup
@@ -182,7 +182,7 @@ async def chat_with_gemini(session_id: str, user_message: str) -> str:
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                temperature=1.0, # Keep at 1.0 for Gemini 3 per Google
+                temperature=1.0,
             )
         )
         
