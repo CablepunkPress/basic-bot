@@ -32,6 +32,16 @@ client = genai.Client(
 )
 
 # ----------------------
+# Agent tools
+# ----------------------
+def get_current_model_name() -> str:
+    """
+    Returns the specific model name and version currently powering the assistant. 
+    Call this if the user asks what model you are or what version you are running.
+    """
+    return MODEL_NAME
+
+# ----------------------
 # Database setup (short-term memory)
 # ----------------------
 DB_PATH = "/tmp/sessions.db"
@@ -183,6 +193,10 @@ async def chat_with_gemini(session_id: str, user_message: str) -> str:
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=1.0,
+                tools=[get_current_model_name],
+                automatic_function_calling=types.AutomaticFunctionCallingConfig(
+                    disable=False
+                )
             )
         )
         
