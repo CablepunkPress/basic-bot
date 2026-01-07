@@ -10,8 +10,8 @@ from google.genai import types
 # Config
 # ----------------------
 PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "oravec-io")
-LOCATION = "us-east5"
-MODEL_NAME = "gemini-2.5-flash"
+LOCATION = "global"
+MODEL_NAME = "gemini-3-flash-preview"
 
 # ----------------------
 # Logging setup
