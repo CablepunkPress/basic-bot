@@ -1,17 +1,13 @@
 from fastapi import FastAPI, Request, HTTPException
-import os
 import sqlite3
 import secrets
 import logging
-from google import genai
-from google.genai import types
+import anthropic
 
 # ----------------------
 # Config
 # ----------------------
-PROJECT_ID = os.getenv("GOOGLE_CLOUD_PROJECT", "oravec-io")
-LOCATION = "global"
-MODEL_NAME = "gemini-3-flash-preview"
+MODEL_NAME = "claude-haiku-4-5-20251001"
 
 # ----------------------
 # Logging setup
@@ -23,23 +19,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # ----------------------
-# Initialize Gemini client (Vertex AI mode)
+# Initialize Anthropic client
 # ----------------------
-client = genai.Client(
-    vertexai=True,
-    project=PROJECT_ID,
-    location=LOCATION
-)
-
-# ----------------------
-# Agent tools
-# ----------------------
-def get_current_model_name() -> str:
-    """
-    Returns the specific model name and version currently powering the assistant. 
-    Call this if the user asks what model you are or what version you are running.
-    """
-    return MODEL_NAME
+# Reads ANTHROPIC_API_KEY from the environment automatically.
+client = anthropic.Anthropic()
 
 # ----------------------
 # Database setup (short-term memory)
@@ -146,67 +129,52 @@ class SessionManager:
 session_manager = SessionManager()
 
 # ----------------------
-# Chat with Gemini
+# Chat with Claude
 # ----------------------
-async def chat_with_gemini(session_id: str, user_message: str) -> str:
-    """Chat with Gemini using session memory."""
-    
+async def chat_with_claude(session_id: str, user_message: str) -> str:
+    """Chat with Claude using session memory."""
+
     logger.info("Processing chat request for session: %s", session_id)
-    
+
     # Get conversation history
     memory = session_manager.get_messages(session_id, limit=20)
     logger.info("Retrieved %d messages from history", len(memory))
-    
-    # System instruction
+
+    # System prompt is a top-level parameter in the Messages API, not a message.
     system_instruction = (
         "You are Basic Bot, a helpful and friendly general-purpose AI assistant. "
         "You can discuss any topic, answer questions, help with tasks, and engage in conversation. "
         "Be concise, clear, and helpful. Keep responses conversational and friendly."
     )
-    
-    # Build conversation history
-    contents = []
-    for msg in memory:
-        role = "user" if msg["role"] == "user" else "model"
-        contents.append(
-            types.Content(
-                role=role,
-                parts=[types.Part(text=msg["text"])]
-            )
-        )
-    
-    # Add current user message
-    contents.append(
-        types.Content(
-            role="user",
-            parts=[types.Part(text=user_message)]
-        )
-    )
-    
-    logger.info("Sending request to Gemini with %d messages in context", len(contents))
-    
+
+    # Stored roles are already "user"/"assistant" — exactly what the API wants,
+    # so no remapping like the Gemini "model" role we used before.
+    messages = [
+        {"role": msg["role"], "content": msg["text"]}
+        for msg in memory
+    ]
+
+    # Add the current user turn.
+    messages.append({"role": "user", "content": user_message})
+
+    logger.info("Sending request to Claude with %d messages in context", len(messages))
+
     try:
-        # Generate response
-        response = client.models.generate_content(
+        response = client.messages.create(
             model=MODEL_NAME,
-            contents=contents,
-            config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
-                temperature=1.0,
-                tools=[get_current_model_name],
-                automatic_function_calling=types.AutomaticFunctionCallingConfig(
-                    disable=False
-                )
-            )
+            max_tokens=1024,
+            system=system_instruction,
+            messages=messages,
         )
-        
-        reply = response.text
-        
-        logger.info("Received response from Gemini (%d chars)", len(reply))
+
+        # No tools and no thinking, so the first content block is the text reply.
+        reply = response.content[0].text
+
+        logger.info("Received response from Claude (%d chars)", len(reply))
         return reply
-        
-    except Exception as e:
-        logger.exception("Gemini API error: %s", type(e).__name__)
+
+    except Exception:
+        logger.exception("Anthropic API error")
         raise
 
 # ----------------------
@@ -223,10 +191,8 @@ async def startup_event():
     init_db()
     logger.info("=" * 50)
     logger.info("basic-bot starting")
-    logger.info("Project: %s", PROJECT_ID)
-    logger.info("Location: %s", LOCATION)
     logger.info("Model: %s", MODEL_NAME)
-    logger.info("SDK: google-genai (Vertex AI mode)")
+    logger.info("SDK: anthropic %s", anthropic.__version__)
     logger.info("Database: %s (ephemeral)", DB_PATH)
     logger.info("=" * 50)
 
@@ -267,8 +233,8 @@ async def chat(request: Request):
             logger.info("Continuing existing session: %s", session_id)
         
         # Get AI response
-        logger.info("Calling Gemini for session: %s", session_id)
-        reply = await chat_with_gemini(session_id, message)
+        logger.info("Calling Claude for session: %s", session_id)
+        reply = await chat_with_claude(session_id, message)
         
         # Save messages
         session_manager.save_message(session_id, "user", message)
