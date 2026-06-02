@@ -1,5 +1,4 @@
-# Use Python 3.12 for latest features
-FROM python:3.12-slim
+FROM python:3.14-slim
 
 # Install system dependencies (in case needed)
 RUN apt-get update && apt-get install -y \
