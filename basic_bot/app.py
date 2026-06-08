@@ -1,11 +1,14 @@
+import json
 import logging
+from contextlib import asynccontextmanager
+from pathlib import Path
 
 import anthropic
 from fastapi import FastAPI, Request, HTTPException
 
 from basic_bot.config import DEFAULT_MODEL
 from basic_bot.chat import chat_with_claude
-from basic_bot.memory import save_message
+from basic_bot.memory import db, save_message
 from basic_bot.models import MODELS
 
 logging.basicConfig(
@@ -14,11 +17,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-app = FastAPI()
 
-
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app):
+    # Startup
     logger.info("=" * 50)
     logger.info("basic-bot starting")
     logger.info("Default model: %s", DEFAULT_MODEL)
@@ -28,12 +30,25 @@ async def startup_event():
     )
     logger.info("SDK: anthropic %s", anthropic.__version__)
     logger.info("Memory: Firestore")
+
+    dashboard_path = Path(__file__).resolve().parent.parent / "dashboard.json"
+    try:
+        dashboard = json.loads(dashboard_path.read_text())
+        agent_id = dashboard["id"]
+        db.collection("agents").document(agent_id).set(dashboard)
+        logger.info("Registered agent '%s' in Firestore", agent_id)
+    except Exception:
+        logger.exception("Failed to register agent — dashboard may be stale")
+
     logger.info("=" * 50)
 
+    yield
 
-@app.on_event("shutdown")
-async def shutdown_event():
+    # Shutdown
     logger.info("basic-bot shutting down")
+
+
+app = FastAPI(lifespan=lifespan)
 
 
 @app.post("/chat")

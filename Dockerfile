@@ -19,6 +19,7 @@ RUN pip install --upgrade pip wheel \
 
 # Copy application package
 COPY basic_bot/ basic_bot/
+COPY dashboard.json .
 
 # Document the port
 EXPOSE 8080
