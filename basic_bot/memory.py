@@ -5,9 +5,9 @@ from basic_bot.config import CONVERSATION_COLLECTION, MESSAGE_LIMIT
 db = firestore.Client()
 
 
-def save_message(user_id: str, role: str, content: str):
+def save_message(user_id: str, role: str, content: str, collection: str = CONVERSATION_COLLECTION):
     """Save a message to the user's conversation in Firestore."""
-    db.collection(CONVERSATION_COLLECTION).document(user_id)\
+    db.collection(collection).document(user_id)\
         .collection("messages").add({
             "role": role,
             "content": content,
@@ -15,10 +15,10 @@ def save_message(user_id: str, role: str, content: str):
         })
 
 
-def get_messages(user_id: str, limit: int = MESSAGE_LIMIT) -> list[dict[str, str]]:
+def get_messages(user_id: str, limit: int = MESSAGE_LIMIT, collection: str = CONVERSATION_COLLECTION) -> list[dict[str, str]]:
     """Get recent messages for a user, in chronological order."""
     messages_ref = (
-        db.collection(CONVERSATION_COLLECTION)
+        db.collection(collection)
         .document(user_id)
         .collection("messages")
     )
