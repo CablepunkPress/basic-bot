@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -34,6 +35,7 @@ async def lifespan(app):
     dashboard_path = Path(__file__).resolve().parent.parent / "dashboard.json"
     try:
         dashboard = json.loads(dashboard_path.read_text())
+        dashboard["backendUrl"] = os.environ.get("BACKEND_URL", "")
         agent_id = dashboard["id"]
         db.collection("agents").document(agent_id).set(dashboard)
         logger.info("Registered agent '%s' in Firestore", agent_id)

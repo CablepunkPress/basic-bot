@@ -4,7 +4,6 @@
     "icon": "💬",
     "description": "General-purpose AI assistant",
     "mode": "chat",
-    "backendUrl": "https://basic-bot-59184217758.us-east5.run.app",
     "features": {
         "fileUpload": {
             "enabled": false
