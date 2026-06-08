@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[project]
+name = "basic-bot"
+version = "0.1.0"
+description = "A general-purpose AI assistant engine"
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+    "anthropic",
+    "google-cloud-firestore",
+]
+
+[tool.setuptools.packages.find]
+include = ["basic_bot*"]
+
+[tool.setuptools.package-data]
+basic_bot = ["instructions/*.md"]

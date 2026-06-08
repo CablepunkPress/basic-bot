@@ -1,0 +1,111 @@
+import logging
+
+import anthropic
+from fastapi import FastAPI, Request, HTTPException
+
+from basic_bot.config import DEFAULT_MODEL
+from basic_bot.chat import chat_with_claude
+from basic_bot.memory import save_message
+from basic_bot.models import MODELS
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+logger = logging.getLogger(__name__)
+
+app = FastAPI()
+
+
+@app.on_event("startup")
+async def startup_event():
+    logger.info("=" * 50)
+    logger.info("basic-bot starting")
+    logger.info("Default model: %s", DEFAULT_MODEL)
+    logger.info(
+        "Available models: %s",
+        ", ".join(cfg["display_name"] for cfg in MODELS.values())
+    )
+    logger.info("SDK: anthropic %s", anthropic.__version__)
+    logger.info("Memory: Firestore")
+    logger.info("=" * 50)
+
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    logger.info("basic-bot shutting down")
+
+
+@app.post("/chat")
+async def chat(request: Request):
+    try:
+        data = await request.json()
+        user_id = data.get("session_id")
+        message = data.get("message", "").strip()
+        agent_id = data.get("agent_id", "basic-bot")
+        model_id = data.get("model", DEFAULT_MODEL)
+        effort = data.get("effort")
+        thinking = data.get("thinking", False)
+
+        logger.info(
+            "Received chat request - agent_id: %s, user_id: %s, model: %s",
+            agent_id, user_id, model_id
+        )
+
+        if not message:
+            logger.warning("Empty message received")
+            raise HTTPException(status_code=400, detail="Message is required")
+
+        if not user_id:
+            logger.warning("No user_id provided")
+            raise HTTPException(status_code=400, detail="user_id is required")
+
+        logger.info("Message from user %s: %s", user_id, message[:50])
+
+        result = await chat_with_claude(
+            user_id, message, model_id, effort, thinking
+        )
+
+        save_message(user_id, "user", message)
+        save_message(user_id, "assistant", result["reply"])
+        logger.info("Saved conversation turn for user: %s", user_id)
+
+        return {
+            "response": result["reply"],
+            "model_used": result["model_used"],
+            "display_name": result["display_name"],
+            "effort": result["effort"],
+            "thinking": result["thinking"],
+            "fallback": result["fallback"],
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Chat endpoint error: %s", str(e))
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@app.get("/models")
+async def models():
+    return {
+        "models": {
+            model_id: {
+                "display_name": config["display_name"],
+                "effort_levels": config["effort_levels"],
+                "thinking_type": config["thinking_type"],
+            }
+            for model_id, config in MODELS.items()
+        },
+        "default": DEFAULT_MODEL,
+    }
+
+
+@app.get("/health")
+async def health():
+    return {"status": "healthy", "agent": "basic-bot"}
+
+
+@app.get("/")
+async def root():
+    return {"message": "Basic Bot API", "status": "running"}

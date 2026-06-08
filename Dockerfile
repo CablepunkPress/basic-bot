@@ -17,11 +17,11 @@ COPY requirements.txt .
 RUN pip install --upgrade pip wheel \
     && pip install --no-cache-dir -r requirements.txt
 
-# Copy application code
-COPY main.py .
+# Copy application package
+COPY basic_bot/ basic_bot/
 
 # Document the port
 EXPOSE 8080
 
 # Start server with exec for proper signal handling
-CMD exec uvicorn main:app --host 0.0.0.0 --port ${PORT:-8080}
+CMD exec uvicorn basic_bot.app:app --host 0.0.0.0 --port ${PORT:-8080}
