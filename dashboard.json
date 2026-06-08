@@ -1,12 +1,13 @@
 {
     "id": "basic-bot",
     "name": "Basic Bot",
+    "icon": "💬",
     "description": "General-purpose AI assistant",
-    "icon": "🤖",
+    "mode": "chat",
+    "backendUrl": "https://basic-bot-59184217758.us-east5.run.app",
     "features": {
-        "chat": true,
-        "model_selection": true,
-        "thinking": true,
-        "upload": false
+        "fileUpload": {
+            "enabled": false
+        }
     }
 }
