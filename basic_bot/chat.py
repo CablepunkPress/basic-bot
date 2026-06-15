@@ -62,18 +62,28 @@ async def chat_with_claude(
     try:
         kwargs = build_api_kwargs(model_id, system_prompt, messages, effort, thinking)
         response = client.messages.create(**kwargs)
+
+        actual_model = response.model
+        if actual_model != model_id:
+            logger.warning(
+                "Model mismatch: requested %s, got %s",
+                model_id, actual_model
+            )
+
+        actual_config = MODELS.get(actual_model, model_config)
         reply = extract_reply(response)
 
         logger.info("Received response from %s (%d chars)",
-                     model_config["display_name"], len(reply))
+                     actual_config["display_name"], len(reply))
 
         return {
             "reply": reply,
-            "model_used": model_id,
-            "display_name": model_config["display_name"],
+            "model_used": actual_model,
+            "display_name": actual_config["display_name"],
             "effort": effort,
             "thinking": thinking,
             "fallback": False,
+            "model_mismatch": actual_model != model_id,
         }
 
     except Exception:
@@ -91,20 +101,24 @@ async def chat_with_claude(
                 FALLBACK_MODEL, fallback_prompt, messages
             )
             response = client.messages.create(**fallback_kwargs)
+
+            actual_model = response.model
+            actual_config = MODELS.get(actual_model, MODELS[FALLBACK_MODEL])
             reply = extract_reply(response)
 
             logger.info(
                 "Fallback to %s succeeded (%d chars)",
-                MODELS[FALLBACK_MODEL]["display_name"], len(reply)
+                actual_config["display_name"], len(reply)
             )
 
             return {
                 "reply": reply,
-                "model_used": FALLBACK_MODEL,
-                "display_name": MODELS[FALLBACK_MODEL]["display_name"],
+                "model_used": actual_model,
+                "display_name": actual_config["display_name"],
                 "effort": None,
                 "thinking": False,
                 "fallback": True,
+                "model_mismatch": actual_model != FALLBACK_MODEL,
             }
 
         except Exception:
