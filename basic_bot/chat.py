@@ -16,15 +16,32 @@ client = anthropic.Anthropic()
 _PERSONA_PATH = Path(__file__).parent / "instructions" / "persona.md"
 
 
-def build_system_prompt(model_id: str) -> str:
-    """Build the system prompt with persona text and model awareness."""
-    display_name = MODELS.get(model_id, MODELS[DEFAULT_MODEL])["display_name"]
+def build_system_prompt(
+    model_id: str,
+    effort: str | None = None,
+    thinking: bool = False,
+) -> str:
+    """Build the system prompt with persona text and full model awareness."""
+    model_config = MODELS.get(model_id, MODELS[DEFAULT_MODEL])
+    display_name = model_config["display_name"]
     persona = _PERSONA_PATH.read_text().strip()
-    return (
-        f"{persona}\n"
-        f"You are currently running on {display_name}.\n"
-        f"Your current sliding window is {MESSAGE_LIMIT} messages."
-    )
+
+    config_lines = [
+        f"You are currently running on Claude {display_name}.",
+        f"Your current sliding window is {MESSAGE_LIMIT} messages.",
+    ]
+
+    if model_config["effort_levels"] and effort:
+        config_lines.append(f"Effort level is set to {effort}.")
+    elif not model_config["effort_levels"]:
+        config_lines.append("This model does not use effort levels.")
+
+    if thinking:
+        config_lines.append("Deep Reasoning is enabled.")
+    else:
+        config_lines.append("Deep Reasoning is disabled.")
+
+    return f"{persona}\n" + "\n".join(config_lines)
 
 
 async def chat_with_claude(
@@ -52,7 +69,7 @@ async def chat_with_claude(
         model_id = DEFAULT_MODEL
 
     model_config = MODELS[model_id]
-    system_prompt = build_system_prompt(model_id)
+    system_prompt = build_system_prompt(model_id, effort, thinking)
 
     logger.info(
         "Sending request to %s (effort=%s, thinking=%s) with %d messages",
@@ -73,8 +90,10 @@ async def chat_with_claude(
         actual_config = MODELS.get(actual_model, model_config)
         reply = extract_reply(response)
 
-        logger.info("Received response from %s (%d chars)",
-                     actual_config["display_name"], len(reply))
+        logger.info(
+            "Received response from %s (effort=%s, thinking=%s, %d chars)",
+            actual_config["display_name"], effort, thinking, len(reply)
+        )
 
         return {
             "reply": reply,
