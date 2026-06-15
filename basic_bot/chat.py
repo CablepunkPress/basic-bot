@@ -5,7 +5,7 @@ from typing import cast
 import anthropic
 from anthropic.types import MessageParam
 
-from basic_bot.config import DEFAULT_MODEL, FALLBACK_MODEL
+from basic_bot.config import DEFAULT_MODEL, FALLBACK_MODEL, MESSAGE_LIMIT
 from basic_bot.memory import get_messages
 from basic_bot.models import MODELS, build_api_kwargs, extract_reply
 
@@ -20,7 +20,11 @@ def build_system_prompt(model_id: str) -> str:
     """Build the system prompt with persona text and model awareness."""
     display_name = MODELS.get(model_id, MODELS[DEFAULT_MODEL])["display_name"]
     persona = _PERSONA_PATH.read_text().strip()
-    return f"{persona}\nYou are currently running on {display_name}."
+    return (
+        f"{persona}\n"
+        f"You are currently running on {display_name}.\n"
+        f"Your current sliding window is {MESSAGE_LIMIT} messages."
+    )
 
 
 async def chat_with_claude(
