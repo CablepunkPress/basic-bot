@@ -77,7 +77,7 @@ async def chat(request: Request):
             logger.warning("No user_id provided")
             raise HTTPException(status_code=400, detail="user_id is required")
 
-        logger.info("Message from user %s: %s", user_id, message[:50])
+        logger.info("Message from user %s (%d chars)", user_id, len(message))
 
         result = await chat_with_claude(
             user_id, message, model_id, effort, thinking
