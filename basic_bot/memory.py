@@ -51,11 +51,19 @@ def get_summary(user_id: str, collection: str = CONVERSATION_COLLECTION) -> dict
 
 
 def save_summary(user_id: str, summary: str, summarized_through, collection: str = CONVERSATION_COLLECTION):
-    """Write the rolling summary to the user's parent document."""
-    db.collection(collection).document(user_id).set({
+    """Write the rolling summary to the parent doc, and append a versioned
+    copy to the summaries archive subcollection (append-only history)."""
+    parent_ref = db.collection(collection).document(user_id)
+    parent_ref.set({
         "summary": summary,
         "summarized_through": summarized_through,
     }, merge=True)
+    parent_ref.collection("summaries").add({
+        "summary": summary,
+        "summarized_through": summarized_through,
+        "char_count": len(summary),
+        "created_at": firestore.SERVER_TIMESTAMP,
+    })
 
 
 def save_turn(user_id: str, user_msg: str, agent_msg: str, collection: str = CONVERSATION_COLLECTION) -> int:
