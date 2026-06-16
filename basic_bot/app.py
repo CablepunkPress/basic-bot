@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request, HTTPException
 
 from basic_bot.config import DEFAULT_MODEL
 from basic_bot.chat import chat_with_claude
-from basic_bot.memory import db, save_message
+from basic_bot.memory import db, save_turn
 from basic_bot.models import MODELS
 
 logging.basicConfig(
@@ -83,9 +83,8 @@ async def chat(request: Request):
             user_id, message, model_id, effort, thinking
         )
 
-        save_message(user_id, "user", message)
-        save_message(user_id, "assistant", result["reply"])
-        logger.info("Saved conversation turn for user: %s", user_id)
+        seq = save_turn(user_id, message, result["reply"])
+        logger.info("Saved turn for user %s (seq %d-%d)", user_id, seq, seq + 1)
 
         return {
             "response": result["reply"],

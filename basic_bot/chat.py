@@ -5,7 +5,7 @@ from typing import cast
 import anthropic
 from anthropic.types import MessageParam
 
-from basic_bot.config import DEFAULT_MODEL, FALLBACK_MODEL, MESSAGE_LIMIT
+from basic_bot.config import DEFAULT_MODEL, FALLBACK_MODEL, MESSAGE_LIMIT, SUMMARY_MODEL, SUMMARY_MAX_TOKENS
 from basic_bot.memory import get_messages
 from basic_bot.models import MODELS, build_api_kwargs, extract_reply
 
@@ -42,6 +42,33 @@ def build_system_prompt(
         config_lines.append("Deep Reasoning is disabled.")
 
     return f"{persona}\n" + "\n".join(config_lines)
+
+
+def summarize_batch(existing_summary: str, messages: list[dict[str, str]]) -> str:
+    """Fold a batch of aged-out messages into the rolling summary using Haiku."""
+    transcript = "\n".join(f"{m['role']}: {m['content']}" for m in messages)
+
+    system = (
+        "You maintain a running summary of a conversation between a user and an AI assistant. "
+        "Integrate the new messages into the existing summary, if one is provided. "
+        "Preserve durable facts: names, preferences, decisions, and ongoing topics. "
+        "Compress older detail rather than dropping it entirely. "
+        "Write in plain prose, third person. "
+        f"Keep the result under roughly {SUMMARY_MAX_TOKENS} tokens."
+    )
+
+    if existing_summary:
+        user_content = f"EXISTING SUMMARY:\n{existing_summary}\n\nNEW MESSAGES:\n{transcript}"
+    else:
+        user_content = f"NEW MESSAGES:\n{transcript}"
+
+    response = client.messages.create(
+        model=SUMMARY_MODEL,
+        max_tokens=SUMMARY_MAX_TOKENS,
+        system=system,
+        messages=[{"role": "user", "content": user_content}],
+    )
+    return extract_reply(response)
 
 
 async def chat_with_claude(
