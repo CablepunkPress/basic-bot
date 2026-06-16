@@ -8,7 +8,7 @@ import anthropic
 from fastapi import FastAPI, Request, HTTPException
 
 from basic_bot.config import DEFAULT_MODEL
-from basic_bot.chat import chat_with_claude
+from basic_bot.chat import chat_with_claude, maybe_summarize
 from basic_bot.memory import db, save_turn
 from basic_bot.models import MODELS
 
@@ -85,6 +85,9 @@ async def chat(request: Request):
 
         seq = save_turn(user_id, message, result["reply"])
         logger.info("Saved turn for user %s (seq %d-%d)", user_id, seq, seq + 1)
+
+        if maybe_summarize(user_id):
+            logger.info("Rolling summary updated for user %s", user_id)
 
         return {
             "response": result["reply"],
