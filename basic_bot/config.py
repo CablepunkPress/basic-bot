@@ -1,8 +1,8 @@
 import os
 
 CONVERSATION_COLLECTION = "basic-bot-sessions"
-MESSAGE_LIMIT = int(os.environ.get("MESSAGE_LIMIT", "20"))
-SUMMARY_INTERVAL = int(os.environ.get("SUMMARY_INTERVAL", "20"))
+MESSAGE_LIMIT = int(os.environ.get("MESSAGE_LIMIT", "20")) # floor (minimum N last messages loaded each turn)
+SUMMARY_INTERVAL = int(os.environ.get("SUMMARY_INTERVAL", "20")) # MESSAGE_LIMIT + SUMMARY_INTERVAL = ceiling
 RAG_INTERVAL = int(os.environ.get("RAG_INTERVAL", "50"))
 SUMMARY_MAX_TOKENS = int(os.environ.get("SUMMARY_MAX_TOKENS", "1000"))
 SUMMARY_MIN_CHARS = int(os.environ.get("SUMMARY_MIN_CHARS", "40"))
