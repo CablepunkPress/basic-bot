@@ -1,4 +1,5 @@
 fastapi
 uvicorn[standard]
 anthropic
+google-genai
 google-cloud-firestore

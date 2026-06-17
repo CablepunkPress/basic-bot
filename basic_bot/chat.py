@@ -162,6 +162,18 @@ def maybe_summarize(user_id: str, collection: str = CONVERSATION_COLLECTION) -> 
             "Summarized user %s through seq %s (%d messages folded, summary %d chars)",
             user_id, new_through, len(batch), len(new_summary)
         )
+
+        # Embed the same batch into RAG for long-term verbatim retrieval
+        try:
+            from basic_bot.rag import store_turns
+            stored = store_turns(user_id, chunk, collection)
+            logger.info("Embedded %d turn(s) in RAG for user %s", stored, user_id)
+        except Exception:
+            logger.exception(
+                "RAG embedding failed for user %s — turns not indexed, "
+                "summary still saved", user_id
+            )
+
         return True
     except Exception:
         logger.exception(

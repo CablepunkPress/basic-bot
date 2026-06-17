@@ -13,6 +13,7 @@ anthropic==0.105.2
 anyio==4.12.1
     # via
     #   anthropic
+    #   google-genai
     #   httpx
     #   starlette
     #   watchfiles
@@ -30,7 +31,9 @@ click==8.3.1
 cryptography==48.0.0
     # via google-auth
 distro==1.9.0
-    # via anthropic
+    # via
+    #   anthropic
+    #   google-genai
 docstring-parser==0.18.0
     # via anthropic
 fastapi==0.128.0
@@ -39,14 +42,17 @@ google-api-core[grpc]==2.31.0
     # via
     #   google-cloud-core
     #   google-cloud-firestore
-google-auth==2.53.0
+google-auth[requests]==2.53.0
     # via
     #   google-api-core
     #   google-cloud-core
     #   google-cloud-firestore
+    #   google-genai
 google-cloud-core==2.6.0
     # via google-cloud-firestore
 google-cloud-firestore==2.27.0
+    # via -r requirements.in
+google-genai==2.8.0
     # via -r requirements.in
 googleapis-common-protos==1.75.0
     # via
@@ -68,7 +74,9 @@ httpcore==1.0.9
 httptools==0.7.1
     # via uvicorn
 httpx==0.28.1
-    # via anthropic
+    # via
+    #   anthropic
+    #   google-genai
 idna==3.11
     # via
     #   anyio
@@ -80,7 +88,7 @@ proto-plus==1.28.0
     # via
     #   google-api-core
     #   google-cloud-firestore
-protobuf==7.35.0
+protobuf==6.33.6
     # via
     #   google-api-core
     #   google-cloud-firestore
@@ -97,6 +105,7 @@ pydantic==2.12.5
     # via
     #   anthropic
     #   fastapi
+    #   google-genai
 pydantic-core==2.41.5
     # via pydantic
 python-dotenv==1.2.1
@@ -104,15 +113,23 @@ python-dotenv==1.2.1
 pyyaml==6.0.3
     # via uvicorn
 requests==2.34.2
-    # via google-api-core
+    # via
+    #   google-api-core
+    #   google-auth
+    #   google-genai
 sniffio==1.3.1
-    # via anthropic
+    # via
+    #   anthropic
+    #   google-genai
 starlette==0.50.0
     # via fastapi
+tenacity==9.1.4
+    # via google-genai
 typing-extensions==4.15.0
     # via
     #   anthropic
     #   fastapi
+    #   google-genai
     #   grpcio
     #   pydantic
     #   pydantic-core
@@ -128,4 +145,6 @@ uvloop==0.22.1
 watchfiles==1.1.1
     # via uvicorn
 websockets==15.0.1
-    # via uvicorn
+    # via
+    #   google-genai
+    #   uvicorn
