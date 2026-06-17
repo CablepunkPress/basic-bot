@@ -1,1 +1,1 @@
-"""Basic Bot tools — future plugin system."""
+"""Plugin tools — drop-in tools for downstream bots."""

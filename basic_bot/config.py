@@ -17,3 +17,6 @@ EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "vertex")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
 EMBEDDING_LOCATION = os.environ.get("EMBEDDING_LOCATION", "us-east5")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "768"))
+
+# Tool system
+TOOL_CHEST = os.environ.get("TOOL_CHEST", "basic")  # "basic" = belt only, "extended" = belt + tools

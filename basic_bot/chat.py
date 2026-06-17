@@ -1,9 +1,12 @@
+import importlib
+import json
 import logging
+import pkgutil
 from pathlib import Path
 from typing import cast
 
 import anthropic
-from anthropic.types import MessageParam
+from anthropic.types import MessageParam, TextBlock, ToolUseBlock
 
 from basic_bot.config import (
     CONVERSATION_COLLECTION,
@@ -14,6 +17,7 @@ from basic_bot.config import (
     SUMMARY_MAX_TOKENS,
     SUMMARY_MIN_CHARS,
     SUMMARY_MODEL,
+    TOOL_CHEST,
 )
 from basic_bot.memory import get_messages_after, get_state, load_window, save_summary
 from basic_bot.models import MODELS, build_api_kwargs, extract_reply
@@ -25,9 +29,83 @@ client = anthropic.Anthropic()
 _PERSONA_PATH = Path(__file__).parent / "instructions" / "persona.md"
 
 
+# ---------------------------------------------------------------------------
+# Tool discovery and registry
+# ---------------------------------------------------------------------------
+
+def _discover_tools(package_name: str) -> dict:
+    """Scan a Python package for tool modules.
+
+    Each module that exposes a TOOL dict (the schema) and a handler callable
+    is registered. Modules starting with _ are skipped.
+    """
+    try:
+        package = importlib.import_module(package_name)
+    except ImportError:
+        logger.debug("Tool package '%s' not found — skipping", package_name)
+        return {}
+
+    registry: dict = {}
+    for _, modname, _ in pkgutil.iter_modules(package.__path__):
+        if modname.startswith("_"):
+            continue
+        module = importlib.import_module(f"{package_name}.{modname}")
+        if hasattr(module, "TOOL") and hasattr(module, "handler"):
+            name = module.TOOL["name"]
+            registry[name] = {
+                "schema": module.TOOL,
+                "handler": module.handler,
+            }
+    return registry
+
+
+_tool_registry: dict | None = None
+
+
+def _get_tool_registry() -> dict:
+    """Build (once) and return the combined tool registry.
+
+    Belt tools (basic_bot.belt) are always loaded. Plugin tools from the
+    bot's own tools package are added only when TOOL_CHEST is "extended".
+    """
+    global _tool_registry
+    if _tool_registry is not None:
+        return _tool_registry
+
+    registry = _discover_tools("basic_bot.belt")
+
+    if TOOL_CHEST == "extended":
+        plugin_tools = _discover_tools("basic_bot.belt")
+
+    _tool_registry = registry
+    logger.info(
+        "Tool registry: %d tool(s) [%s]",
+        len(registry),
+        ", ".join(registry.keys()) if registry else "none",
+    )
+    return registry
+
+
+def _execute_tool(name: str, context: dict, tool_input: dict) -> str:
+    """Dispatch a tool call and return the result as a JSON string."""
+    registry = _get_tool_registry()
+    entry = registry.get(name)
+    if not entry:
+        return json.dumps({"error": f"Unknown tool '{name}'"})
+    try:
+        result = entry["handler"](context, **tool_input)
+        return result if isinstance(result, str) else json.dumps(result)
+    except Exception as e:
+        logger.exception("Tool '%s' failed", name)
+        return json.dumps({"error": str(e)})
+
+
+# ---------------------------------------------------------------------------
+# System prompt
+# ---------------------------------------------------------------------------
+
 def _build_memory_section(summary: str, position: dict | None) -> str:
-    """Describe the conversation's memory state for the model: what it can see
-    verbatim, what's been summarized, and how many messages exist."""
+    """Describe the conversation's memory state for the model."""
     if not position or not position.get("total"):
         return ""
 
@@ -36,19 +114,29 @@ def _build_memory_section(summary: str, position: dict | None) -> str:
     w_start = position["window_start"]
     w_end = position["window_end"]
 
+    parts = []
     if summary and through:
-        return (
+        parts.append(
             f"Here is a running summary of earlier messages (1 through {through}):\n"
             f"{summary}\n"
             f"You can see messages {w_start} through {w_end} verbatim below. "
             f"This conversation has {total} messages so far, not counting the "
             "user's current message."
         )
-    return (
-        f"You can see all {total} messages of this conversation verbatim "
-        f"(messages {w_start} through {w_end}), not counting the user's "
-        "current message."
-    )
+    else:
+        parts.append(
+            f"You can see all {total} messages of this conversation verbatim "
+            f"(messages {w_start} through {w_end}), not counting the user's "
+            "current message."
+        )
+
+    if through and _get_tool_registry():
+        parts.append(
+            "If you need to recall exact words or specific details from before "
+            "the summary, use your search_memory tool."
+        )
+
+    return "\n".join(parts)
 
 
 def build_system_prompt(
@@ -81,13 +169,12 @@ def build_system_prompt(
     return "\n".join(parts)
 
 
-def summarize_batch(existing_summary: str, messages: list[dict[str, str]]) -> str:
-    """Fold a batch of aged-out messages into the rolling summary using Haiku.
+# ---------------------------------------------------------------------------
+# Summarization
+# ---------------------------------------------------------------------------
 
-    The transcript is fenced and treated strictly as data — the summarizer is
-    instructed never to follow instructions inside it, and the response is
-    prefilled to lock it into summarizing mode.
-    """
+def summarize_batch(existing_summary: str, messages: list[dict[str, str]]) -> str:
+    """Fold a batch of aged-out messages into the rolling summary using Haiku."""
     transcript = "\n".join(f"{m['role'].capitalize()}: {m['content']}" for m in messages)
 
     system = (
@@ -126,13 +213,7 @@ def summarize_batch(existing_summary: str, messages: list[dict[str, str]]) -> st
 
 
 def maybe_summarize(user_id: str, collection: str = CONVERSATION_COLLECTION) -> bool:
-    """Fold the oldest aged-out batch into the summary, if the tail has grown
-    past the threshold. Called after a turn is saved. Returns True if it folded.
-
-    Self-contained error handling: a summarization failure leaves the summary
-    and boundary untouched (so the next turn retries) and never disturbs the
-    user-facing turn that already completed.
-    """
+    """Fold the oldest aged-out batch into the summary and embed into RAG."""
     state = get_state(user_id, collection)
     boundary = state["summarized_through"]
     latest = state["next_seq"] - 1
@@ -152,7 +233,7 @@ def maybe_summarize(user_id: str, collection: str = CONVERSATION_COLLECTION) -> 
             logger.warning(
                 "Summary for user %s came back implausibly short (%d chars) — "
                 "not saving, leaving boundary at %d to retry next turn",
-                user_id, len(new_summary), boundary
+                user_id, len(new_summary), boundary,
             )
             return False
 
@@ -160,18 +241,19 @@ def maybe_summarize(user_id: str, collection: str = CONVERSATION_COLLECTION) -> 
 
         logger.info(
             "Summarized user %s through seq %s (%d messages folded, summary %d chars)",
-            user_id, new_through, len(batch), len(new_summary)
+            user_id, new_through, len(batch), len(new_summary),
         )
 
-        # Embed the same batch into RAG for long-term verbatim retrieval
         try:
             from basic_bot.rag import store_turns
+
             stored = store_turns(user_id, chunk, collection)
             logger.info("Embedded %d turn(s) in RAG for user %s", stored, user_id)
         except Exception:
             logger.exception(
                 "RAG embedding failed for user %s — turns not indexed, "
-                "summary still saved", user_id
+                "summary still saved",
+                user_id,
             )
 
         return True
@@ -182,6 +264,10 @@ def maybe_summarize(user_id: str, collection: str = CONVERSATION_COLLECTION) -> 
         return False
 
 
+# ---------------------------------------------------------------------------
+# Chat orchestration
+# ---------------------------------------------------------------------------
+
 async def chat_with_claude(
     user_id: str,
     user_message: str,
@@ -189,14 +275,14 @@ async def chat_with_claude(
     effort: str | None = None,
     thinking: bool = False,
 ) -> dict:
-    """Chat with Claude using conversation memory. Returns reply and metadata."""
+    """Chat with Claude using conversation memory and tools."""
 
     logger.info("Processing chat request for user: %s", user_id)
 
     window, summary, position = load_window(user_id, user_message)
     logger.info(
         "Loaded context: %d prior messages, summary=%s, boundary=seq %s",
-        len(window) - 1, bool(summary), position["summarized_through"]
+        len(window) - 1, bool(summary), position["summarized_through"],
     )
 
     messages: list[MessageParam] = [
@@ -211,14 +297,49 @@ async def chat_with_claude(
     model_config = MODELS[model_id]
     system_prompt = build_system_prompt(model_id, effort, thinking, summary, position)
 
+    # Build tool list from registry
+    registry = _get_tool_registry()
+    tool_schemas = [entry["schema"] for entry in registry.values()]
+    context = {"user_id": user_id, "collection": CONVERSATION_COLLECTION}
+
     logger.info(
-        "Sending request to %s (effort=%s, thinking=%s) with %d messages",
-        model_config["display_name"], effort, thinking, len(messages)
+        "Sending request to %s (effort=%s, thinking=%s) with %d messages, %d tools",
+        model_config["display_name"], effort, thinking, len(messages), len(tool_schemas),
     )
 
     try:
         kwargs = build_api_kwargs(model_id, system_prompt, messages, effort, thinking)
-        response = client.messages.create(**kwargs)
+        if tool_schemas:
+            kwargs["tools"] = tool_schemas
+
+        # Tool use loop — runs once with no tools, loops when tools fire
+        while True:
+            response = client.messages.create(**kwargs)
+
+            tool_use_blocks = [
+                b for b in response.content if isinstance(b, ToolUseBlock)
+            ]
+
+            if not tool_use_blocks:
+                break
+
+            # Serialize full assistant response (including thinking) back into messages
+            assistant_content = [block.model_dump() for block in response.content]
+            messages.append({"role": "assistant", "content": assistant_content})
+
+            # Execute each tool call
+            tool_results = []
+            for block in tool_use_blocks:
+                logger.info("Executing tool: %s", block.name)
+                result = _execute_tool(block.name, context, block.input)
+                tool_results.append({
+                    "type": "tool_result",
+                    "tool_use_id": block.id,
+                    "content": result,
+                })
+
+            messages.append({"role": "user", "content": tool_results})
+            kwargs["messages"] = messages
 
         actual_model = response.model
         if actual_model != model_id:
@@ -231,7 +352,7 @@ async def chat_with_claude(
 
         logger.info(
             "Received response from %s (effort=%s, thinking=%s, %d chars)",
-            actual_config["display_name"], effort, thinking, len(reply)
+            actual_config["display_name"], effort, thinking, len(reply),
         )
 
         return {
@@ -247,7 +368,7 @@ async def chat_with_claude(
     except Exception:
         logger.exception(
             "Error with %s, attempting fallback to %s",
-            model_config["display_name"], MODELS[FALLBACK_MODEL]["display_name"]
+            model_config["display_name"], MODELS[FALLBACK_MODEL]["display_name"],
         )
 
         if model_id == FALLBACK_MODEL and not effort and not thinking:
@@ -260,6 +381,7 @@ async def chat_with_claude(
             fallback_kwargs = build_api_kwargs(
                 FALLBACK_MODEL, fallback_prompt, messages
             )
+            # Fallback strips tools
             response = client.messages.create(**fallback_kwargs)
 
             actual_model = response.model
@@ -268,7 +390,7 @@ async def chat_with_claude(
 
             logger.info(
                 "Fallback to %s succeeded (%d chars)",
-                actual_config["display_name"], len(reply)
+                actual_config["display_name"], len(reply),
             )
 
             return {
