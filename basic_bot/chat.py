@@ -2,11 +2,10 @@ import importlib
 import json
 import logging
 import pkgutil
-from pathlib import Path
 from typing import cast
 
 import anthropic
-from anthropic.types import MessageParam, TextBlock, ToolUseBlock
+from anthropic.types import MessageParam, ToolUseBlock
 
 from basic_bot.config import (
     CONVERSATION_COLLECTION,
@@ -17,20 +16,18 @@ from basic_bot.config import (
     SUMMARY_MAX_TOKENS,
     SUMMARY_MIN_CHARS,
     SUMMARY_MODEL,
-    TOOL_CHEST,
 )
 from basic_bot.memory import get_messages_after, get_state, load_window, save_summary
 from basic_bot.models import MODELS, build_api_kwargs, extract_reply
+from basic_bot.runtime import BotRuntime
 
 logger = logging.getLogger(__name__)
 
 client = anthropic.Anthropic()
 
-_PERSONA_PATH = Path(__file__).parent / "instructions" / "persona.md"
-
 
 # ---------------------------------------------------------------------------
-# Tool discovery and registry
+# Tool discovery
 # ---------------------------------------------------------------------------
 
 def _discover_tools(package_name: str) -> dict:
@@ -59,36 +56,25 @@ def _discover_tools(package_name: str) -> dict:
     return registry
 
 
-_tool_registry: dict | None = None
-
-
-def _get_tool_registry() -> dict:
-    """Build (once) and return the combined tool registry.
+def build_tool_registry(package_name: str, tool_chest: str) -> dict:
+    """Build the combined tool registry for a bot.
 
     Belt tools (basic_bot.belt) are always loaded. Plugin tools from the
-    bot's own tools package are added only when TOOL_CHEST is "extended".
+    bot's own tools package are added when tool_chest is "extended".
     """
-    global _tool_registry
-    if _tool_registry is not None:
-        return _tool_registry
-
     registry = _discover_tools("basic_bot.belt")
 
-    if TOOL_CHEST == "extended":
-        plugin_tools = _discover_tools("basic_bot.belt")
+    if tool_chest == "extended":
+        plugin_tools = _discover_tools(f"{package_name}.tools")
+        registry.update(plugin_tools)
 
-    _tool_registry = registry
-    logger.info(
-        "Tool registry: %d tool(s) [%s]",
-        len(registry),
-        ", ".join(registry.keys()) if registry else "none",
-    )
     return registry
 
 
-def _execute_tool(name: str, context: dict, tool_input: dict) -> str:
+def _execute_tool(
+    registry: dict, name: str, context: dict, tool_input: dict,
+) -> str:
     """Dispatch a tool call and return the result as a JSON string."""
-    registry = _get_tool_registry()
     entry = registry.get(name)
     if not entry:
         return json.dumps({"error": f"Unknown tool '{name}'"})
@@ -104,7 +90,9 @@ def _execute_tool(name: str, context: dict, tool_input: dict) -> str:
 # System prompt
 # ---------------------------------------------------------------------------
 
-def _build_memory_section(summary: str, position: dict | None) -> str:
+def _build_memory_section(
+    summary: str, position: dict | None, tool_registry: dict,
+) -> str:
     """Describe the conversation's memory state for the model."""
     if not position or not position.get("total"):
         return ""
@@ -130,7 +118,7 @@ def _build_memory_section(summary: str, position: dict | None) -> str:
             "current message."
         )
 
-    if through and _get_tool_registry():
+    if through and tool_registry:
         parts.append(
             "If you need to recall exact words or specific details from before "
             "the summary, use your search_memory tool."
@@ -140,6 +128,7 @@ def _build_memory_section(summary: str, position: dict | None) -> str:
 
 
 def build_system_prompt(
+    runtime: BotRuntime,
     model_id: str,
     effort: str | None = None,
     thinking: bool = False,
@@ -149,7 +138,6 @@ def build_system_prompt(
     """Build the system prompt with persona, model awareness, and memory state."""
     model_config = MODELS.get(model_id, MODELS[DEFAULT_MODEL])
     display_name = model_config["display_name"]
-    persona = _PERSONA_PATH.read_text().strip()
 
     config_lines = [f"You are currently running on Claude {display_name}."]
 
@@ -162,8 +150,8 @@ def build_system_prompt(
         "Deep Reasoning is enabled." if thinking else "Deep Reasoning is disabled."
     )
 
-    parts = [persona, "\n".join(config_lines)]
-    memory_section = _build_memory_section(summary, position)
+    parts = [runtime.persona, "\n".join(config_lines)]
+    memory_section = _build_memory_section(summary, position, runtime.tool_registry)
     if memory_section:
         parts.append(memory_section)
     return "\n".join(parts)
@@ -269,6 +257,7 @@ def maybe_summarize(user_id: str, collection: str = CONVERSATION_COLLECTION) -> 
 # ---------------------------------------------------------------------------
 
 async def chat_with_claude(
+    runtime: BotRuntime,
     user_id: str,
     user_message: str,
     model_id: str = DEFAULT_MODEL,
@@ -277,11 +266,13 @@ async def chat_with_claude(
 ) -> dict:
     """Chat with Claude using conversation memory and tools."""
 
-    logger.info("Processing chat request for user: %s", user_id)
+    logger.info("Processing chat for user %s", user_id)
 
-    window, summary, position = load_window(user_id, user_message)
+    window, summary, position = load_window(
+        user_id, user_message, runtime.collection,
+    )
     logger.info(
-        "Loaded context: %d prior messages, summary=%s, boundary=seq %s",
+        "Context: %d prior messages, summary=%s, boundary=seq %s",
         len(window) - 1, bool(summary), position["summarized_through"],
     )
 
@@ -294,17 +285,20 @@ async def chat_with_claude(
         logger.warning("Unknown model '%s', using default", model_id)
         model_id = DEFAULT_MODEL
 
+    system_prompt = build_system_prompt(
+        runtime, model_id, effort, thinking, summary, position,
+    )
+
+    tool_schemas = [
+        entry["schema"] for entry in runtime.tool_registry.values()
+    ]
+    context = {"user_id": user_id, "collection": runtime.collection}
+
     model_config = MODELS[model_id]
-    system_prompt = build_system_prompt(model_id, effort, thinking, summary, position)
-
-    # Build tool list from registry
-    registry = _get_tool_registry()
-    tool_schemas = [entry["schema"] for entry in registry.values()]
-    context = {"user_id": user_id, "collection": CONVERSATION_COLLECTION}
-
     logger.info(
-        "Sending request to %s (effort=%s, thinking=%s) with %d messages, %d tools",
-        model_config["display_name"], effort, thinking, len(messages), len(tool_schemas),
+        "Sending to %s (effort=%s, thinking=%s) — %d messages, %d tools",
+        model_config["display_name"], effort, thinking,
+        len(messages), len(tool_schemas),
     )
 
     try:
@@ -312,7 +306,6 @@ async def chat_with_claude(
         if tool_schemas:
             kwargs["tools"] = tool_schemas
 
-        # Tool use loop — runs once with no tools, loops when tools fire
         while True:
             response = client.messages.create(**kwargs)
 
@@ -323,15 +316,15 @@ async def chat_with_claude(
             if not tool_use_blocks:
                 break
 
-            # Serialize full assistant response (including thinking) back into messages
             assistant_content = [block.model_dump() for block in response.content]
             messages.append({"role": "assistant", "content": assistant_content})
 
-            # Execute each tool call
             tool_results = []
             for block in tool_use_blocks:
                 logger.info("Executing tool: %s", block.name)
-                result = _execute_tool(block.name, context, block.input)
+                result = _execute_tool(
+                    runtime.tool_registry, block.name, context, block.input,
+                )
                 tool_results.append({
                     "type": "tool_result",
                     "tool_use_id": block.id,
@@ -344,15 +337,15 @@ async def chat_with_claude(
         actual_model = response.model
         if actual_model != model_id:
             logger.warning(
-                "Model mismatch: requested %s, got %s", model_id, actual_model
+                "Model mismatch: requested %s, got %s", model_id, actual_model,
             )
 
         actual_config = MODELS.get(actual_model, model_config)
         reply = extract_reply(response)
 
         logger.info(
-            "Received response from %s (effort=%s, thinking=%s, %d chars)",
-            actual_config["display_name"], effort, thinking, len(reply),
+            "Response from %s (%d chars)",
+            actual_config["display_name"], len(reply),
         )
 
         return {
@@ -367,8 +360,9 @@ async def chat_with_claude(
 
     except Exception:
         logger.exception(
-            "Error with %s, attempting fallback to %s",
-            model_config["display_name"], MODELS[FALLBACK_MODEL]["display_name"],
+            "Error with %s, falling back to %s",
+            model_config["display_name"],
+            MODELS[FALLBACK_MODEL]["display_name"],
         )
 
         if model_id == FALLBACK_MODEL and not effort and not thinking:
@@ -376,12 +370,11 @@ async def chat_with_claude(
 
         try:
             fallback_prompt = build_system_prompt(
-                FALLBACK_MODEL, summary=summary, position=position
+                runtime, FALLBACK_MODEL, summary=summary, position=position,
             )
             fallback_kwargs = build_api_kwargs(
-                FALLBACK_MODEL, fallback_prompt, messages
+                FALLBACK_MODEL, fallback_prompt, messages,
             )
-            # Fallback strips tools
             response = client.messages.create(**fallback_kwargs)
 
             actual_model = response.model
