@@ -31,10 +31,10 @@ client = anthropic.Anthropic()
 # ---------------------------------------------------------------------------
 
 def _discover_tools(package_name: str) -> dict:
-    """Scan a Python package for tool modules.
+    """Scan a Python package for tool modules, recursing into subpackages.
 
     Each module that exposes a TOOL dict (the schema) and a handler callable
-    is registered. Modules starting with _ are skipped.
+    is registered. Modules and packages starting with _ are skipped.
     """
     try:
         package = importlib.import_module(package_name)
@@ -43,16 +43,20 @@ def _discover_tools(package_name: str) -> dict:
         return {}
 
     registry: dict = {}
-    for _, modname, _ in pkgutil.iter_modules(package.__path__):
+    for _, modname, ispkg in pkgutil.iter_modules(package.__path__):
         if modname.startswith("_"):
             continue
-        module = importlib.import_module(f"{package_name}.{modname}")
-        if hasattr(module, "TOOL") and hasattr(module, "handler"):
-            name = module.TOOL["name"]
-            registry[name] = {
-                "schema": module.TOOL,
-                "handler": module.handler,
-            }
+        if ispkg:
+            sub_tools = _discover_tools(f"{package_name}.{modname}")
+            registry.update(sub_tools)
+        else:
+            module = importlib.import_module(f"{package_name}.{modname}")
+            if hasattr(module, "TOOL") and hasattr(module, "handler"):
+                name = module.TOOL["name"]
+                registry[name] = {
+                    "schema": module.TOOL,
+                    "handler": module.handler,
+                }
     return registry
 
 
