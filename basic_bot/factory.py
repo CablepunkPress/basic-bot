@@ -16,7 +16,7 @@ import anthropic
 from fastapi import FastAPI, HTTPException, Request
 
 from basic_bot.chat import build_tool_registry, chat_with_claude, maybe_summarize
-from basic_bot.config import DEFAULT_MODEL, TOOL_CHEST
+from basic_bot.config import DEFAULT_MODEL
 from basic_bot.memory import db, save_turn
 from basic_bot.models import MODELS
 from basic_bot.runtime import BotRuntime
@@ -24,14 +24,16 @@ from basic_bot.runtime import BotRuntime
 logger = logging.getLogger(__name__)
 
 
-def create_app(package_name: str, collection: str) -> FastAPI:
+def create_app(package_name: str, collection: str, tool_chest: str = "basic") -> FastAPI:
     """Build a fully configured FastAPI bot application.
 
     Args:
         package_name: Python package name (e.g., "basic_bot", "cablepunk").
             Locates persona, tools, and dashboard config.
-        collection: Firestore collection for conversation data.
+        collection: Firestore collection for conversation data (messages, summaries, rag).
             Required with no default — prevents accidental cross-contamination.
+        tool_chest: Built-in tools, or Built-in + Plugin tools (values: "basic" or "extended").
+            Built-in tools are Basic Bot's "belt" folder; Plugin tools are downstream agents "tools" folder.
     """
     logging.basicConfig(
         level=logging.INFO,
@@ -48,7 +50,7 @@ def create_app(package_name: str, collection: str) -> FastAPI:
     persona = persona_path.read_text().strip()
 
     # Build tool registry
-    tool_registry = build_tool_registry(package_name, TOOL_CHEST)
+    tool_registry = build_tool_registry(package_name, tool_chest)
 
     runtime = BotRuntime(
         package_name=package_name,
