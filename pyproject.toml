@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "basic-bot"
-version = "0.1.0"
+version = "0.2.0"
 description = "A general-purpose AI assistant engine"
 requires-python = ">=3.14"
 dependencies = [
@@ -12,6 +12,7 @@ dependencies = [
     "uvicorn[standard]",
     "anthropic",
     "google-cloud-firestore",
+    "google-genai",
 ]
 
 [tool.setuptools.packages.find]
