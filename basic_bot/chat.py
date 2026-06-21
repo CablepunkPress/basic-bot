@@ -106,11 +106,11 @@ def _build_memory_section(
     w_start = position["window_start"]
     w_end = position["window_end"]
 
-    parts = []
+    parts = ["# MEMORY"]
     if summary and through:
         parts.append(
             f"Here is a running summary of earlier messages (1 through {through}):\n"
-            f"{summary}\n"
+            f"{summary}\n\n"
             f"You can see messages {w_start} through {w_end} verbatim below. "
             f"This conversation has {total} messages so far, not counting the "
             "user's current message."
@@ -128,7 +128,7 @@ def _build_memory_section(
             "the summary, use your search_memory tool."
         )
 
-    return "\n".join(parts)
+    return "\n\n".join(parts)
 
 
 def build_system_prompt(
@@ -154,11 +154,16 @@ def build_system_prompt(
         "Deep Reasoning is enabled." if thinking else "Deep Reasoning is disabled."
     )
 
-    parts = [runtime.persona, "\n".join(config_lines)]
+    parts = [
+        runtime.persona,
+        "# MODEL\n\n" + "\n".join(config_lines),
+    ]
+
     memory_section = _build_memory_section(summary, position, runtime.tool_registry)
     if memory_section:
         parts.append(memory_section)
-    return "\n".join(parts)
+
+    return "\n\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
