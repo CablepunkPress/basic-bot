@@ -8,7 +8,7 @@ folded into the summary.
 import json
 
 TOOL = {
-    "name": "search_memory",
+    "name": "search_archive",
     "description": (
         "Search your long-term memory for specific past conversations. "
         "Use this when the user asks about something you discussed before "
@@ -29,7 +29,7 @@ TOOL = {
 
 
 def handler(context: dict, **tool_input) -> str:
-    """Execute search_memory and return JSON results."""
+    """Execute search_archive and return JSON results."""
     from basic_bot.rag import search_memory
 
     query = tool_input.get("query", "")
