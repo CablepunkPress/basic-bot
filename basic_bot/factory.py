@@ -36,8 +36,9 @@ def create_app(package_name: str, collection: str, tool_chest: str = "basic") ->
             Built-in tools are Basic Bot's "belt" folder; Plugin tools are downstream agents "tools" folder.
     """
     logging.basicConfig(
+        format="%(asctime)s - [{package_name}] %(name)s - %(levelname)s - %(message)s",
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+        force=True,
     )
 
     package = import_module(package_name)
