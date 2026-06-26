@@ -10,7 +10,7 @@ import json
 TOOL = {
     "name": "search_archive",
     "description": (
-        "Search your long-term memory for specific past conversations. "
+        "Search the archive for specific past conversations. "
         "Use this when the user asks about something you discussed before "
         "that isn't visible in your current conversation window or summary. "
         "Returns verbatim excerpts from past turns."

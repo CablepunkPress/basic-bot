@@ -24,7 +24,7 @@ from basic_bot.runtime import BotRuntime
 logger = logging.getLogger(__name__)
 
 
-def create_app(package_name: str, collection: str, tool_chest: str = "basic") -> FastAPI:
+def create_app(package_name: str, collection: str) -> FastAPI:
     """Build a fully configured FastAPI bot application.
 
     Args:
@@ -32,8 +32,9 @@ def create_app(package_name: str, collection: str, tool_chest: str = "basic") ->
             Locates persona, tools, and dashboard config.
         collection: Firestore collection for conversation data (messages, summaries, rag).
             Required with no default — prevents accidental cross-contamination.
-        tool_chest: Built-in tools, or Built-in + Plugin tools (values: "basic" or "extended").
-            Built-in tools are Basic Bot's "belt" folder; Plugin tools are downstream agents "tools" folder.
+
+    Tool belt (basic_bot.tool_belt) is always loaded. If the downstream bot has a
+    tool_box package, its tools are auto-discovered. Disable with TOOL_BOX_ENABLED=false.
     """
     logging.basicConfig(
         format=f"%(asctime)s - [{package_name}] %(name)s - %(levelname)s - %(message)s",
@@ -51,7 +52,7 @@ def create_app(package_name: str, collection: str, tool_chest: str = "basic") ->
     persona = persona_path.read_text().strip()
 
     # Build tool registry
-    tool_registry = build_tool_registry(package_name, tool_chest)
+    tool_registry = build_tool_registry(package_name)
 
     runtime = BotRuntime(
         package_name=package_name,

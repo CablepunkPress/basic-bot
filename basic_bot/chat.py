@@ -16,6 +16,7 @@ from basic_bot.config import (
     SUMMARY_MAX_TOKENS,
     SUMMARY_MIN_CHARS,
     SUMMARY_MODEL,
+    TOOL_BOX_ENABLED,
 )
 from basic_bot.memory import get_messages_after, get_state, load_window, save_summary
 from basic_bot.models import MODELS, build_api_kwargs, extract_reply
@@ -60,16 +61,17 @@ def _discover_tools(package_name: str) -> dict:
     return registry
 
 
-def build_tool_registry(package_name: str, tool_chest: str) -> dict:
+def build_tool_registry(package_name: str) -> dict:
     """Build the combined tool registry for a bot.
 
-    Belt tools (basic_bot.belt) are always loaded. Plugin tools from the
-    bot's own tools package are added when tool_chest is "extended".
+    Tool belt tools (basic_bot.tool_belt) are always loaded. Plugin tools from the 
+    downstream bot's own tool_box package are auto-discovered and loaded by default. 
+    Plugin tools can be disabled with env var TOOL_BOX_ENABLED=false.
     """
-    registry = _discover_tools("basic_bot.belt")
+    registry = _discover_tools("basic_bot.tool_belt")
 
-    if tool_chest == "extended":
-        plugin_tools = _discover_tools(f"{package_name}.tools")
+    if TOOL_BOX_ENABLED:
+        plugin_tools = _discover_tools(f"{package_name}.tool_box")
         registry.update(plugin_tools)
 
     return registry
@@ -125,7 +127,7 @@ def _build_memory_section(
     if through and tool_registry:
         parts.append(
             "If you need to recall exact words or specific details from before "
-            "the summary, use your search_memory tool."
+            "the summary, use your search_archive tool."
         )
 
     return "\n\n".join(parts)
