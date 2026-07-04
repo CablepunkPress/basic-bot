@@ -2,22 +2,18 @@
 
 Stores verbatim turn pairs with embedding vectors at fold time (when
 messages leave the sliding window and enter the summary). Retrieves
-them by semantic search when the agent invokes search_memory.
+them by semantic search when the agent invokes search_archive.
 
 The embedding call is delegated to embeddings.py, which handles
-provider selection (Vertex, Gemma, local). This module owns storage
-and retrieval only.
+provider selection (Vertex, local llama-server). This module pairs
+text with vectors and hands them to the store. It never writes to
+the database directly.
 """
 
 import logging
 
-from google.cloud import firestore as firestore_module
-from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
-from google.cloud.firestore_v1.vector import Vector
-
-from basic_bot.config import CONVERSATION_COLLECTION
 from basic_bot.embeddings import embed
-from basic_bot.memory import db
+from basic_bot.store import MessageStore
 
 logger = logging.getLogger(__name__)
 
@@ -25,14 +21,14 @@ RAG_RESULT_LIMIT = 5
 
 
 def store_turns(
+    store: MessageStore,
     user_id: str,
     messages: list[dict],
-    collection: str = CONVERSATION_COLLECTION,
 ) -> int:
-    """Embed and store turn pairs from a folded batch into the RAG subcollection.
+    """Embed and store turn pairs from a folded batch.
 
     Takes the raw message dicts (with role, content, seq) from the fold batch,
-    pairs them into turns, embeds in one batch call, and writes to Firestore.
+    pairs them into turns, embeds in one batch call, and writes to the store.
     Returns the number of turns stored.
     """
     turns = []
@@ -55,50 +51,33 @@ def store_turns(
     texts = [t["content"] for t in turns]
     vectors = embed(texts, task="document")
 
-    rag_ref = db.collection(collection).document(user_id).collection("rag")
+    store_ready = []
     for turn, vector in zip(turns, vectors):
-        rag_ref.add({
+        store_ready.append({
             "content": turn["content"],
-            "embedding": Vector(vector),
+            "embedding": vector,
             "seq_start": turn["seq_start"],
             "seq_end": turn["seq_end"],
-            "created_at": firestore_module.SERVER_TIMESTAMP,
         })
+
+    stored = store.store_vectors(user_id, store_ready)
 
     logger.info(
         "Stored %d turn(s) in RAG for user %s (seq %d–%d)",
-        len(turns), user_id, turns[0]["seq_start"], turns[-1]["seq_end"],
+        stored, user_id, turns[0]["seq_start"], turns[-1]["seq_end"],
     )
-    return len(turns)
+    return stored
 
 
 def search_memory(
+    store: MessageStore,
     user_id: str,
     query: str,
     limit: int = RAG_RESULT_LIMIT,
-    collection: str = CONVERSATION_COLLECTION,
 ) -> list[dict]:
     """Search past conversation turns by semantic similarity.
 
-    Returns up to `limit` results, each with verbatim content and seq range.
+    Returns up to limit results, each with verbatim content and seq range.
     """
     query_vector = embed([query], task="query")[0]
-
-    rag_ref = db.collection(collection).document(user_id).collection("rag")
-    results = rag_ref.find_nearest(
-        vector_field="embedding",
-        query_vector=Vector(query_vector),
-        distance_measure=DistanceMeasure.COSINE,
-        limit=limit,
-    )
-
-    matches = []
-    for doc in results.stream():
-        data = doc.to_dict()
-        if data:
-            matches.append({
-                "content": data["content"],
-                "seq_start": data["seq_start"],
-                "seq_end": data["seq_end"],
-            })
-    return matches
+    return store.search_vectors(user_id, query_vector, limit)

@@ -1,12 +1,17 @@
 """One-time backfill: embed all existing messages into the RAG subcollection."""
 
-from basic_bot.memory import db
+from google.cloud import firestore
+
+from basic_bot.store_firestore import FirestoreMessageStore
 from basic_bot.rag import store_turns
 
 COLLECTION = "basic-bot-sessions"
 USER_ID = "client-001"
 
-# Load all messages ordered by seq
+store = FirestoreMessageStore(COLLECTION)
+
+# Load all messages ordered by seq (raw query — no protocol method for "all messages")
+db = firestore.Client()
 messages_ref = (
     db.collection(COLLECTION)
     .document(USER_ID)
@@ -50,7 +55,7 @@ for i in range(0, len(all_messages), BATCH_SIZE):
         print(f"  Skipping seq {first_seq}–{last_seq} (already in RAG)")
         continue
 
-    stored = store_turns(USER_ID, batch, COLLECTION)
+    stored = store_turns(store, USER_ID, batch)
     total_stored += stored
     print(f"  Embedded seq {first_seq}–{last_seq}: {stored} turns")
 

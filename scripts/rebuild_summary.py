@@ -7,7 +7,8 @@ boundary checkpoint via save_summary (which now archives every version).
 Requires ANTHROPIC_API_KEY:
     export ANTHROPIC_API_KEY=$(gcloud secrets versions access latest --secret=basic-bot-api-key)
 """
-from basic_bot.memory import get_messages_after, save_summary
+
+from basic_bot.store_firestore import FirestoreMessageStore
 from basic_bot.chat import summarize_batch
 from basic_bot.config import SUMMARY_INTERVAL
 
@@ -15,7 +16,9 @@ USER = "client-001"
 COLLECTION = "basic-bot-sessions"
 TARGET = 140
 
-all_msgs = get_messages_after(USER, 0, COLLECTION)
+store = FirestoreMessageStore(COLLECTION)
+
+all_msgs = store.get_messages_after(USER, 0)
 summary = ""
 boundary = 0
 while boundary < TARGET:
@@ -23,7 +26,7 @@ while boundary < TARGET:
     batch = [{"role": m["role"], "content": m["content"]} for m in batch_msgs]
     summary = summarize_batch(summary, batch)
     boundary += SUMMARY_INTERVAL
-    save_summary(USER, summary, boundary, COLLECTION)
+    store.save_summary(USER, summary, boundary)
     print(f"folded through {boundary}: {len(summary)} chars")
 
 print(f"\nDone. Boundary {TARGET}, final summary {len(summary)} chars.\n---")

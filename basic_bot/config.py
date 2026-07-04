@@ -12,6 +12,9 @@ DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 FALLBACK_MODEL = "claude-haiku-4-5-20251001"
 SUMMARY_MODEL = "claude-haiku-4-5-20251001"
 
+# Storage backend
+STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "firestore")
+
 # Long-term memory (RAG) — embedding provider config
 EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "vertex")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")

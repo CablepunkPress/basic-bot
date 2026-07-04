@@ -8,7 +8,6 @@ import anthropic
 from anthropic.types import MessageParam, ToolUseBlock
 
 from basic_bot.config import (
-    CONVERSATION_COLLECTION,
     DEFAULT_MODEL,
     FALLBACK_MODEL,
     MESSAGE_LIMIT,
@@ -18,9 +17,10 @@ from basic_bot.config import (
     SUMMARY_MODEL,
     TOOL_BOX_ENABLED,
 )
-from basic_bot.memory import get_messages_after, get_state, load_window, save_summary
+from basic_bot.memory import load_window
 from basic_bot.models import MODELS, build_api_kwargs, extract_reply
 from basic_bot.runtime import BotRuntime
+from basic_bot.store import MessageStore
 
 logger = logging.getLogger(__name__)
 
@@ -64,9 +64,9 @@ def _discover_tools(package_name: str) -> dict:
 def build_tool_registry(package_name: str) -> dict:
     """Build the combined tool registry for a bot.
 
-    Tool belt tools (basic_bot.tool_belt) are always loaded. Plugin tools from the 
-    downstream bot's own tool_box package are auto-discovered and loaded by default. 
-    Plugin tools can be disabled with env var TOOL_BOX_ENABLED=false.
+    Tool belt tools (basic_bot.tool_belt) are always loaded. Plugin tools from the
+    downstream bot's own tool_box package are auto-discovered and loaded by default.
+    For the downstream bot, plugin tools can be disabled with env var TOOL_BOX_ENABLED=false.
     """
     registry = _discover_tools("basic_bot.tool_belt")
 
@@ -211,9 +211,9 @@ def summarize_batch(existing_summary: str, messages: list[dict[str, str]]) -> st
     return extract_reply(response).strip()
 
 
-def maybe_summarize(user_id: str, collection: str = CONVERSATION_COLLECTION) -> bool:
+def maybe_summarize(store: MessageStore, user_id: str) -> bool:
     """Fold the oldest aged-out batch into the summary and embed into RAG."""
-    state = get_state(user_id, collection)
+    state = store.get_state(user_id)
     boundary = state["summarized_through"]
     latest = state["next_seq"] - 1
 
@@ -221,7 +221,7 @@ def maybe_summarize(user_id: str, collection: str = CONVERSATION_COLLECTION) -> 
         return False
 
     try:
-        tail = get_messages_after(user_id, boundary, collection)
+        tail = store.get_messages_after(user_id, boundary)
         chunk = tail[:SUMMARY_INTERVAL]
         batch = [{"role": m["role"], "content": m["content"]} for m in chunk]
         new_through = chunk[-1]["seq"]
@@ -236,7 +236,7 @@ def maybe_summarize(user_id: str, collection: str = CONVERSATION_COLLECTION) -> 
             )
             return False
 
-        save_summary(user_id, new_summary, new_through, collection)
+        store.save_summary(user_id, new_summary, new_through)
 
         logger.info(
             "Summarized user %s through seq %s (%d messages folded, summary %d chars)",
@@ -246,7 +246,7 @@ def maybe_summarize(user_id: str, collection: str = CONVERSATION_COLLECTION) -> 
         try:
             from basic_bot.rag import store_turns
 
-            stored = store_turns(user_id, chunk, collection)
+            stored = store_turns(store, user_id, chunk)
             logger.info("Embedded %d turn(s) in RAG for user %s", stored, user_id)
         except Exception:
             logger.exception(
@@ -280,7 +280,7 @@ async def chat_with_claude(
     logger.info("Processing chat for user %s", user_id)
 
     window, summary, position = load_window(
-        user_id, user_message, runtime.collection,
+        runtime.store, user_id, user_message,
     )
     logger.info(
         "Context: %d prior messages, summary=%s, boundary=seq %s",
@@ -303,7 +303,7 @@ async def chat_with_claude(
     tool_schemas = [
         entry["schema"] for entry in runtime.tool_registry.values()
     ]
-    context = {"user_id": user_id, "collection": runtime.collection}
+    context = {"user_id": user_id, "store": runtime.store}
 
     model_config = MODELS[model_id]
     logger.info(

@@ -9,11 +9,20 @@ Re-runnable: resets the test doc at the start. Inspect results in Firestore
 afterward or read the printed output. Delete the `fold-test` collection when
 fully done.
 """
-from basic_bot.memory import db, save_turn, get_state, load_window
+
+from google.cloud import firestore
+
+from basic_bot.store_firestore import FirestoreMessageStore
+from basic_bot.memory import load_window
 from basic_bot.chat import maybe_summarize
 
 COLLECTION = "fold-test"
 USER = "folduser"
+
+store = FirestoreMessageStore(COLLECTION)
+
+# Raw Firestore cleanup — no protocol method for deleting test data
+db = firestore.Client()
 
 
 def reset():
@@ -26,23 +35,22 @@ def reset():
 reset()
 
 for i in range(1, 21):
-    save_turn(
+    store.save_turn(
         USER,
         f"Message {i}: my lucky number is {i}.",
         f"Noted — lucky number {i} recorded.",
-        collection=COLLECTION,
     )
 
-state = get_state(USER, COLLECTION)
+state = store.get_state(USER)
 print("Before fold:", state["next_seq"] - 1, "messages, boundary at", state["summarized_through"])
 
-fired = maybe_summarize(USER, COLLECTION)
+fired = maybe_summarize(store, USER)
 print("Fold fired:", fired)
 
-state = get_state(USER, COLLECTION)
+state = store.get_state(USER)
 print("After fold: boundary at", state["summarized_through"])
 print("Summary:\n", state["summary"][:400])
 
-messages, summary, position = load_window(USER, "what was my first lucky number?", COLLECTION)
+messages, summary, position = load_window(store, USER, "what was my first lucky number?")
 print("\nWindow size (incl. current message):", len(messages))
 print("Position:", position)

@@ -1,12 +1,16 @@
+"""One-time backfill: add seq numbers to messages that predate the seq system.
+
+This script operates on raw Firestore documents and does not use the
+MessageStore protocol — the data it's fixing predates the schema the
+protocol expects.
+"""
+
 from google.cloud import firestore
 
 db = firestore.Client()
 
 
 def backfill(collection: str):
-    # list_documents() returns virtual parents too (docs that exist only
-    # because they have a messages subcollection) — which is exactly why
-    # the console wasn't showing client-001.
     parents = db.collection(collection).list_documents()
     for parent in parents:
         msgs = list(

@@ -16,12 +16,24 @@ import anthropic
 from fastapi import FastAPI, HTTPException, Request
 
 from basic_bot.chat import build_tool_registry, chat_with_claude, maybe_summarize
-from basic_bot.config import DEFAULT_MODEL
-from basic_bot.memory import db, save_turn
+from basic_bot.config import DEFAULT_MODEL, STORAGE_BACKEND
 from basic_bot.models import MODELS
 from basic_bot.runtime import BotRuntime
 
 logger = logging.getLogger(__name__)
+
+
+def _build_store(backend: str, collection: str):
+    """Create the MessageStore for the configured backend.
+
+    Imports are deferred so a local install never pulls in google.cloud
+    and a cloud deploy never pulls in sqlite3 internals.
+    """
+    if backend == "firestore":
+        from basic_bot.store_firestore import FirestoreMessageStore
+        return FirestoreMessageStore(collection)
+
+    raise ValueError(f"Unknown storage backend: {backend!r}")
 
 
 def create_app(package_name: str, collection: str) -> FastAPI:
@@ -30,7 +42,7 @@ def create_app(package_name: str, collection: str) -> FastAPI:
     Args:
         package_name: Python package name (e.g., "basic_bot", "cablepunk").
             Locates persona, tools, and dashboard config.
-        collection: Firestore collection for conversation data (messages, summaries, rag).
+        collection: Firestore collection or database scope for conversation data.
             Required with no default — prevents accidental cross-contamination.
 
     Tool belt (basic_bot.tool_belt) is always loaded. If the downstream bot has a
@@ -51,12 +63,15 @@ def create_app(package_name: str, collection: str) -> FastAPI:
     persona_path = package_dir / "instructions" / "persona.md"
     persona = persona_path.read_text().strip()
 
+    # Build storage backend
+    store = _build_store(STORAGE_BACKEND, collection)
+
     # Build tool registry
     tool_registry = build_tool_registry(package_name)
 
     runtime = BotRuntime(
         package_name=package_name,
-        collection=collection,
+        store=store,
         persona=persona,
         tool_registry=tool_registry,
     )
@@ -70,6 +85,7 @@ def create_app(package_name: str, collection: str) -> FastAPI:
     async def lifespan(app: FastAPI):
         logger.info("=" * 50)
         logger.info("%s starting (collection: %s)", agent_id, collection)
+        logger.info("Storage backend: %s", STORAGE_BACKEND)
         logger.info("Default model: %s", DEFAULT_MODEL)
         logger.info(
             "Available models: %s",
@@ -83,13 +99,16 @@ def create_app(package_name: str, collection: str) -> FastAPI:
         )
         logger.info("=" * 50)
 
-        try:
-            reg = dict(dashboard)
-            reg["backendUrl"] = os.environ.get("BACKEND_URL", "")
-            db.collection("agents").document(agent_id).set(reg)
-            logger.info("Registered agent '%s' in Firestore", agent_id)
-        except Exception:
-            logger.exception("Failed to register agent — dashboard may be stale")
+        if STORAGE_BACKEND == "firestore":
+            try:
+                from google.cloud import firestore
+                db = firestore.Client()
+                reg = dict(dashboard)
+                reg["backendUrl"] = os.environ.get("BACKEND_URL", "")
+                db.collection("agents").document(agent_id).set(reg)
+                logger.info("Registered agent '%s' in Firestore", agent_id)
+            except Exception:
+                logger.exception("Failed to register agent — dashboard may be stale")
 
         yield
         logger.info("%s shutting down", agent_id)
@@ -120,10 +139,10 @@ def create_app(package_name: str, collection: str) -> FastAPI:
                 runtime, user_id, message, model_id, effort, thinking,
             )
 
-            seq = save_turn(user_id, message, result["reply"], collection)
+            seq = runtime.store.save_turn(user_id, message, result["reply"])
             logger.info("Saved turn (seq %d–%d)", seq, seq + 1)
 
-            if maybe_summarize(user_id, collection):
+            if maybe_summarize(runtime.store, user_id):
                 logger.info("Summary updated for user %s", user_id)
 
             return {

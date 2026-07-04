@@ -1,10 +1,14 @@
 """Smoke test for RAG storage and retrieval."""
 
-from basic_bot.memory import db
+from google.cloud import firestore
+
+from basic_bot.store_firestore import FirestoreMessageStore
 from basic_bot.rag import store_turns, search_memory
 
 COLLECTION = "basic-bot-sessions"
 TEST_USER = "rag-test"
+
+store = FirestoreMessageStore(COLLECTION)
 
 # Fake turn pairs with seq numbers
 test_messages = [
@@ -17,21 +21,22 @@ test_messages = [
 ]
 
 print("Storing 3 turns...")
-stored = store_turns(TEST_USER, test_messages, COLLECTION)
+stored = store_turns(store, TEST_USER, test_messages)
 print(f"Stored {stored} turns")
 
 print("\nSearching for 'elephants peanuts'...")
-results = search_memory(TEST_USER, "elephants peanuts", collection=COLLECTION)
+results = search_memory(store, TEST_USER, "elephants peanuts")
 for r in results:
     print(f"  seq {r['seq_start']}–{r['seq_end']}: {r['content'][:80]}...")
 
 print("\nSearching for 'retro NES games'...")
-results = search_memory(TEST_USER, "retro NES games", collection=COLLECTION)
+results = search_memory(store, TEST_USER, "retro NES games")
 for r in results:
     print(f"  seq {r['seq_start']}–{r['seq_end']}: {r['content'][:80]}...")
 
-# Cleanup
+# Raw Firestore cleanup — no protocol method for deleting test data
 print("\nCleaning up test data...")
+db = firestore.Client()
 rag_ref = db.collection(COLLECTION).document(TEST_USER).collection("rag")
 for doc in rag_ref.stream():
     doc.reference.delete()

@@ -2,6 +2,8 @@
 
 from dataclasses import dataclass
 
+from basic_bot.store import MessageStore
+
 
 @dataclass
 class BotRuntime:
@@ -12,6 +14,6 @@ class BotRuntime:
     """
 
     package_name: str
-    collection: str
+    store: MessageStore
     persona: str
     tool_registry: dict

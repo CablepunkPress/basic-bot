@@ -34,9 +34,9 @@ def handler(context: dict, **tool_input) -> str:
 
     query = tool_input.get("query", "")
     results = search_memory(
+        context["store"],
         context["user_id"],
         query,
-        collection=context["collection"],
     )
 
     if not results:
