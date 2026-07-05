@@ -20,7 +20,7 @@ Basic Bot uses a three-tier memory architecture: *short-term*, *intermediate-ter
 
 **The boundary and failure recovery:**
 
-The boundary is a sequence number that tracks which messages have been folded. Everything behind the boundary has been ingested into RAG and compressed into the summary. Everything ahead of it is still in the sliding window. When a fold succeeds, the boundary advances. When it fails, the boundary stays in place and the next fold retries the same batch + the extra turn(s).
+The boundary is a sequence number that tracks which messages have been folded. Everything behind the boundary has been ingested into RAG and compressed into the summary. Everything ahead of it is still in the sliding window. When a fold succeeds, the boundary advances. If it fails, the boundary stays in place and the next fold retries the same batch.
 
 RAG and summary are coupled by design: if RAG embedding fails, the summary does not fire. The ceiling is a trigger point, not a hard cap. If a fold fails, the window continues to grow until the next successful fold brings it back down. This prevents a gap where messages pass the boundary but are never indexed as vectors. Both summary and RAG succeed or neither does. Regardless, raw messages are never deleted; they remain in the database and can always be recovered.
 
