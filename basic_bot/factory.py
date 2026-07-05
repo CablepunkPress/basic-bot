@@ -279,6 +279,7 @@ def create_app(package_name: str, collection: str) -> FastAPI:
 
             return {
                 "response": result["reply"],
+                "seq": seq,
                 "model_used": result["model_used"],
                 "display_name": result["display_name"],
                 "effort": result["effort"],
