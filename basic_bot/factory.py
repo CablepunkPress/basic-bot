@@ -19,10 +19,12 @@ from fastapi import FastAPI, HTTPException, Request
 from basic_bot.chat import build_tool_registry, chat_with_claude
 from basic_bot.config import (
     DEFAULT_MODEL,
+    HISTORY_LIMIT,
     STORAGE_BACKEND,
     WINDOW_CEILING,
     WINDOW_FLOOR,
 )
+from basic_bot.memory import get_messages
 from basic_bot.models import MODELS
 from basic_bot.rag import store_turns
 from basic_bot.runtime import BotRuntime
@@ -127,6 +129,25 @@ async def _fold_summary(
 
 
 # ---------------------------------------------------------------------------
+# Metadata extraction
+# ---------------------------------------------------------------------------
+
+def _build_metadata(result: dict) -> dict:
+    """Extract the metadata to persist from a chat_with_claude result.
+
+    Values reflect what the API actually returned, not what was requested
+    (except effort, which the API does not echo back).
+    """
+    return {
+        "model_used": result["model_used"],
+        "display_name": result["display_name"],
+        "effort": result["effort"],
+        "thinking": result["thinking"],
+        "fallback": result["fallback"],
+    }
+
+
+# ---------------------------------------------------------------------------
 # Application factory
 # ---------------------------------------------------------------------------
 
@@ -192,6 +213,7 @@ def create_app(package_name: str, collection: str) -> FastAPI:
             len(tool_registry),
             ", ".join(tool_registry.keys()) or "none",
         )
+        logger.info("History limit: %d messages", HISTORY_LIMIT)
         logger.info("=" * 50)
 
         if STORAGE_BACKEND == "firestore":
@@ -234,7 +256,10 @@ def create_app(package_name: str, collection: str) -> FastAPI:
                 runtime, user_id, message, model_id, effort, thinking,
             )
 
-            seq = runtime.store.save_turn(user_id, message, result["reply"])
+            metadata = _build_metadata(result)
+            seq = runtime.store.save_turn(
+                user_id, message, result["reply"], metadata=metadata,
+            )
             logger.info("Saved turn (seq %d–%d)", seq, seq + 1)
 
             # Fold lifecycle: check → RAG (sync) → summary (background)
@@ -265,6 +290,42 @@ def create_app(package_name: str, collection: str) -> FastAPI:
         except Exception as e:
             logger.exception("Chat error: %s", str(e))
             raise HTTPException(status_code=500, detail="Internal server error")
+
+    @app.get("/history")
+    async def history(request: Request):
+        """Return the last N messages with sequence numbers and metadata.
+
+        Query params:
+            session_id: required — identifies the conversation
+            limit: optional — override HISTORY_LIMIT (capped at WINDOW_CEILING)
+        """
+        user_id = request.query_params.get("session_id")
+        if not user_id:
+            raise HTTPException(status_code=400, detail="session_id is required")
+
+        limit_param = request.query_params.get("limit")
+        if limit_param:
+            try:
+                limit = min(int(limit_param), WINDOW_CEILING)
+            except ValueError:
+                limit = HISTORY_LIMIT
+        else:
+            limit = HISTORY_LIMIT
+
+        messages = get_messages(runtime.store, user_id, limit)
+
+        return {
+            "messages": [
+                {
+                    "role": msg["role"],
+                    "content": msg["content"],
+                    "seq": msg["seq"],
+                    "metadata": msg.get("metadata"),
+                }
+                for msg in messages
+            ],
+            "count": len(messages),
+        }
 
     @app.get("/models")
     async def models_endpoint():

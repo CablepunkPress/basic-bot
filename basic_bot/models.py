@@ -4,7 +4,6 @@ from anthropic.types import TextBlock
 
 from basic_bot.config import (
     DEFAULT_MAX_TOKENS,
-    DEFAULT_MODEL,
     EXTENDED_BUDGET_TOKENS,
     THINKING_MAX_TOKENS,
 )

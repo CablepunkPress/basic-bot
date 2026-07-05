@@ -5,7 +5,7 @@ import pkgutil
 from typing import cast
 
 import anthropic
-from anthropic.types import MessageParam, ToolUseBlock
+from anthropic.types import MessageParam, ThinkingBlock, ToolUseBlock
 
 from basic_bot.config import (
     DEFAULT_MODEL,
@@ -15,7 +15,6 @@ from basic_bot.config import (
 from basic_bot.memory import load_window
 from basic_bot.models import MODELS, build_api_kwargs, extract_reply
 from basic_bot.runtime import BotRuntime
-from basic_bot.store import MessageStore
 
 logger = logging.getLogger(__name__)
 
@@ -85,6 +84,16 @@ def _execute_tool(
     except Exception as e:
         logger.exception("Tool '%s' failed", name)
         return json.dumps({"error": str(e)})
+
+
+def _response_used_thinking(response) -> bool:
+    """Check whether the API response actually contains thinking blocks.
+
+    This detects what the model did, not what was requested. If thinking
+    was requested but the model produced no thinking blocks, this returns
+    False. More truthful than echoing the request flag.
+    """
+    return any(isinstance(b, ThinkingBlock) for b in response.content)
 
 
 # ---------------------------------------------------------------------------
@@ -175,7 +184,11 @@ async def chat_with_claude(
     effort: str | None = None,
     thinking: bool = False,
 ) -> dict:
-    """Chat with Claude using conversation memory and tools."""
+    """Chat with Claude using conversation memory and tools.
+
+    Returns a result dict with the reply text and metadata reflecting
+    what the API actually used (not what was requested, where detectable).
+    """
 
     logger.info("Processing chat for user %s", user_id)
 
@@ -253,10 +266,11 @@ async def chat_with_claude(
 
         actual_config = MODELS.get(actual_model, model_config)
         reply = extract_reply(response)
+        actual_thinking = _response_used_thinking(response)
 
         logger.info(
-            "Response from %s (%d chars)",
-            actual_config["display_name"], len(reply),
+            "Response from %s (%d chars, thinking=%s)",
+            actual_config["display_name"], len(reply), actual_thinking,
         )
 
         return {
@@ -264,7 +278,7 @@ async def chat_with_claude(
             "model_used": actual_model,
             "display_name": actual_config["display_name"],
             "effort": effort,
-            "thinking": thinking,
+            "thinking": actual_thinking,
             "fallback": False,
             "model_mismatch": actual_model != model_id,
         }
@@ -291,10 +305,11 @@ async def chat_with_claude(
             actual_model = response.model
             actual_config = MODELS.get(actual_model, MODELS[FALLBACK_MODEL])
             reply = extract_reply(response)
+            actual_thinking = _response_used_thinking(response)
 
             logger.info(
-                "Fallback to %s succeeded (%d chars)",
-                actual_config["display_name"], len(reply),
+                "Fallback to %s succeeded (%d chars, thinking=%s)",
+                actual_config["display_name"], len(reply), actual_thinking,
             )
 
             return {
@@ -302,7 +317,7 @@ async def chat_with_claude(
                 "model_used": actual_model,
                 "display_name": actual_config["display_name"],
                 "effort": None,
-                "thinking": False,
+                "thinking": actual_thinking,
                 "fallback": True,
                 "model_mismatch": actual_model != FALLBACK_MODEL,
             }

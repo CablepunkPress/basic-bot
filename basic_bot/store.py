@@ -37,11 +37,19 @@ class MessageStore(Protocol):
         """
         ...
 
-    def get_messages(self, user_id: str, limit: int) -> list[dict[str, str]]:
+    def get_messages(self, user_id: str, limit: int) -> list[dict]:
         """Last N messages in chronological order.
 
         Returns:
-            [{"role": str, "content": str}, ...]
+            [
+                {
+                    "role": str,
+                    "content": str,
+                    "seq": int,
+                    "metadata": dict | None,  # assistant messages only
+                },
+                ...
+            ]
         """
         ...
 
@@ -49,15 +57,31 @@ class MessageStore(Protocol):
         """All messages with seq > after_seq, ordered ascending.
 
         Returns:
-            [{"role": str, "content": str, "seq": int}, ...]
+            [
+                {
+                    "role": str,
+                    "content": str,
+                    "seq": int,
+                    "metadata": dict | None,  # assistant messages only
+                },
+                ...
+            ]
         """
         ...
 
-    def save_turn(self, user_id: str, user_msg: str, agent_msg: str) -> int:
+    def save_turn(
+        self, user_id: str, user_msg: str, agent_msg: str,
+        metadata: dict | None = None,
+    ) -> int:
         """Atomically save a user+assistant turn pair with sequence numbers.
 
         Assigns the next two sequence numbers and increments the counter.
         Both messages commit together or not at all.
+
+        Metadata (model_used, display_name, effort, thinking, fallback) is
+        stored on the assistant message only. The values should reflect what
+        the API actually returned, not what was requested. The API does not 
+        return actual effort level used, so requested effort is stored instead.
 
         Returns:
             The user message's sequence number.

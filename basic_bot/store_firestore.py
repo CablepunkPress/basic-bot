@@ -5,7 +5,8 @@ lives in Firestore under the collection passed at construction time.
 
 Document structure per user:
     {collection}/{user_id}              — summary, summarized_through, next_seq
-    {collection}/{user_id}/messages/*   — individual messages with seq, role, content
+    {collection}/{user_id}/messages/*   — individual messages with seq, role, content,
+                                          and metadata (assistant messages only)
     {collection}/{user_id}/summaries/*  — append-only summary archive
     {collection}/{user_id}/rag/*        — embedded turn pairs with vectors
 """
@@ -19,9 +20,19 @@ from google.cloud.firestore_v1.base_query import FieldFilter
 from google.cloud.firestore_v1.base_vector_query import DistanceMeasure
 from google.cloud.firestore_v1.vector import Vector
 
-from basic_bot.store import MessageStore
-
 logger = logging.getLogger(__name__)
+
+METADATA_FIELDS = ("model_used", "display_name", "effort", "thinking", "fallback")
+
+
+def _extract_metadata(data: dict) -> dict | None:
+    """Pull metadata fields from a Firestore document dict.
+
+    Returns a metadata dict if any fields are present, None otherwise.
+    User messages will have no metadata fields and return None.
+    """
+    meta = {k: data[k] for k in METADATA_FIELDS if k in data}
+    return meta or None
 
 
 class FirestoreMessageStore:
@@ -54,7 +65,7 @@ class FirestoreMessageStore:
             "next_seq": data.get("next_seq", 1),
         }
 
-    def get_messages(self, user_id: str, limit: int) -> list[dict[str, str]]:
+    def get_messages(self, user_id: str, limit: int) -> list[dict]:
         query = self._messages_ref(user_id).order_by(
             "seq", direction=firestore.Query.DESCENDING,
         ).limit(limit)
@@ -62,26 +73,39 @@ class FirestoreMessageStore:
         docs = list(query.stream())
         docs.reverse()
 
-        return [
-            {"role": doc.to_dict()["role"], "content": doc.to_dict()["content"]}
-            for doc in docs
-        ]
+        messages = []
+        for doc in docs:
+            data = doc.to_dict()
+            msg = {
+                "role": data["role"],
+                "content": data["content"],
+                "seq": data["seq"],
+                "metadata": _extract_metadata(data),
+            }
+            messages.append(msg)
+        return messages
 
     def get_messages_after(self, user_id: str, after_seq: int) -> list[dict]:
         query = self._messages_ref(user_id).where(
             filter=FieldFilter("seq", ">", after_seq),
         ).order_by("seq")
 
-        return [
-            {
-                "role": doc.to_dict()["role"],
-                "content": doc.to_dict()["content"],
-                "seq": doc.to_dict()["seq"],
+        messages = []
+        for doc in query.stream():
+            data = doc.to_dict()
+            msg = {
+                "role": data["role"],
+                "content": data["content"],
+                "seq": data["seq"],
+                "metadata": _extract_metadata(data),
             }
-            for doc in query.stream()
-        ]
+            messages.append(msg)
+        return messages
 
-    def save_turn(self, user_id: str, user_msg: str, agent_msg: str) -> int:
+    def save_turn(
+        self, user_id: str, user_msg: str, agent_msg: str,
+        metadata: dict | None = None,
+    ) -> int:
         parent_ref = self._user_ref(user_id)
         messages_ref = self._messages_ref(user_id)
         transaction = self._db.transaction()
@@ -100,12 +124,19 @@ class FirestoreMessageStore:
                 "seq": next_seq,
                 "created_at": firestore.SERVER_TIMESTAMP,
             })
-            transaction.set(messages_ref.document(), {
+
+            assistant_doc = {
                 "role": "assistant",
                 "content": agent_msg,
                 "seq": next_seq + 1,
                 "created_at": firestore.SERVER_TIMESTAMP,
-            })
+            }
+            if metadata:
+                for key in METADATA_FIELDS:
+                    if key in metadata:
+                        assistant_doc[key] = metadata[key]
+
+            transaction.set(messages_ref.document(), assistant_doc)
             transaction.set(parent_ref, {"next_seq": next_seq + 2}, merge=True)
             return next_seq
 

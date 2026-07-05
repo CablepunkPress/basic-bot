@@ -27,5 +27,8 @@ EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
 EMBEDDING_LOCATION = os.environ.get("EMBEDDING_LOCATION", "us-east5")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "768"))
 
+# History
+HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "10"))
+
 # Tools
 TOOL_BOX_ENABLED = os.getenv("TOOL_BOX_ENABLED", "true").lower() == "true"
