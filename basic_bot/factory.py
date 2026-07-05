@@ -65,11 +65,12 @@ def _should_fold(store: MessageStore, user_id: str) -> dict | None:
     return None
 
 
-def _fold_rag(store: MessageStore, user_id: str, state: dict) -> list[dict]:
+def _fold_rag(store: MessageStore, user_id: str, state: dict) -> list[dict] | None:
     """Synchronous: embed and store the fold batch into RAG.
 
-    Returns the chunk of messages that were folded, for the async
-    summary task to use.
+    Returns the chunk of messages that were folded, or None if embedding
+    failed. When None, the caller must not advance the summary boundary —
+    the next fold will retry the same batch.
     """
     boundary = state["summarized_through"]
     fold_size = WINDOW_CEILING - WINDOW_FLOOR
@@ -80,12 +81,13 @@ def _fold_rag(store: MessageStore, user_id: str, state: dict) -> list[dict]:
     try:
         stored = store_turns(store, user_id, chunk)
         logger.info("Embedded %d turn(s) in RAG for user %s", stored, user_id)
+        return chunk
     except Exception:
         logger.exception(
-            "RAG embedding failed for user %s — turns not indexed", user_id,
+            "RAG embedding failed for user %s — fold aborted, will retry next cycle",
+            user_id,
         )
-
-    return chunk
+        return None
 
 
 async def _fold_summary(
