@@ -8,13 +8,14 @@ Requires ANTHROPIC_API_KEY:
     export ANTHROPIC_API_KEY=$(gcloud secrets versions access latest --secret=basic-bot-api-key)
 """
 
+from basic_bot.config import WINDOW_CEILING, WINDOW_FLOOR
 from basic_bot.store_firestore import FirestoreMessageStore
-from basic_bot.chat import summarize_batch
-from basic_bot.config import SUMMARY_INTERVAL
+from basic_bot.summary import summarize_batch
 
 USER = "client-001"
 COLLECTION = "basic-bot-sessions"
 TARGET = 140
+FOLD_SIZE = WINDOW_CEILING - WINDOW_FLOOR
 
 store = FirestoreMessageStore(COLLECTION)
 
@@ -22,10 +23,10 @@ all_msgs = store.get_messages_after(USER, 0)
 summary = ""
 boundary = 0
 while boundary < TARGET:
-    batch_msgs = [m for m in all_msgs if boundary < m["seq"] <= boundary + SUMMARY_INTERVAL]
+    batch_msgs = [m for m in all_msgs if boundary < m["seq"] <= boundary + FOLD_SIZE]
     batch = [{"role": m["role"], "content": m["content"]} for m in batch_msgs]
     summary = summarize_batch(summary, batch)
-    boundary += SUMMARY_INTERVAL
+    boundary += FOLD_SIZE
     store.save_summary(USER, summary, boundary)
     print(f"folded through {boundary}: {len(summary)} chars")
 

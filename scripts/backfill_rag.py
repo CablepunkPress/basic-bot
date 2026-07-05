@@ -41,7 +41,7 @@ for doc in rag_ref.stream():
 if existing_seqs:
     print(f"Already in RAG: {len(existing_seqs)} turns (seq_starts: {sorted(existing_seqs)})")
 
-# Process in chunks of 20 (matching SUMMARY_INTERVAL) to keep embedding batches reasonable
+# Process in chunks of 20 (matching fold size) to keep embedding batches reasonable
 BATCH_SIZE = 20
 total_stored = 0
 

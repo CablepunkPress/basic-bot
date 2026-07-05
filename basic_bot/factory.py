@@ -1,10 +1,11 @@
 """Factory for building bot applications.
 
-create_app() takes a package name and a Firestore collection and returns
-a fully configured FastAPI application — routes, memory, tools, and
-dashboard registration all wired up.
+create_app() takes a package name and a collection/database scope and
+returns a fully configured FastAPI application — routes, memory, tools,
+and the fold lifecycle all wired up.
 """
 
+import asyncio
 import json
 import logging
 import os
@@ -15,10 +16,18 @@ from pathlib import Path
 import anthropic
 from fastapi import FastAPI, HTTPException, Request
 
-from basic_bot.chat import build_tool_registry, chat_with_claude, maybe_summarize
-from basic_bot.config import DEFAULT_MODEL, STORAGE_BACKEND
+from basic_bot.chat import build_tool_registry, chat_with_claude
+from basic_bot.config import (
+    DEFAULT_MODEL,
+    STORAGE_BACKEND,
+    WINDOW_CEILING,
+    WINDOW_FLOOR,
+)
 from basic_bot.models import MODELS
+from basic_bot.rag import store_turns
 from basic_bot.runtime import BotRuntime
+from basic_bot.store import MessageStore
+from basic_bot.summary import summarize_batch
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +44,89 @@ def _build_store(backend: str, collection: str):
 
     raise ValueError(f"Unknown storage backend: {backend!r}")
 
+
+# ---------------------------------------------------------------------------
+# Fold lifecycle
+# ---------------------------------------------------------------------------
+
+def _should_fold(store: MessageStore, user_id: str) -> dict | None:
+    """Check whether a fold is needed. Returns state dict if yes, None if no.
+
+    A fold triggers when the number of unsummarized messages reaches
+    WINDOW_CEILING. The fold batch size is WINDOW_CEILING - WINDOW_FLOOR.
+    After fold, the sliding window drops back to WINDOW_FLOOR messages.
+    """
+    state = store.get_state(user_id)
+    boundary = state["summarized_through"]
+    latest = state["next_seq"] - 1
+
+    if latest - boundary >= WINDOW_CEILING:
+        return state
+    return None
+
+
+def _fold_rag(store: MessageStore, user_id: str, state: dict) -> list[dict]:
+    """Synchronous: embed and store the fold batch into RAG.
+
+    Returns the chunk of messages that were folded, for the async
+    summary task to use.
+    """
+    boundary = state["summarized_through"]
+    fold_size = WINDOW_CEILING - WINDOW_FLOOR
+
+    tail = store.get_messages_after(user_id, boundary)
+    chunk = tail[:fold_size]
+
+    try:
+        stored = store_turns(store, user_id, chunk)
+        logger.info("Embedded %d turn(s) in RAG for user %s", stored, user_id)
+    except Exception:
+        logger.exception(
+            "RAG embedding failed for user %s — turns not indexed", user_id,
+        )
+
+    return chunk
+
+
+async def _fold_summary(
+    store: MessageStore, user_id: str, existing_summary: str, chunk: list[dict],
+) -> None:
+    """Background: generate and save the updated rolling summary.
+
+    Runs as an asyncio task after the response has been returned to the
+    user. If it fails, RAG already captured the data — the summary
+    catches up on the next successful fold.
+    """
+    new_through = chunk[-1]["seq"]
+    batch = [{"role": m["role"], "content": m["content"]} for m in chunk]
+
+    try:
+        new_summary = await asyncio.to_thread(summarize_batch, existing_summary, batch)
+
+        if not new_summary:
+            logger.warning(
+                "Summary for user %s came back empty — leaving boundary at %d "
+                "to retry next fold",
+                user_id, new_through,
+            )
+            return
+
+        store.save_summary(user_id, new_summary, new_through)
+        logger.info(
+            "Summarized user %s through seq %d (%d messages folded, %d chars)",
+            user_id, new_through, len(batch), len(new_summary),
+        )
+    except Exception:
+        logger.exception(
+            "Background summary failed for user %s — summary left unchanged, "
+            "RAG has the data",
+            user_id,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Application factory
+# ---------------------------------------------------------------------------
 
 def create_app(package_name: str, collection: str) -> FastAPI:
     """Build a fully configured FastAPI bot application.
@@ -86,6 +178,7 @@ def create_app(package_name: str, collection: str) -> FastAPI:
         logger.info("=" * 50)
         logger.info("%s starting (collection: %s)", agent_id, collection)
         logger.info("Storage backend: %s", STORAGE_BACKEND)
+        logger.info("Fold window: %d–%d messages", WINDOW_FLOOR, WINDOW_CEILING)
         logger.info("Default model: %s", DEFAULT_MODEL)
         logger.info(
             "Available models: %s",
@@ -142,8 +235,20 @@ def create_app(package_name: str, collection: str) -> FastAPI:
             seq = runtime.store.save_turn(user_id, message, result["reply"])
             logger.info("Saved turn (seq %d–%d)", seq, seq + 1)
 
-            if maybe_summarize(runtime.store, user_id):
-                logger.info("Summary updated for user %s", user_id)
+            # Fold lifecycle: check → RAG (sync) → summary (background)
+            fold_state = _should_fold(runtime.store, user_id)
+            if fold_state:
+                chunk = _fold_rag(runtime.store, user_id, fold_state)
+                if chunk:
+                    asyncio.create_task(
+                        _fold_summary(
+                            runtime.store,
+                            user_id,
+                            fold_state["summary"],
+                            chunk,
+                        )
+                    )
+                    logger.info("Fold triggered for user %s — RAG done, summary in background", user_id)
 
             return {
                 "response": result["reply"],

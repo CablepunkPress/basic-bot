@@ -6,12 +6,12 @@ has no opinion about whether data lives in Firestore, SQLite, or
 anything else.
 """
 
-from basic_bot.config import MESSAGE_LIMIT
+from basic_bot.config import WINDOW_FLOOR
 from basic_bot.store import MessageStore
 
 
 def get_messages(
-    store: MessageStore, user_id: str, limit: int = MESSAGE_LIMIT,
+    store: MessageStore, user_id: str, limit: int = WINDOW_FLOOR,
 ) -> list[dict[str, str]]:
     """Get recent messages for a user, in chronological order."""
     return store.get_messages(user_id, limit)

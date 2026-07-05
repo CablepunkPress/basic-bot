@@ -12,9 +12,11 @@ fully done.
 
 from google.cloud import firestore
 
-from basic_bot.store_firestore import FirestoreMessageStore
+from basic_bot.config import WINDOW_CEILING, WINDOW_FLOOR
 from basic_bot.memory import load_window
-from basic_bot.chat import maybe_summarize
+from basic_bot.rag import store_turns
+from basic_bot.store_firestore import FirestoreMessageStore
+from basic_bot.summary import summarize_batch
 
 COLLECTION = "fold-test"
 USER = "folduser"
@@ -34,7 +36,8 @@ def reset():
 
 reset()
 
-for i in range(1, 21):
+# Fill to ceiling so a fold triggers
+for i in range(1, WINDOW_CEILING + 1):
     store.save_turn(
         USER,
         f"Message {i}: my lucky number is {i}.",
@@ -44,8 +47,21 @@ for i in range(1, 21):
 state = store.get_state(USER)
 print("Before fold:", state["next_seq"] - 1, "messages, boundary at", state["summarized_through"])
 
-fired = maybe_summarize(store, USER)
-print("Fold fired:", fired)
+# Fold: RAG sync, then summary
+fold_size = WINDOW_CEILING - WINDOW_FLOOR
+tail = store.get_messages_after(USER, state["summarized_through"])
+chunk = tail[:fold_size]
+
+stored = store_turns(store, USER, chunk)
+print(f"RAG: embedded {stored} turn(s)")
+
+batch = [{"role": m["role"], "content": m["content"]} for m in chunk]
+new_summary = summarize_batch(state["summary"], batch)
+print("Summary fired:", bool(new_summary))
+
+if new_summary:
+    new_through = chunk[-1]["seq"]
+    store.save_summary(USER, new_summary, new_through)
 
 state = store.get_state(USER)
 print("After fold: boundary at", state["summarized_through"])
