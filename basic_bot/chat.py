@@ -113,6 +113,10 @@ def _build_memory_section(
     w_end = position["window_end"]
 
     parts = ["# MEMORY"]
+    parts.append(
+        "Each message is prefixed with its sequence number in the format [#N]. "
+        "These are reference annotations — do not reproduce them in your responses."
+    )
     if summary and through:
         parts.append(
             f"Here is a running summary of earlier messages (1 through {through}):\n"
