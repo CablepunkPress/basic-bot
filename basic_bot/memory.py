@@ -6,8 +6,10 @@ has no opinion about whether data lives in Firestore, SQLite, or
 anything else.
 
 Messages from storage carry seq and metadata fields. This module strips
-them down to role/content for the Claude API context window. The richer
-data is available to callers that need it (history endpoint, UI).
+them down to role/content for the Claude API context window, but prefixes
+each message with its sequence number so the model can reference specific
+messages by number. The richer data is available to callers that need it
+(history endpoint, UI).
 """
 
 from basic_bot.config import WINDOW_FLOOR
@@ -33,14 +35,20 @@ def load_window(
 
     Returns (messages, summary, position) where messages is the API-ready
     list stripped to role/content (everything after the summary boundary,
-    plus the incoming turn).
+    plus the incoming turn). Each message is prefixed with its sequence
+    number so the model can reference messages by number.
     """
     state = store.get_state(user_id)
     after = state["summarized_through"]
     window = store.get_messages_after(user_id, after)
 
-    messages = [{"role": m["role"], "content": m["content"]} for m in window]
-    messages.append({"role": "user", "content": current_message})
+    messages = [
+        {"role": m["role"], "content": f"[#{m['seq']}] {m['content']}"}
+        for m in window
+    ]
+
+    current_seq = state["next_seq"]
+    messages.append({"role": "user", "content": f"[#{current_seq}] {current_message}"})
 
     latest = state["next_seq"] - 1
     position = {
