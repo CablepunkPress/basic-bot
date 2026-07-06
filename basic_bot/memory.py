@@ -43,12 +43,12 @@ def load_window(
     window = store.get_messages_after(user_id, after)
 
     messages = [
-        {"role": m["role"], "content": f"[#{m['seq']}] {m['content']}"}
+        {"role": m["role"], "content": f"(seq:{m['seq']}) {m['content']}"}
         for m in window
     ]
 
     current_seq = state["next_seq"]
-    messages.append({"role": "user", "content": f"[#{current_seq}] {current_message}"})
+    messages.append({"role": "user", "content": f"(seq:{current_seq}) {current_message}"})
 
     latest = state["next_seq"] - 1
     position = {
