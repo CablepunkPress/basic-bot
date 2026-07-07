@@ -114,9 +114,8 @@ def _build_memory_section(
 
     parts = ["# MEMORY"]
     parts.append(
-        "Messages below are prefixed with (seq:N) annotations for internal tracking. "
-        "NEVER include seq annotations or sequence numbers in your responses. "
-        "Write your reply as plain text with no sequence prefix."
+        "Messages below contain <!-- seq:N --> annotations for internal tracking. "
+        "Your reply is plain prose beginning with your first content word."
     )
     if summary and through:
         parts.append(

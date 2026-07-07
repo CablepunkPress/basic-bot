@@ -43,7 +43,7 @@ def load_window(
     window = store.get_messages_after(user_id, after)
 
     messages = [
-        {"role": m["role"], "content": f"(seq:{m['seq']}) {m['content']}"}
+        {"role": m["role"], "content": f"<!-- seq:{m['seq']} -->{m['content']}"}
         for m in window
     ]
 
