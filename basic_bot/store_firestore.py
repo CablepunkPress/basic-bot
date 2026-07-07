@@ -157,6 +157,56 @@ class FirestoreMessageStore:
             "created_at": firestore.SERVER_TIMESTAMP,
         })
 
+    def get_messages_in_range(
+        self, user_id: str, start_seq: int, end_seq: int,
+    ) -> list[dict]:
+        query = self._messages_ref(user_id).where(
+            filter=FieldFilter("seq", ">=", start_seq),
+        ).where(
+            filter=FieldFilter("seq", "<=", end_seq),
+        ).order_by("seq")
+
+        messages = []
+        for doc in query.stream():
+            data = doc.to_dict()
+            msg = {
+                "role": data["role"],
+                "content": data["content"],
+                "seq": data["seq"],
+                "metadata": _extract_metadata(data),
+            }
+            messages.append(msg)
+        return messages
+
+    # Need composite index in Firestore. Auto generate via error link.
+    def get_messages_by_date(
+        self, user_id: str, after: str, before: str, limit: int = 50,
+    ) -> list[dict]:
+        from datetime import datetime, timezone
+
+        after_dt = datetime.fromisoformat(after).replace(tzinfo=timezone.utc)
+        before_dt = datetime.fromisoformat(before).replace(tzinfo=timezone.utc)
+
+        query = self._messages_ref(user_id).where(
+            filter=FieldFilter("created_at", ">=", after_dt),
+        ).where(
+            filter=FieldFilter("created_at", "<=", before_dt),
+        ).order_by("created_at").limit(limit)
+
+        messages = []
+        for doc in query.stream():
+            data = doc.to_dict()
+            created = data.get("created_at")
+            msg = {
+                "role": data["role"],
+                "content": data["content"],
+                "seq": data["seq"],
+                "metadata": _extract_metadata(data),
+                "created_at": created.isoformat() if created else None,
+            }
+            messages.append(msg)
+        return messages
+
     # --- Vector storage (RAG) ---
 
     def store_vectors(self, user_id: str, turns: list[dict]) -> int:

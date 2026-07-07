@@ -2,7 +2,8 @@
 
 Always available to every bot (belt tool). Lets the agent retrieve
 verbatim past exchanges that have left the sliding window and been
-folded into the summary.
+folded into the summary. Results include sequence number ranges for
+cross-referencing with recall_message.
 """
 
 import json
@@ -10,10 +11,11 @@ import json
 TOOL = {
     "name": "search_archive",
     "description": (
-        "Search the archive for specific past conversations. "
+        "Search the archive for specific past conversations by topic. "
         "Use this when the user asks about something you discussed before "
         "that isn't visible in your current conversation window or summary. "
-        "Returns verbatim excerpts from past turns."
+        "Returns verbatim excerpts from past turns with their sequence numbers. "
+        "For looking up a specific message number or date, use recall_message instead."
     ),
     "input_schema": {
         "type": "object",
@@ -41,4 +43,14 @@ def handler(context: dict, **tool_input) -> str:
 
     if not results:
         return json.dumps({"results": [], "note": "No matching past conversations found."})
-    return json.dumps({"results": results})
+
+    formatted = []
+    for result in results:
+        formatted.append({
+            "seq_range": f"#{result['seq_start']}–#{result['seq_end']}",
+            "seq_start": result["seq_start"],
+            "seq_end": result["seq_end"],
+            "content": result["content"],
+        })
+
+    return json.dumps({"results": formatted})

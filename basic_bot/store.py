@@ -98,6 +98,46 @@ class MessageStore(Protocol):
         """
         ...
 
+    def get_messages_in_range(
+        self, user_id: str, start_seq: int, end_seq: int,
+    ) -> list[dict]:
+        """Messages with seq between start_seq and end_seq inclusive, ordered ascending.
+
+        Returns:
+            [
+                {
+                    "role": str,
+                    "content": str,
+                    "seq": int,
+                    "metadata": dict | None,
+                },
+                ...
+            ]
+        """
+        ...
+
+    def get_messages_by_date(
+        self, user_id: str, after: str, before: str, limit: int = 50,
+    ) -> list[dict]:
+        """Messages with created_at between after and before, ordered ascending.
+
+        Date strings in ISO format (e.g., "2026-06-15" or "2026-06-15T00:00:00Z").
+        Limit caps results to prevent unbounded queries.
+
+        Returns:
+            [
+                {
+                    "role": str,
+                    "content": str,
+                    "seq": int,
+                    "metadata": dict | None,
+                    "created_at": str,
+                },
+                ...
+            ]
+        """
+        ...
+    
     # --- Vector storage (RAG) ---
 
     def store_vectors(
