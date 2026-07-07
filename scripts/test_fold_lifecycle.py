@@ -4,7 +4,7 @@ Requires ANTHROPIC_API_KEY in the environment:
     export ANTHROPIC_API_KEY=$(gcloud secrets versions access latest --secret=basic-bot-api-key)
 
 Uses the throwaway `fold-lifecycle-test` Firestore collection.
-Delete it from the console when done.
+Collection auto-deleted from the console when done via final reset() call.
 """
 
 import asyncio
