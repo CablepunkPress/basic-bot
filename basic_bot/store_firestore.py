@@ -12,6 +12,7 @@ Document structure per user:
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 from typing import cast
 
 from google.cloud import firestore
@@ -182,10 +183,13 @@ class FirestoreMessageStore:
     def get_messages_by_date(
         self, user_id: str, after: str, before: str, limit: int = 50,
     ) -> list[dict]:
-        from datetime import datetime, timezone
 
         after_dt = datetime.fromisoformat(after).replace(tzinfo=timezone.utc)
         before_dt = datetime.fromisoformat(before).replace(tzinfo=timezone.utc)
+
+        # If before has no time component, cover the full day
+        if "T" not in before:
+            before_dt = before_dt + timedelta(days=1) - timedelta(seconds=1)
 
         query = self._messages_ref(user_id).where(
             filter=FieldFilter("created_at", ">=", after_dt),
