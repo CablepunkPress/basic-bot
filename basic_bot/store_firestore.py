@@ -179,7 +179,6 @@ class FirestoreMessageStore:
             messages.append(msg)
         return messages
 
-    # Need composite index in Firestore. Auto generate via error link.
     def get_messages_by_date(
         self, user_id: str, after: str, before: str, limit: int = 50,
     ) -> list[dict]:
