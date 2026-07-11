@@ -24,12 +24,10 @@ from basic_bot.config import (
     WINDOW_CEILING,
     WINDOW_FLOOR,
 )
+from basic_bot.fold import build_metadata, fold_rag, fold_summary, should_fold
 from basic_bot.memory import get_messages
 from basic_bot.models import MODELS
-from basic_bot.rag import store_turns
 from basic_bot.runtime import BotRuntime
-from basic_bot.store import MessageStore
-from basic_bot.summary import summarize_batch
 
 logger = logging.getLogger(__name__)
 
@@ -45,106 +43,6 @@ def _build_store(backend: str, collection: str):
         return FirestoreMessageStore(collection)
 
     raise ValueError(f"Unknown storage backend: {backend!r}")
-
-
-# ---------------------------------------------------------------------------
-# Fold lifecycle
-# ---------------------------------------------------------------------------
-
-def _should_fold(store: MessageStore, user_id: str) -> dict | None:
-    """Check whether a fold is needed. Returns state dict if yes, None if no.
-
-    A fold triggers when the number of unsummarized messages reaches
-    WINDOW_CEILING. The fold batch size is WINDOW_CEILING - WINDOW_FLOOR.
-    After fold, the sliding window drops back to WINDOW_FLOOR messages.
-    """
-    state = store.get_state(user_id)
-    boundary = state["summarized_through"]
-    latest = state["next_seq"] - 1
-
-    if latest - boundary >= WINDOW_CEILING:
-        return state
-    return None
-
-
-def _fold_rag(store: MessageStore, user_id: str, state: dict) -> list[dict] | None:
-    """Synchronous: embed and store the fold batch into RAG.
-
-    Returns the chunk of messages that were folded, or None if embedding
-    failed. When None, the caller must not advance the summary boundary —
-    the next fold will retry the same batch.
-    """
-    boundary = state["summarized_through"]
-    fold_size = WINDOW_CEILING - WINDOW_FLOOR
-
-    tail = store.get_messages_after(user_id, boundary)
-    chunk = tail[:fold_size]
-
-    try:
-        stored = store_turns(store, user_id, chunk)
-        logger.info("Embedded %d turn(s) in RAG for user %s", stored, user_id)
-        return chunk
-    except Exception:
-        logger.exception(
-            "RAG embedding failed for user %s — fold aborted, will retry next cycle",
-            user_id,
-        )
-        return None
-
-
-async def _fold_summary(
-    store: MessageStore, user_id: str, existing_summary: str, chunk: list[dict],
-) -> None:
-    """Background: generate and save the updated rolling summary.
-
-    Runs as an asyncio task after the response has been returned to the
-    user. If it fails, RAG already captured the data — the summary
-    catches up on the next successful fold.
-    """
-    new_through = chunk[-1]["seq"]
-    batch = [{"role": m["role"], "content": m["content"]} for m in chunk]
-
-    try:
-        new_summary = await asyncio.to_thread(summarize_batch, existing_summary, batch)
-
-        if not new_summary:
-            logger.warning(
-                "Summary for user %s came back empty — leaving boundary at %d "
-                "to retry next fold",
-                user_id, new_through,
-            )
-            return
-
-        store.save_summary(user_id, new_summary, new_through)
-        logger.info(
-            "Summarized user %s through seq %d (%d messages folded, %d chars)",
-            user_id, new_through, len(batch), len(new_summary),
-        )
-    except Exception:
-        logger.exception(
-            "Background summary failed for user %s — summary left unchanged, "
-            "RAG has the data",
-            user_id,
-        )
-
-
-# ---------------------------------------------------------------------------
-# Metadata extraction
-# ---------------------------------------------------------------------------
-
-def _build_metadata(result: dict) -> dict:
-    """Extract the metadata to persist from a chat_with_claude result.
-
-    Values reflect what the API actually returned, not what was requested
-    (except effort, which the API does not echo back).
-    """
-    return {
-        "model_used": result["model_used"],
-        "display_name": result["display_name"],
-        "effort": result["effort"],
-        "thinking": result["thinking"],
-        "fallback": result["fallback"],
-    }
 
 
 # ---------------------------------------------------------------------------
@@ -256,19 +154,20 @@ def create_app(package_name: str, collection: str) -> FastAPI:
                 runtime, user_id, message, model_id, effort, thinking,
             )
 
-            metadata = _build_metadata(result)
+            metadata = build_metadata(result)
             seq = runtime.store.save_turn(
                 user_id, message, result["reply"], metadata=metadata,
             )
             logger.info("Saved turn (seq %d–%d)", seq, seq + 1)
 
             # Fold lifecycle: check → RAG (sync) → summary (background)
-            fold_state = _should_fold(runtime.store, user_id)
+            fold_state = should_fold(runtime.store, user_id)
             if fold_state:
-                chunk = _fold_rag(runtime.store, user_id, fold_state)
+                chunk = fold_rag(runtime.store, user_id, fold_state)
                 if chunk:
                     asyncio.create_task(
-                        _fold_summary(
+                        asyncio.to_thread(
+                            fold_summary,
                             runtime.store,
                             user_id,
                             fold_state["summary"],
