@@ -19,6 +19,7 @@ DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 FALLBACK_MODEL = "claude-haiku-4-5-20251001"
 
 # Storage backend
+SQLITE_DIR = os.environ.get("SQLITE_DIR", os.path.expanduser("~/.basic-bot"))
 STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "firestore")
 
 # Long-term memory (RAG) — embedding provider config

@@ -42,6 +42,12 @@ def _build_store(backend: str, collection: str):
         from basic_bot.store_firestore import FirestoreMessageStore
         return FirestoreMessageStore(collection)
 
+    if backend == "sqlite":
+        from basic_bot.store_sqlite import SQLiteMessageStore
+        from basic_bot.config import SQLITE_DIR
+        db_path = os.path.join(SQLITE_DIR, f"{collection}.db")
+        return SQLiteMessageStore(db_path)
+
     raise ValueError(f"Unknown storage backend: {backend!r}")
 
 
