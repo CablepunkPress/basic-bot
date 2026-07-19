@@ -24,13 +24,15 @@ STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "sqlite")
 
 # Long-term memory (RAG) — local llama-server by default; cloud deploys set EMBEDDING_PROVIDER=vertex
 EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "local")
-EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://localhost:11434")
-EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
-EMBEDDING_LOCATION = os.environ.get("EMBEDDING_LOCATION", "us-east5")
+EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://localhost:11444")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "768"))
 
-# History
+# Long-term memory (RAG) — values for cloud deploys
+EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
+EMBEDDING_LOCATION = os.environ.get("EMBEDDING_LOCATION", "us-east5")
+
+# History (UI loads last N messages at startup for user reference)
 HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "10"))
 
-# Tools
+# Tools — Basic Bot has a tool belt; downstream bots have an additional tool box; auto-detects tool box tools when true
 TOOL_BOX_ENABLED = os.getenv("TOOL_BOX_ENABLED", "true").lower() == "true"
