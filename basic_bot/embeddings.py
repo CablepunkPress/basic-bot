@@ -6,18 +6,22 @@ EMBEDDING_PROVIDER env var without touching any caller.
 
 Providers translate a generic task ("document" | "query") into their own
 mechanism: the Google GenAI SDK uses task_type in EmbedContentConfig;
-a future local model (EmbeddingGemma in a confidential VM) would use
-prompt prefixes. Provider-specific imports are deferred into each class
-so an environment only installs the SDK for the provider it actually uses.
+EmbeddingGemma uses prompt prefixes prepended to the input text.
+Provider-specific imports are deferred into each class so an environment
+only installs the SDK for the provider it actually uses. The local
+provider needs no SDK at all — stdlib urllib over HTTP.
 """
 
+import json
 import logging
+import urllib.request
 from typing import Protocol
 
 from basic_bot.config import (
     EMBEDDING_LOCATION,
     EMBEDDING_MODEL,
     EMBEDDING_PROVIDER,
+    EMBEDDING_URL,
 )
 
 logger = logging.getLogger(__name__)
@@ -26,6 +30,38 @@ logger = logging.getLogger(__name__)
 class EmbeddingProvider(Protocol):
     def embed(self, texts: list[str], task: str = "document") -> list[list[float]]:
         ...
+
+
+class LocalEmbedder:
+    """EmbeddingGemma via llama-server on localhost. Default for local installs.
+
+    llama-server serves an OpenAI-compatible /v1/embeddings endpoint.
+    EmbeddingGemma is trained with task prefixes, so we prepend the
+    appropriate prefix here — the caller's task argument maps to the
+    prompts documented in the EmbeddingGemma model card.
+    """
+
+    QUERY_PREFIX = "task: search result | query: "
+    DOCUMENT_PREFIX = "title: none | text: "
+
+    def __init__(self, base_url: str):
+        self._endpoint = base_url.rstrip("/") + "/v1/embeddings"
+        logger.info("Local embedder ready: %s", self._endpoint)
+
+    def embed(self, texts: list[str], task: str = "document") -> list[list[float]]:
+        prefix = self.QUERY_PREFIX if task == "query" else self.DOCUMENT_PREFIX
+        payload = json.dumps({"input": [prefix + t for t in texts]}).encode("utf-8")
+
+        request = urllib.request.Request(
+            self._endpoint,
+            data=payload,
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(request, timeout=60) as response:
+            data = json.loads(response.read().decode("utf-8"))
+
+        items = sorted(data["data"], key=lambda item: item["index"])
+        return [item["embedding"] for item in items]
 
 
 class VertexEmbedder:
@@ -62,6 +98,8 @@ class VertexEmbedder:
 
 
 def _build_embedder() -> EmbeddingProvider:
+    if EMBEDDING_PROVIDER == "local":
+        return LocalEmbedder(EMBEDDING_URL)
     if EMBEDDING_PROVIDER == "vertex":
         return VertexEmbedder(EMBEDDING_MODEL, EMBEDDING_LOCATION)
     raise ValueError(f"Unknown embedding provider: {EMBEDDING_PROVIDER!r}")

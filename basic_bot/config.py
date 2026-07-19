@@ -18,12 +18,13 @@ EXTENDED_BUDGET_TOKENS = 5000
 DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 FALLBACK_MODEL = "claude-haiku-4-5-20251001"
 
-# Storage backend
+# Storage backend — local SQLite by default; cloud deploys set STORAGE_BACKEND=firestore
 SQLITE_DIR = os.environ.get("SQLITE_DIR", os.path.expanduser("~/.basic-bot"))
-STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "firestore")
+STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "sqlite")
 
-# Long-term memory (RAG) — embedding provider config
-EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "vertex")
+# Long-term memory (RAG) — local llama-server by default; cloud deploys set EMBEDDING_PROVIDER=vertex
+EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "local")
+EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://localhost:11434")
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
 EMBEDDING_LOCATION = os.environ.get("EMBEDDING_LOCATION", "us-east5")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "768"))
