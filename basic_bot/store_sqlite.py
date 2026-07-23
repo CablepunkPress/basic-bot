@@ -395,3 +395,18 @@ class SQLiteMessageStore:
             ]
         finally:
             conn.close()
+
+    def clear_vectors(self, user_id: str) -> int:
+        conn = self._connect()
+        try:
+            cursor = conn.execute(
+                "DELETE FROM vectors WHERE session_id = ?",
+                (user_id,),
+            )
+            conn.commit()
+            return cursor.rowcount
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()

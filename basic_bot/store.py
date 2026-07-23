@@ -166,3 +166,16 @@ class MessageStore(Protocol):
             ordered by similarity, up to limit results.
         """
         ...
+
+    def clear_vectors(self, user_id: str) -> int:
+        """Delete all stored vectors for a session.
+
+        Used when the embedding provider changes and old vectors need
+        to be rebuilt from scratch — the vectors live in a different,
+        incompatible space and must be discarded before re-embedding.
+        Messages, summaries, and state are never touched.
+
+        Returns:
+            Number of vectors deleted.
+        """
+        ...

@@ -20,16 +20,14 @@ logger = logging.getLogger(__name__)
 RAG_RESULT_LIMIT = 5
 
 
-def store_turns(
-    store: MessageStore,
-    user_id: str,
-    messages: list[dict],
-) -> int:
-    """Embed and store turn pairs from a folded batch.
+def pair_turns(messages: list[dict]) -> list[dict]:
+    """Group raw messages into user+assistant turn pairs.
 
-    Takes the raw message dicts (with role, content, seq) from the fold batch,
-    pairs them into turns, embeds in one batch call, and writes to the store.
-    Returns the number of turns stored.
+    Shared by the normal fold path (store_turns) and the re-embedding
+    script (reembed.py) so both chunk history identically.
+
+    Returns:
+        [{"content": str, "seq_start": int, "seq_end": int}, ...]
     """
     turns = []
     i = 0
@@ -44,7 +42,21 @@ def store_turns(
             i += 2
         else:
             i += 1
+    return turns
 
+
+def store_turns(
+    store: MessageStore,
+    user_id: str,
+    messages: list[dict],
+) -> int:
+    """Embed and store turn pairs from a folded batch.
+
+    Takes the raw message dicts (with role, content, seq) from the fold batch,
+    pairs them into turns, embeds in one batch call, and writes to the store.
+    Returns the number of turns stored.
+    """
+    turns = pair_turns(messages)
     if not turns:
         return 0
 
