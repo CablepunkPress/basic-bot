@@ -35,9 +35,6 @@ MODEL_URL = (
     f"/resolve/main/{MODEL_NAME}"
 )
 
-KEYRING_SERVICE = "basic-bot"
-KEYRING_USERNAME = "anthropic_api_key"
-
 TOTAL_STEPS = 5
 
 
@@ -171,17 +168,38 @@ def download_model() -> None:
 
 
 def store_api_key() -> None:
+    """Store the API key via the venv's Python, where keyring is installed.
+
+    build.py runs in the system Python, which does not have keyring.
+    The venv created in step 2 does. Each keyring operation is delegated
+    to the venv interpreter as a subprocess. The key itself is passed
+    over stdin so it never appears in the process list.
+    """
     step(5, "Anthropic API key (stored in your system keyring)")
 
-    import keyring
-    import keyring.errors
+    def keyring_run(
+        code: str, input_text: str | None = None,
+    ) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            [str(venv_python()), "-c", code],
+            input=input_text,
+            capture_output=True,
+            text=True,
+        )
 
-    try:
-        existing = keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
-    except keyring.errors.KeyringError:
-        existing = None
+    check = keyring_run(
+        "import keyring; "
+        "print(keyring.get_password('basic-bot', 'anthropic_api_key') or '')"
+    )
+    if check.returncode != 0:
+        fail(
+            "Could not access your system keyring:\n" + check.stderr.strip() + "\n"
+            "Basic Bot needs a working OS keyring — KWallet or GNOME "
+            "Keyring on Linux, Keychain on macOS. Make sure one is "
+            "installed and unlocked, then re-run build.py."
+        )
 
-    if existing:
+    if check.stdout.strip():
         replace = input(
             "    A key is already stored. Replace it? [y/N] "
         ).strip().lower()
@@ -195,27 +213,30 @@ def store_api_key() -> None:
     if not key:
         fail("no key entered — re-run build.py to try again")
 
-    try:
-        keyring.set_password(KEYRING_SERVICE, KEYRING_USERNAME, key)
-    except keyring.errors.KeyringError as e:
+    store = keyring_run(
+        "import sys, keyring; "
+        "keyring.set_password('basic-bot', 'anthropic_api_key', sys.stdin.read().strip()); "
+        "print(type(keyring.get_keyring()).__module__)",
+        input_text=key,
+    )
+    if store.returncode != 0:
         fail(
-            f"Could not store the key in your system keyring: {e}\n"
-            "Basic Bot needs a working OS keyring — KWallet or GNOME "
-            "Keyring on Linux, Keychain on macOS. Make sure one is "
-            "installed and unlocked, then re-run build.py."
+            "Could not store the key in your system keyring:\n"
+            + store.stderr.strip()
         )
 
-    # Verify it round-trips through a real backend rather than trusting
-    # the write silently succeeded.
-    check = keyring.get_password(KEYRING_SERVICE, KEYRING_USERNAME)
-    if check != key:
+    # Verify it round-trips rather than trusting the write succeeded.
+    verify = keyring_run(
+        "import keyring; "
+        "print(keyring.get_password('basic-bot', 'anthropic_api_key') or '')"
+    )
+    if verify.returncode != 0 or verify.stdout.strip() != key:
         fail(
             "Key was written but could not be read back — your "
             "system keyring may not be working correctly."
         )
 
-    backend = type(keyring.get_keyring()).__module__
-    print(f"    stored in system keyring ({backend})")
+    print(f"    stored in system keyring ({store.stdout.strip()})")
 
 
 def main() -> None:
