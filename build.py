@@ -75,12 +75,24 @@ def check_prerequisites() -> None:
         fail(
             "Missing required tools: " + ", ".join(missing) + "\n"
             "Install them with your system package manager and re-run.\n"
+            "  Arch:           sudo pacman -S git cmake gcc\n"
             "  Debian/Ubuntu:  sudo apt install git cmake build-essential\n"
             "  Fedora:         sudo dnf install git cmake gcc-c++\n"
-            "  Arch:           sudo pacman -S git cmake gcc\n"
             "  macOS:          xcode-select --install && brew install cmake"
         )
     print("    git, cmake, and a C++ compiler found")
+
+    if shutil.which("ccache") is None:
+        print(
+            "    tip: ccache isn't installed. It's optional, but it makes\n"
+            "    rebuilding llama.cpp much faster if you ever need to (a\n"
+            "    version bump, a fresh setup). Not required — build.py will\n"
+            "    continue without it.\n"
+            "      Arch:           sudo pacman -S ccache\n"
+            "      Debian/Ubuntu:  sudo apt install ccache\n"
+            "      Fedora:         sudo dnf install ccache\n"
+            "      macOS:          brew install ccache"
+        )
 
 
 def create_venv() -> None:
