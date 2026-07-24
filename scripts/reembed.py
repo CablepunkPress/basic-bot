@@ -13,9 +13,9 @@ them. This keeps reembed and the fold lifecycle from double-embedding
 the same turns.
 
 Usage:
-    python -m basic_bot.scripts.reembed basic-bot-sessions
-    python -m basic_bot.scripts.reembed basic-bot-sessions --user local
-    python -m basic_bot.scripts.reembed basic-bot-sessions --yes
+    python scripts/reembed.py basic-bot-sessions
+    python scripts/reembed.py basic-bot-sessions --user local
+    python scripts/reembed.py basic-bot-sessions --yes
 """
 
 import argparse
