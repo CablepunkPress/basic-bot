@@ -100,6 +100,7 @@ def start_llama_server() -> subprocess.Popen:
             "-m", str(MODEL_FILE),
             "--embeddings",
             "--port", str(port),
+            "--ubatch-size", "2048",
         ],
         stdout=log,
         stderr=subprocess.STDOUT,
