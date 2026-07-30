@@ -33,6 +33,9 @@ timestamps. Fix the protocol methods to include `created_at` in their
 return dicts. Also: timestamp display in the UI next to seq numbers,
 and local time conversion.
 
+### message recall
+Limit is set at 50. Agent should be aware that when 50 messages are found, there could be more, and should express that, not state there are 50 messages exactly with no possibility of there being more.
+
 ### Repeated fold-failure logging
 First failure logs the full traceback. Subsequent retries of the same
 batch should log a single-line message until the fold succeeds or a
