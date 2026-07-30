@@ -1,0 +1,137 @@
+# TODO
+
+Organized by version target. Items without a version are unscheduled
+but worth tracking.
+
+
+## v0.5.0 — Cleanup and Polish
+
+### persona.md / capabilities.md split
+Decided July 9, deferred from v0.4.0. Two files loaded by
+`build_system_prompt`:
+
+- `persona.md` — user-authored identity, never overwritten by updates
+- `capabilities.md` — ships with Basic Bot, updated by developer per
+  release
+
+Downstream bots provide their own persona. Capabilities describes what
+the engine can do. Dynamic MODEL and MEMORY sections appended at
+runtime as they are now.
+
+### sharpen capabilities text for memory tool triggers
+Capabilities needs to better emphasize memory tools. For example, with repo tools added and talking about files previously worked with out of context window, agent will not use any tools. Upon insistence, agent will use repo tools. Only upon direct "search your memory" will agent use the tool. So, sharpen Capabilities: 
+'When the user asks "have we," "did you ever," "do you remember" — search_archive is step one, not step three.
+
+### NOTE
+Bots also ship with a dashboard.json used in self-registration with, for example, oravec.io dashboard and planned Bountiful Operator.
+
+### created_at gaps
+`get_messages_in_range`, `get_messages`, `get_messages_after` do not
+return `created_at`. This means `recall_message` cannot report message
+dates, and the migration script had to bypass the protocol to preserve
+timestamps. Fix the protocol methods to include `created_at` in their
+return dicts. Also: timestamp display in the UI next to seq numbers,
+and local time conversion.
+
+### Repeated fold-failure logging
+First failure logs the full traceback. Subsequent retries of the same
+batch should log a single-line message until the fold succeeds or a
+new error occurs.
+
+### Favicon 404
+Local web UI returns 404 for `/favicon.ico` on every page load.
+
+### Context window bloat without embeddings
+When llama-server is unavailable, RAG embedding fails and the window
+grows past the ceiling indefinitely. Expected behavior, but worth
+documenting for users and potentially surfacing a warning in the UI.
+
+### Proxy timeout
+Raise `/api/chat` timeout from 30s to 120s. Sonnet with high effort,
+Deep Reasoning, and tools exceeds 30s regularly.
+
+### extract_reply edge case
+Sonnet can return thinking-only responses with no `TextBlock`. Current
+Haiku fallback is correct recovery but the error log is noisy. Clean
+up the logging path.
+
+### store_firestore.py needs clear_vectors
+`clear_vectors` is implemented in SQLite but not Firestore. Needed if
+`reembed.py` ever targets cloud collections.
+
+### Streaming (SSE)
+Deferred. Bot → proxy → frontend SSE chain. Stream only final text,
+not thinking blocks.
+
+### Attachments
+Deferred. Cablepunk Bot needs file attachments for some tool
+workflows. Basic Bot doesn't need them but the engine should support
+them for downstream bots.
+
+
+## v0.6.0 — Open Source Release
+
+### README
+User-facing documentation: what Basic Bot is, how to install, how to
+run, how to build a downstream bot. Feature-focused, not architecture-
+focused (ARCHITECTURE.md covers internals).
+
+This should be done in conjunction with Bountiful GUI. Basic Bot is the engine; Bountiful is the UI. Basic Bot `web\` (UI) and `build.py` and `run.py` will be be deprecated in favor of Bountiful. Basic Bot is "House Agent" of Bountiful.
+
+### Code sweep
+Audit: hardcoded paths, stale comments.
+
+### License
+MIT. Confirm license file is present and `pyproject.toml` declares it.
+
+
+## Engine Features (unscheduled)
+
+### Write tool confirmation gate
+Tools with `requires_confirmation: True` in their definition return a
+preview instead of executing. The chat handler checks this flag before
+dispatching. The UI presents the preview with approve/decline. This is
+an engine-level feature — every downstream bot inherits it.
+
+Read tools execute immediately. Write tools go through the gate. The
+classification lives on the tool definition, not in a separate config.
+
+### Tool search meta-tool
+When the tool count exceeds the reliable range (~20+), a `search_tools`
+meta-tool finds the right tool by description and loads its full
+definition on demand. Same pattern Claude Code uses internally. Build
+when the tool count actually causes selection problems, not before.
+
+### Extend-A-Bot repo
+`tool_box` tools should be able to be dropped in or imported from publicly avaialble repo: `CablepunkPress/extend-a-bot`. `tool_belt` tools are for agent to use its memory with its database. `tool_box` tools are plugin tools for the wider web (GitHub repos, search). Bountiful House Agent also needs access to user database(s) such as default `content.db`.
+
+### API key expiration handling
+Graceful error message when the Anthropic API key is expired or
+invalid, with a hint to run `build.py` again. Currently the error
+surfaces as an unhandled API exception.
+
+### Provider selection
+Default should be local models, secondary should be API calls. Currently, engine only runs on Anthropic models. 
+
+### Model order
+Currently, models display in alphabetical order. Should be in ascending order (Haiku then Sonnet then Opus). When selecting, should always default to low effort level as well.
+
+### Web UI rename
+`web/` directory could be confused with cloud deployment. Consider
+renaming to `app/` with cloud entry point moved to `cloud/`. Touches
+imports, Dockerfile, and downstream bots — coordinate across repos. This is relevant for Bountiful with planned deprecation of Basic Bot UI. 
+
+### Local summarization
+Replace Haiku API call for summary generation with a local model via
+llama.cpp. The infrastructure is already in place. `summary.py` is
+extracted as its own module for exactly this swap.
+
+### Firestore-to-SQLite migration script
+Permanent infrastructure in `scripts/`. Reads messages, state, and
+summaries from a Firestore collection and writes them into a SQLite
+database. Skips vectors (run `reembed.py` after). Preserves original
+sequence numbers and timestamps. Maps user IDs as needed.
+
+Currently exists in Cablepunk Bot's repo (Bountiful prototype) as a one-off. Worth
+generalizing and moving to Basic Bot for any downstream bot migrating
+off Firestore.
