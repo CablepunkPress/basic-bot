@@ -25,7 +25,7 @@ STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "sqlite")
 # Long-term memory (RAG) — local llama-server by default; cloud deploys set EMBEDDING_PROVIDER=vertex
 EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "local")
 EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://localhost:11444")
-EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "768"))
+EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "1024"))
 
 # Long-term memory (RAG) — values for cloud deploys
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
