@@ -12,8 +12,12 @@ messages by number. The richer data is available to callers that need it
 (history endpoint, UI).
 """
 
+import re
+
 from basic_bot.config import WINDOW_FLOOR
 from basic_bot.store import MessageStore
+
+_SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
 
 
 def get_messages(
@@ -43,12 +47,21 @@ def load_window(
     window = store.get_messages_after(user_id, after)
 
     messages = [
-        {"role": m["role"], "content": f"<!-- seq:{m['seq']} -->{m['content']}"}
+        {
+            "role": m["role"],
+            "content": (
+                f"<!-- seq:{m['seq']} -->"
+                f"{_SEQ_ANNOTATION.sub('', m['content']).strip()}"
+            ),
+        }
         for m in window
     ]
 
     current_seq = state["next_seq"]
-    messages.append({"role": "user", "content": f"(seq:{current_seq}) {current_message}"})
+    messages.append({
+        "role": "user",
+        "content": f"<!-- seq:{current_seq} -->{current_message}",
+    })
 
     latest = state["next_seq"] - 1
     position = {
