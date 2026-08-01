@@ -33,24 +33,29 @@ class EmbeddingProvider(Protocol):
 
 
 class LocalEmbedder:
-    """EmbeddingGemma via llama-server on localhost. Default for local installs.
+    """Qwen3-Embedding via llama-server on localhost. Default for local installs.
 
     llama-server serves an OpenAI-compatible /v1/embeddings endpoint.
-    EmbeddingGemma is trained with task prefixes, so we prepend the
-    appropriate prefix here — the caller's task argument maps to the
-    prompts documented in the EmbeddingGemma model card.
+    Qwen3-Embedding uses an instruction prefix on queries only; documents
+    are embedded with no prefix.
     """
 
-    QUERY_PREFIX = "task: search result | query: "
-    DOCUMENT_PREFIX = "title: none | text: "
+    QUERY_INSTRUCT = (
+        "Instruct: Given a search query, retrieve relevant passages "
+        "from past conversation that answer the query\nQuery: "
+    )
 
     def __init__(self, base_url: str):
         self._endpoint = base_url.rstrip("/") + "/v1/embeddings"
         logger.info("Local embedder ready: %s", self._endpoint)
 
     def embed(self, texts: list[str], task: str = "document") -> list[list[float]]:
-        prefix = self.QUERY_PREFIX if task == "query" else self.DOCUMENT_PREFIX
-        payload = json.dumps({"input": [prefix + t for t in texts]}).encode("utf-8")
+        if task == "query":
+            inputs = [self.QUERY_INSTRUCT + t for t in texts]
+        else:
+            inputs = texts
+
+        payload = json.dumps({"input": inputs}).encode("utf-8")
 
         request = urllib.request.Request(
             self._endpoint,
