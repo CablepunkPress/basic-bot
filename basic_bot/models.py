@@ -1,4 +1,5 @@
 import logging
+import re
 
 from anthropic.types import TextBlock
 
@@ -79,9 +80,17 @@ def build_api_kwargs(
     return kwargs
 
 
+_SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
+
+
 def extract_reply(response) -> str:
-    """Extract the text reply from a Claude response, skipping any thinking blocks."""
+    """Extract the text reply from a Claude response, skipping any thinking blocks.
+
+    Strips any <!-- seq:N --> annotations the model may have echoed from
+    the context window — these are internal tracking metadata and must
+    never enter stored message content.
+    """
     for block in response.content:
         if isinstance(block, TextBlock):
-            return block.text
+            return _SEQ_ANNOTATION.sub('', block.text).strip()
     raise ValueError("No text block found in response")
