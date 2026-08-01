@@ -100,8 +100,9 @@ def start_llama_server() -> subprocess.Popen:
             "-m", str(MODEL_FILE),
             "--embeddings",
             "--port", str(port),
-            "--ubatch-size", "8192",  # max tokens per embedding input; larger turn pairs fail the fold
-            "-c", "32768",  # context window, set to Qwen3-Embedding's max
+            "--ubatch-size", "8192",    # max tokens per embedding input
+            "-c", "8192",               # context window — matches ubatch; max for model is 32768
+            "--np", "1",                # single slot — only one client calls this server
         ],
         stdout=log,
         stderr=subprocess.STDOUT,
