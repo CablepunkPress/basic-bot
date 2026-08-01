@@ -231,7 +231,7 @@ backend does not affect embedding, summarization, or any other subsystem.
 Two implementations:
 
 - **`LocalEmbedder`** — HTTP POST to a llama-server instance running
-  EmbeddingGemma 300M on localhost. Uses stdlib `urllib`, no SDK. Default for
+  Qwen3-Embedding-0.6B Q8_0 on localhost. Uses stdlib `urllib`, no SDK. Default for
   local installs.
 - **`VertexEmbedder`** — Google Vertex AI embeddings API. Used for Cloud Run
   deployments.
@@ -241,7 +241,10 @@ The `EMBEDDING_PROVIDER` env var selects the implementation. Default is
 
 **Task prefixes:** EmbeddingGemma requires task-specific prefixes. Documents
 get `"title: none | text: "`, queries get `"task: search result | query: "`.
-These are applied inside the embedder, not by the caller.
+These are applied inside the embedder, not by the caller. 
+**Altered** With the switch to Qwen3-Embedding-0.6B Q8_0, the two prefix constants became one query instruction; 
+documents pass through with no prefixes. Qwen3 should have an `instruct` on queries.
+
 
 **Embedding spaces are model-specific.** Two different embedding models
 produce vectors in incompatible semantic spaces, even at identical dimensions.
@@ -251,10 +254,14 @@ one-time migration script.
 
 ### Local Embedding Stack
 
-EmbeddingGemma 300M Q8_0 GGUF (334MB, 768 dimensions, 2K token context) served
-by llama.cpp compiled from source. CPU-only by default — 300M parameters is
-trivially fast on any modern CPU. llama-server runs on port 11444 and exposes
-an OpenAI-compatible `/v1/embeddings` endpoint.
+Qwen3-Embedding-0.6B Q8_0 GGUF (639MB, 1024 dimensions, 32K token context)
+served by llama.cpp compiled from source. CPU-only by default — 600M
+parameters remains fast on any modern CPU. Hosted at
+`CablepunkPress/Qwen3-Embedding-0.6B-GGUF` on Hugging Face — a self-conversion
+with the `tokenizer.ggml.add_eos_token` metadata fix applied, since the
+official Qwen GGUF release omits it, degrading embedding quality. llama-server
+runs on port 11444 with `-c 32768` and `--ubatch-size 8192`, and exposes an
+OpenAI-compatible `/v1/embeddings` endpoint.
 
 `run.py` manages the llama-server lifecycle: spawn as subprocess, poll
 `/health` until ready (60-second timeout), teardown on Ctrl+C.
@@ -412,3 +419,6 @@ Decisions that might look arbitrary but were made for specific reasons:
 - **Brute-force cosine similarity:** at the scale of a personal assistant
   (thousands to tens of thousands of vectors), brute force in Python is fast
   enough and avoids an ANN index dependency.
+- **Local Embeddings with Qwen:** Model changed from EmbeddingGemma to Qwen3-Embedding-0.6B Q8_0
+  due to EmbeddingGemma's limiting 2K context window easily surpassed in a turn. 
+  Qwen3-Embedding has a context window of 32K.
