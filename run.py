@@ -102,7 +102,6 @@ def start_llama_server() -> subprocess.Popen:
             "--port", str(port),
             "--ubatch-size", "8192",    # max tokens per embedding input
             "-c", "8192",               # context window — matches ubatch; max for model is 32768
-            "--np", "1",                # single slot — only one client calls this server
         ],
         stdout=log,
         stderr=subprocess.STDOUT,
