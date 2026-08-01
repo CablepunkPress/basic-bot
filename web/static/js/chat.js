@@ -359,10 +359,10 @@ function addMessage(role, text, meta = null, seq = null) {
   }
 
   if (role === 'agent') {
-    console.log('FIRST CHARS:', JSON.stringify(text.slice(0, 30)));
+    const cleanText = text.replace(/<!-- seq:\d+ -->/g, '').trim();
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
-    contentDiv.innerHTML = marked.parse(text);
+    contentDiv.innerHTML = marked.parse(cleanText);
     div.appendChild(contentDiv);
 
     if (meta) {
