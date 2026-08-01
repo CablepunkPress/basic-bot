@@ -59,7 +59,7 @@ from basic_bot.config import EMBEDDING_PROVIDER, EMBEDDING_URL
 
 HOME = Path.home() / ".basic-bot"
 SERVER_BIN = HOME / "llama.cpp" / "build" / "bin" / "llama-server"
-MODEL_FILE = HOME / "models" / "embeddinggemma-300M-Q8_0.gguf"
+MODEL_FILE = HOME / "models" / "Qwen3-Embedding-0.6B-Q8_0.gguf"
 LLAMA_LOG = HOME / "llama-server.log"
 
 FLASK_PORT = 5084
@@ -100,7 +100,8 @@ def start_llama_server() -> subprocess.Popen:
             "-m", str(MODEL_FILE),
             "--embeddings",
             "--port", str(port),
-            "--ubatch-size", "2048",
+            "--ubatch-size", "8192",  # max tokens per embedding input; larger turn pairs fail the fold
+            "-c", "32768",  # context window, set to Qwen3-Embedding's max
         ],
         stdout=log,
         stderr=subprocess.STDOUT,
