@@ -11,6 +11,10 @@ from basic_bot.config import (
 
 logger = logging.getLogger(__name__)
 
+
+_SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
+
+
 MODELS = {
     "claude-haiku-4-5-20251001": {
         "display_name": "Haiku 4.5",
@@ -78,9 +82,6 @@ def build_api_kwargs(
         kwargs["max_tokens"] = DEFAULT_MAX_TOKENS
 
     return kwargs
-
-
-_SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
 
 
 def extract_reply(response) -> str:
