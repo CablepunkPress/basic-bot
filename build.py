@@ -28,10 +28,10 @@ LLAMA_REPO = "https://github.com/ggml-org/llama.cpp.git"
 SERVER_BIN = LLAMA_DIR / "build" / "bin" / "llama-server"
 
 MODELS_DIR = HOME / "models"
-MODEL_NAME = "embeddinggemma-300M-Q8_0.gguf"
+MODEL_NAME = "Qwen3-Embedding-0.6B-Q8_0.gguf"
 MODEL_FILE = MODELS_DIR / MODEL_NAME
 MODEL_URL = (
-    "https://huggingface.co/ggml-org/embeddinggemma-300M-GGUF"
+    "https://huggingface.co/CablepunkPress/Qwen3-Embedding-0.6B-GGUF"
     f"/resolve/main/{MODEL_NAME}"
 )
 
@@ -152,7 +152,7 @@ def build_llama_cpp() -> None:
 
 
 def download_model() -> None:
-    step(4, f"Downloading embedding model ({MODEL_NAME}, ~334 MB)")
+    step(4, f"Downloading embedding model ({MODEL_NAME}, ~639 MB)")
 
     if MODEL_FILE.exists():
         skip(f"{MODEL_FILE} exists")
