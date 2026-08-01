@@ -359,6 +359,7 @@ function addMessage(role, text, meta = null, seq = null) {
   }
 
   if (role === 'agent') {
+    console.log('FIRST CHARS:', JSON.stringify(text.slice(0, 30)));
     const contentDiv = document.createElement('div');
     contentDiv.className = 'message-content';
     contentDiv.innerHTML = marked.parse(text);
