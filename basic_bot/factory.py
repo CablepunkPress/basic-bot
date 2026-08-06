@@ -78,9 +78,16 @@ def create_app(package_name: str, collection: str) -> FastAPI:
         raise RuntimeError(f"Package '{package_name}' has no __file__ — cannot locate resources")
     package_dir = Path(package.__file__).parent
 
-    # Load persona
-    persona_path = package_dir / "instructions" / "persona.md"
-    persona = persona_path.read_text().strip()
+    # Persona — user-authored, at repo root of the calling bot
+    persona_path = package_dir.parent / "persona.md"
+    persona_text = persona_path.read_text().strip()
+
+    # Capabilities — engine-owned, always from basic_bot package
+    engine_dir = Path(__file__).parent
+    capabilities_path = engine_dir / "instructions" / "capabilities.md"
+    capabilities_text = capabilities_path.read_text().strip()
+
+    persona = persona_text + "\n\n" + capabilities_text
 
     # Build storage backend
     store = _build_store(STORAGE_BACKEND, collection)
