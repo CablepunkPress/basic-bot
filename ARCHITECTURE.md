@@ -11,36 +11,101 @@ prompt, and a storage backend. Basic Bot itself ships with two belt tools
 system, and entry points for both local and cloud deployment.
 
 
-## Module Map
+## File Tree
+
+```
+basic-bot/
+├── .dockerignore
+├── .gcloudignore
+├── .gitignore
+├── ARCHITECTURE.md
+├── Dockerfile
+├── persona.md
+├── README.md
+├── TODO.md
+├── build.py
+├── dashboard.json
+├── pyproject.toml
+├── requirements.in
+├── requirements.txt
+├── run.py
+├── basic_bot/
+│   ├── __init__.py
+│   ├── app.py
+│   ├── chat.py
+│   ├── config.py
+│   ├── embeddings.py
+│   ├── factory.py
+│   ├── fold.py
+│   ├── memory.py
+│   ├── models.py
+│   ├── rag.py
+│   ├── runtime.py
+│   ├── store.py
+│   ├── store_firestore.py
+│   ├── store_sqlite.py
+│   ├── summary.py
+│   ├── instructions/
+│   │   └── capabilities.md
+│   ├── tool_belt/
+│   │   ├── __init__.py
+│   │   ├── recall_message.py
+│   │   └── search_archive.py
+│   └── tool_box/
+│       └── __init__.py
+├── scripts/
+│   ├── backfill_rag.py
+│   ├── backfill_seq.py
+│   ├── rebuild_summary.py
+│   ├── reembed.py
+│   ├── test_fold.py
+│   ├── test_fold_lifecycle.py
+│   └── test_rag.py
+└── web/
+    ├── __init__.py
+    ├── server.py
+    ├── static/
+    │   ├── css/
+    │   │   └── styles.css
+    │   └── js/
+    │       ├── chat.js
+    │       ├── globals.d.ts
+    │       └── jsconfig.json
+    └── templates/
+        └── index.html
+```
+
+## Contents
 
 ```
 basic_bot/
     __init__.py
-    app.py                  # FastAPI application (cloud entry point)
-    chat.py                 # Core chat loop — sends messages to Claude, handles tool calls
-    config.py               # All configuration constants and env-var overrides
-    embeddings.py           # EmbeddingProvider protocol, LocalEmbedder, VertexEmbedder
-    factory.py              # create_app() — assembles a bot from package name + collection
-    fold.py                 # Fold lifecycle — should_fold, fold_rag, fold_summary, build_metadata
-    memory.py               # Memory orchestration — build_context, store_turns
-    models.py               # Anthropic model definitions and capability flags
-    rag.py                  # RAG operations — pair_turns, store_turns, search
-    runtime.py              # BotRuntime dataclass — holds store, config, system prompt
-    store.py                # MessageStore protocol — the storage interface
-    store_firestore.py      # Firestore implementation of MessageStore
-    store_sqlite.py         # SQLite implementation of MessageStore
-    summary.py              # Haiku summarization — prompt construction, XML fencing
+    app.py                    # FastAPI application (cloud entry point)
+    chat.py                   # Core chat loop — sends messages to Claude, handles tool calls
+    config.py                 # All configuration constants and env-var overrides
+    embeddings.py             # EmbeddingProvider protocol, LocalEmbedder, VertexEmbedder
+    factory.py                # create_app() — assembles a bot from package name + collection
+    fold.py                   # Fold lifecycle — should_fold, fold_rag, fold_summary, build_metadata
+    memory.py                 # Memory orchestration — build_context, store_turns
+    models.py                 # Anthropic model definitions and capability flags
+    rag.py                    # RAG operations — pair_turns, store_turns, search
+    runtime.py                # BotRuntime dataclass — holds store, config, system prompt
+    store.py                  # MessageStore protocol — the storage interface
+    store_firestore.py        # Firestore implementation of MessageStore
+    store_sqlite.py           # SQLite implementation of MessageStore
+    summary.py                # Haiku summarization — prompt construction, XML fencing
 
-tool_belt/
-    __init__.py             # Belt tool discovery
-    recall_message.py       # Deterministic lookup by seq or date range
-    search_archive.py       # Semantic vector search over RAG archive
+    instructions/
+        capabilities.md       # Engine capabilities, # CAPABILITIES
 
-tool_box/
-    __init__.py             # Box tool discovery (empty in Basic Bot)
+    tool_belt/
+        __init__.py           # Belt tool discovery
+        recall_message.py     # Deterministic lookup by seq or date range
+        search_archive.py     # Semantic vector search over RAG archive
 
-build.py                    # One-command local setup: venv, llama.cpp, model, keyring
-run.py                      # Single-command launch: llama-server + Flask on port 5084
+    tool_box/
+        __init__.py           # Box tool discovery (empty in Basic Bot)
+
 
 scripts/
     backfill_rag.py         # Backfill RAG vectors for existing messages
@@ -50,6 +115,7 @@ scripts/
     test_fold.py            # Manual fold lifecycle test
     test_fold_lifecycle.py  # Extended fold lifecycle test
     test_rag.py             # Manual RAG test
+
 
 web/
     __init__.py
@@ -61,7 +127,12 @@ web/
         js/chat.js          # Single file, no modules, no auth
         js/globals.d.ts     # JSDoc type definitions
 
-pyproject.toml              # Base: anthropic only. Extras: [local], [cloud]
+build.py                    # One-command local setup: venv, llama.cpp, model, keyring
+run.py                      # Single-command launch: llama-server + Flask on port 5084
+
+persona.md                  # Unique agent persona, # PERSONA
+
+pyproject.toml              # Base: anthropic only. Extras: [local], [cloud], [dev]
 requirements.txt            # Downstream pinning reference
 ```
 
