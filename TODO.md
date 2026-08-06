@@ -6,25 +6,6 @@ but worth tracking.
 
 ## v0.5.0 — Cleanup and Polish
 
-### persona.md / capabilities.md split
-Decided July 9, deferred from v0.4.0. Two files loaded by
-`build_system_prompt`:
-
-- `persona.md` — user-authored identity, never overwritten by updates
-- `capabilities.md` — ships with Basic Bot, updated by developer per
-  release
-
-Downstream bots provide their own persona. Capabilities describes what
-the engine can do. Dynamic MODEL and MEMORY sections appended at
-runtime as they are now.
-
-### sharpen capabilities text for memory tool triggers
-Capabilities needs to better emphasize memory tools. For example, with repo tools added and talking about files previously worked with out of context window, agent will not use any tools. Upon insistence, agent will use repo tools. Only upon direct "search your memory" will agent use the tool. So, sharpen Capabilities: 
-'When the user asks "have we," "did you ever," "do you remember" — search_archive is step one, not step three.
-
-### NOTE
-Bots also ship with a dashboard.json used in self-registration with, for example, oravec.io dashboard and planned Bountiful Operator.
-
 ### created_at gaps
 `get_messages_in_range`, `get_messages`, `get_messages_after` do not
 return `created_at`. This means `recall_message` cannot report message
@@ -57,10 +38,6 @@ Deep Reasoning, and tools exceeds 30s regularly.
 Sonnet can return thinking-only responses with no `TextBlock`. Current
 Haiku fallback is correct recovery but the error log is noisy. Clean
 up the logging path.
-
-### store_firestore.py needs clear_vectors
-`clear_vectors` is implemented in SQLite but not Firestore. Needed if
-`reembed.py` ever targets cloud collections.
 
 ### Streaming (SSE)
 Deferred. Bot → proxy → frontend SSE chain. Stream only final text,
