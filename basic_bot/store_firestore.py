@@ -245,3 +245,13 @@ class FirestoreMessageStore:
                     "seq_end": data["seq_end"],
                 })
         return matches
+
+    def clear_vectors(self, user_id: str) -> None:
+        """Delete all vectors for a user.
+
+        Required before re-embedding after an embedding model swap.
+        Firestore has no bulk delete — documents are removed one at a time.
+        """
+        rag_ref = self._user_ref(user_id).collection("rag")
+        for doc in rag_ref.stream():
+            doc.reference.delete()
