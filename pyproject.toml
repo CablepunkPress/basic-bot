@@ -22,6 +22,9 @@ cloud = [
     "google-cloud-firestore",
     "google-genai",
 ]
+dev = [
+    "basic-bot[local,cloud]",
+]
 
 [tool.setuptools.packages.find]
 include = ["basic_bot*"]
