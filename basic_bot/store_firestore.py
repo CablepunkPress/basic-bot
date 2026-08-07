@@ -77,11 +77,13 @@ class FirestoreMessageStore:
         messages = []
         for doc in docs:
             data = doc.to_dict()
+            created = data.get("created_at")
             msg = {
                 "role": data["role"],
                 "content": data["content"],
                 "seq": data["seq"],
                 "metadata": _extract_metadata(data),
+                "created_at": created.isoformat() if created else None,
             }
             messages.append(msg)
         return messages
@@ -94,11 +96,13 @@ class FirestoreMessageStore:
         messages = []
         for doc in query.stream():
             data = doc.to_dict()
+            created = data.get("created_at")
             msg = {
                 "role": data["role"],
                 "content": data["content"],
                 "seq": data["seq"],
                 "metadata": _extract_metadata(data),
+                "created_at": created.isoformat() if created else None,
             }
             messages.append(msg)
         return messages
@@ -170,11 +174,13 @@ class FirestoreMessageStore:
         messages = []
         for doc in query.stream():
             data = doc.to_dict()
+            created = data.get("created_at")
             msg = {
                 "role": data["role"],
                 "content": data["content"],
                 "seq": data["seq"],
                 "metadata": _extract_metadata(data),
+                "created_at": created.isoformat() if created else None,
             }
             messages.append(msg)
         return messages
