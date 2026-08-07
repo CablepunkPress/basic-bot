@@ -166,6 +166,7 @@ class SQLiteMessageStore:
                     "content": r["content"],
                     "seq": r["seq"],
                     "metadata": _extract_metadata(r),
+                    "created_at": r["created_at"],
                 }
                 for r in rows
             ]
@@ -186,6 +187,7 @@ class SQLiteMessageStore:
                     "content": r["content"],
                     "seq": r["seq"],
                     "metadata": _extract_metadata(r),
+                    "created_at": r["created_at"],
                 }
                 for r in rows
             ]
@@ -302,6 +304,7 @@ class SQLiteMessageStore:
                     "content": r["content"],
                     "seq": r["seq"],
                     "metadata": _extract_metadata(r),
+                    "created_at": r["created_at"],
                 }
                 for r in rows
             ]
