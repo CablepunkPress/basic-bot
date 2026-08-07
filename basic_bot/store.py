@@ -46,7 +46,8 @@ class MessageStore(Protocol):
                     "role": str,
                     "content": str,
                     "seq": int,
-                    "metadata": dict | None,  # assistant messages only
+                    "metadata": dict | None,   # assistant messages only
+                    "created_at": str | None,  # ISO timestamp
                 },
                 ...
             ]
@@ -62,7 +63,8 @@ class MessageStore(Protocol):
                     "role": str,
                     "content": str,
                     "seq": int,
-                    "metadata": dict | None,  # assistant messages only
+                    "metadata": dict | None,   # assistant messages only
+                    "created_at": str | None,  # ISO timestamp
                 },
                 ...
             ]
@@ -109,7 +111,8 @@ class MessageStore(Protocol):
                     "role": str,
                     "content": str,
                     "seq": int,
-                    "metadata": dict | None,
+                    "metadata": dict | None,   # assistant messages only
+                    "created_at": str | None,  # ISO timestamp
                 },
                 ...
             ]
@@ -130,8 +133,8 @@ class MessageStore(Protocol):
                     "role": str,
                     "content": str,
                     "seq": int,
-                    "metadata": dict | None,
-                    "created_at": str,
+                    "metadata": dict | None,   # assistant messages only
+                    "created_at": str | None,  # ISO timestamp
                 },
                 ...
             ]
