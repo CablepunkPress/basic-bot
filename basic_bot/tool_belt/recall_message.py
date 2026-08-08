@@ -104,7 +104,9 @@ def handler(context: dict, **tool_input) -> str:
 
         return json.dumps({
             "range": f"#{start_seq}–#{end_seq}",
+            "count": len(messages),
             "messages": [_format_message(m) for m in messages],
+            "note": f"Results capped at {MAX_SEQ_RANGE}. There may be more messages outside this range." if len(messages) >= MAX_SEQ_RANGE else None,
         })
 
     # Date range
@@ -122,7 +124,7 @@ def handler(context: dict, **tool_input) -> str:
             "date_range": f"{after_date} to {before_date}",
             "count": len(messages),
             "messages": [_format_message(m) for m in messages],
-            "note": f"Showing up to {MAX_DATE_RESULTS} messages." if len(messages) == MAX_DATE_RESULTS else None,
+            "note": f"Results capped at {MAX_DATE_RESULTS}. There may be more messages in this date range." if len(messages) >= MAX_DATE_RESULTS else None,
         })
 
     return json.dumps({
