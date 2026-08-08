@@ -1,8 +1,5 @@
 # TODO
 
-Organized by version target. Items without a version are unscheduled
-but worth tracking.
-
 
 ## v0.5.0 — Cleanup and Polish
 
@@ -25,29 +22,6 @@ new error occurs.
 ### Favicon 404
 Local web UI returns 404 for `/favicon.ico` on every page load.
 
-### Context window bloat without embeddings
-When llama-server is unavailable, RAG embedding fails and the window
-grows past the ceiling indefinitely. Expected behavior, but worth
-documenting for users and potentially surfacing a warning in the UI.
-
-### Proxy timeout
-Raise `/api/chat` timeout from 30s to 120s. Sonnet with high effort,
-Deep Reasoning, and tools exceeds 30s regularly.
-
-### extract_reply edge case
-Sonnet can return thinking-only responses with no `TextBlock`. Current
-Haiku fallback is correct recovery but the error log is noisy. Clean
-up the logging path.
-
-### Streaming (SSE)
-Deferred. Bot → proxy → frontend SSE chain. Stream only final text,
-not thinking blocks.
-
-### Attachments
-Deferred. Cablepunk Bot needs file attachments for some tool
-workflows. Basic Bot doesn't need them but the engine should support
-them for downstream bots.
-
 
 ## v0.6.0 — Open Source Release
 
@@ -56,16 +30,51 @@ User-facing documentation: what Basic Bot is, how to install, how to
 run, how to build a downstream bot. Feature-focused, not architecture-
 focused (ARCHITECTURE.md covers internals).
 
-This should be done in conjunction with Bountiful GUI. Basic Bot is the engine; Bountiful is the UI. Basic Bot `web\` (UI) and `build.py` and `run.py` will be be deprecated in favor of Bountiful. Basic Bot is "House Agent" of Bountiful.
+This should be done in conjunction with Bountiful GUI. Basic Bot is the engine; Bountiful is the UI. Basic Bot `web\` (UI) and `build.py` and `run.py` will be be deprecated in favor of Bountiful. Basic Bot is "House Agent" of Bountiful. Deferred and revised: see v0.8.0
 
 ### Code sweep
-Audit: hardcoded paths, stale comments.
+Audit: hardcoded paths, stale comments. Dockerfile for cloud needs switched to pyproject.toml.
 
 ### License
 MIT. Confirm license file is present and `pyproject.toml` declares it.
 
 
-## Engine Features (unscheduled)
+## v0.7.0 — Local Models
+
+### Inference provider selection
+Add inference provider switch: API or Local
+
+Default should be local models, secondary should be API calls. Currently, engine only runs on Anthropic models. 
+
+First candidate for local inference is GPT-OSS-20B
+
+### Local summarization
+Replace Haiku API call for summary generation with a local model via
+llama.cpp. The infrastructure is already in place. `summary.py` is
+extracted as its own module for exactly this swap.
+
+Summary model needs replaced with local model. Possible candidate: Qwen3 14B Q4_K_M
+For folds on local on limited hardware, summary needs switched back to sync: 
+both embeddings and summary need to finish before next turn. Have to accept the delay.
+`FOLD_MODE = "sync"` or `FOLD_MODE = "async"` in config.
+
+Bonus: UI should indicate a fold. Opportune time to integrate planned "what's happening" window in UI.
+
+
+## v0.8.0 — Repo Split
+
+### Factory refactor
+`factory.py` changes from package_name to path.
+
+3 repo split: basic-bot (engine), basic-ui (simple one-agent UI), and build-a-bot (clone, configure, assemble).
+
+basic-ui is for standalone agent builds. Bountiful integrates unique agents (as opposed to house agent) in Operator.
+
+
+## v0.9.0 — Plugin Tools
+
+### Tool Box
+Web search tool and repo tools. GitHub tools already built and in-use with Cablepunk.
 
 ### Write tool confirmation gate
 Tools with `requires_confirmation: True` in their definition return a
@@ -85,26 +94,39 @@ when the tool count actually causes selection problems, not before.
 ### Extend-A-Bot repo
 `tool_box` tools should be able to be dropped in or imported from publicly avaialble repo: `CablepunkPress/extend-a-bot`. `tool_belt` tools are for agent to use its memory with its database. `tool_box` tools are plugin tools for the wider web (GitHub repos, search). Bountiful House Agent also needs access to user database(s) such as default `content.db`.
 
+
+## Unscheduled
+
 ### API key expiration handling
 Graceful error message when the Anthropic API key is expired or
 invalid, with a hint to run `build.py` again. Currently the error
 surfaces as an unhandled API exception.
 
-### Provider selection
-Default should be local models, secondary should be API calls. Currently, engine only runs on Anthropic models. 
-
 ### Model order
 Currently, models display in alphabetical order. Should be in ascending order (Haiku then Sonnet then Opus). When selecting, should always default to low effort level as well.
 
-### Web UI rename
-`web/` directory could be confused with cloud deployment. Consider
-renaming to `app/` with cloud entry point moved to `cloud/`. Touches
-imports, Dockerfile, and downstream bots — coordinate across repos. This is relevant for Bountiful with planned deprecation of Basic Bot UI. 
+### extract_reply edge case
+Sonnet can return thinking-only responses with no `TextBlock`. Current
+Haiku fallback is correct recovery but the error log is noisy. Clean
+up the logging path.
 
-### Local summarization
-Replace Haiku API call for summary generation with a local model via
-llama.cpp. The infrastructure is already in place. `summary.py` is
-extracted as its own module for exactly this swap.
+### Context window bloat without embeddings
+When llama-server is unavailable, RAG embedding fails and the window
+grows past the ceiling indefinitely. Expected behavior, but worth
+documenting for users and potentially surfacing a warning in the UI.
+
+### Streaming (SSE)
+Deferred. Bot → proxy → frontend SSE chain. Stream only final text,
+not thinking blocks.
+
+### Attachments
+Cablepunk Bot needs file attachments for some tool
+workflows. Basic Bot doesn't need them but the engine should support
+them for downstream bots.
+
+### Proxy timeout
+Raise `/api/chat` timeout from 30s to 120s. Sonnet with high effort,
+Deep Reasoning, and tools exceeds 30s regularly.
 
 ### Firestore-to-SQLite migration script
 Permanent infrastructure in `scripts/`. Reads messages, state, and
