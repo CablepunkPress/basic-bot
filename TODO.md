@@ -1,28 +1,5 @@
 # TODO
 
-
-## v0.5.0 — Cleanup and Polish
-
-### created_at gaps
-`get_messages_in_range`, `get_messages`, `get_messages_after` do not
-return `created_at`. This means `recall_message` cannot report message
-dates, and the migration script had to bypass the protocol to preserve
-timestamps. Fix the protocol methods to include `created_at` in their
-return dicts. Also: timestamp display in the UI next to seq numbers,
-and local time conversion.
-
-### message recall
-Limit is set at 50. Agent should be aware that when 50 messages are found, there could be more, and should express that, not state there are 50 messages exactly with no possibility of there being more.
-
-### Repeated fold-failure logging
-First failure logs the full traceback. Subsequent retries of the same
-batch should log a single-line message until the fold succeeds or a
-new error occurs.
-
-### Favicon 404
-Local web UI returns 404 for `/favicon.ico` on every page load.
-
-
 ## v0.6.0 — Open Source Release
 
 ### README
@@ -32,8 +9,22 @@ focused (ARCHITECTURE.md covers internals).
 
 This should be done in conjunction with Bountiful GUI. Basic Bot is the engine; Bountiful is the UI. Basic Bot `web\` (UI) and `build.py` and `run.py` will be be deprecated in favor of Bountiful. Basic Bot is "House Agent" of Bountiful. Deferred and revised: see v0.8.0
 
+v0.6.0 README update is engine-focused and link to build-a-bot new repo for end users
+
 ### Code sweep
 Audit: hardcoded paths, stale comments. Dockerfile for cloud needs switched to pyproject.toml.
+
+### Model order
+Currently, models display in alphabetical order. Should be in ascending order (Haiku then Sonnet then Opus). When selecting, should always default to low effort level as well.
+
+### extract_reply edge case
+Sonnet can return thinking-only responses with no `TextBlock`. Current
+Haiku fallback is correct recovery but the error log is noisy. Clean
+up the logging path.
+
+### Proxy timeout
+Raise `/api/chat` timeout from 30s to 120s. Sonnet with high effort,
+Deep Reasoning, and tools exceeds 30s regularly.
 
 ### License
 MIT. Confirm license file is present and `pyproject.toml` declares it.
@@ -70,6 +61,9 @@ Bonus: UI should indicate a fold. Opportune time to integrate planned "what's ha
 
 basic-ui is for standalone agent builds. Bountiful integrates unique agents (as opposed to house agent) in Operator.
 
+### Favicon 404
+Local web UI returns 404 for `/favicon.ico` on every page load.
+
 
 ## v0.9.0 — Plugin Tools
 
@@ -102,18 +96,15 @@ Graceful error message when the Anthropic API key is expired or
 invalid, with a hint to run `build.py` again. Currently the error
 surfaces as an unhandled API exception.
 
-### Model order
-Currently, models display in alphabetical order. Should be in ascending order (Haiku then Sonnet then Opus). When selecting, should always default to low effort level as well.
-
-### extract_reply edge case
-Sonnet can return thinking-only responses with no `TextBlock`. Current
-Haiku fallback is correct recovery but the error log is noisy. Clean
-up the logging path.
-
 ### Context window bloat without embeddings
 When llama-server is unavailable, RAG embedding fails and the window
 grows past the ceiling indefinitely. Expected behavior, but worth
 documenting for users and potentially surfacing a warning in the UI.
+
+### Repeated fold-failure logging
+First failure logs the full traceback. Subsequent retries of the same
+batch should log a single-line message until the fold succeeds or a
+new error occurs.
 
 ### Streaming (SSE)
 Deferred. Bot → proxy → frontend SSE chain. Stream only final text,
@@ -123,10 +114,6 @@ not thinking blocks.
 Cablepunk Bot needs file attachments for some tool
 workflows. Basic Bot doesn't need them but the engine should support
 them for downstream bots.
-
-### Proxy timeout
-Raise `/api/chat` timeout from 30s to 120s. Sonnet with high effort,
-Deep Reasoning, and tools exceeds 30s regularly.
 
 ### Firestore-to-SQLite migration script
 Permanent infrastructure in `scripts/`. Reads messages, state, and
