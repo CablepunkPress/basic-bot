@@ -1,6 +1,21 @@
 # TODO
 
-## v0.6.0 — Open Source Release
+## v0.6.0 — Repo Split
+
+### Factory refactor
+`factory.py` changes from package_name to path.
+
+3 repo split: basic-bot (engine), basic-ui (simple one-agent UI), and build-a-bot (clone, configure, assemble).
+
+basic-ui is for standalone agent builds. Bountiful integrates unique agents (as opposed to house agent) in Operator.
+
+Also: separate repo to handle cloud deployments
+
+### Favicon 404
+Local web UI returns 404 for `/favicon.ico` on every page load.
+
+
+## v0.7.0 — Open Source Release
 
 ### README
 User-facing documentation: what Basic Bot is, how to install, how to
@@ -30,7 +45,7 @@ Deep Reasoning, and tools exceeds 30s regularly.
 MIT. Confirm license file is present and `pyproject.toml` declares it.
 
 
-## v0.7.0 — Local Models
+## v0.8.0 — Local Models
 
 ### Inference provider selection
 Add inference provider switch: API or Local
@@ -50,19 +65,6 @@ both embeddings and summary need to finish before next turn. Have to accept the 
 `FOLD_MODE = "sync"` or `FOLD_MODE = "async"` in config.
 
 Bonus: UI should indicate a fold. Opportune time to integrate planned "what's happening" window in UI.
-
-
-## v0.8.0 — Repo Split
-
-### Factory refactor
-`factory.py` changes from package_name to path.
-
-3 repo split: basic-bot (engine), basic-ui (simple one-agent UI), and build-a-bot (clone, configure, assemble).
-
-basic-ui is for standalone agent builds. Bountiful integrates unique agents (as opposed to house agent) in Operator.
-
-### Favicon 404
-Local web UI returns 404 for `/favicon.ico` on every page load.
 
 
 ## v0.9.0 — Plugin Tools
