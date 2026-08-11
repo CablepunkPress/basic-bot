@@ -16,7 +16,7 @@ from pathlib import Path
 import anthropic
 from fastapi import FastAPI, HTTPException, Request
 
-from basic_bot.chat import build_tool_registry, chat_with_claude
+from basic_bot.chat import chat_with_claude
 from basic_bot.config import (
     DEFAULT_MODEL,
     HISTORY_LIMIT,
@@ -28,6 +28,7 @@ from basic_bot.fold import build_metadata, fold_rag, fold_summary, should_fold
 from basic_bot.memory import get_messages
 from basic_bot.models import MODELS
 from basic_bot.runtime import BotRuntime
+from basic_bot.tools import build_registry
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +94,7 @@ def create_app(package_name: str, collection: str) -> FastAPI:
     store = _build_store(STORAGE_BACKEND, collection)
 
     # Build tool registry
-    tool_registry = build_tool_registry(package_name)
+    tool_registry = build_registry(package_name)
 
     runtime = BotRuntime(
         package_name=package_name,
