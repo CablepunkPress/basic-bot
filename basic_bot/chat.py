@@ -1,7 +1,5 @@
-import importlib
 import json
 import logging
-import pkgutil
 from typing import cast
 
 import anthropic
@@ -10,7 +8,6 @@ from anthropic.types import MessageParam, ThinkingBlock, ToolUseBlock
 from basic_bot.config import (
     DEFAULT_MODEL,
     FALLBACK_MODEL,
-    TOOL_BOX_ENABLED,
 )
 from basic_bot.memory import load_window
 from basic_bot.models import MODELS, build_api_kwargs, extract_reply
@@ -19,56 +16,6 @@ from basic_bot.runtime import BotRuntime
 logger = logging.getLogger(__name__)
 
 client = anthropic.Anthropic()
-
-
-# ---------------------------------------------------------------------------
-# Tool discovery
-# ---------------------------------------------------------------------------
-
-def _discover_tools(package_name: str) -> dict:
-    """Scan a Python package for tool modules, recursing into subpackages.
-
-    Each module that exposes a TOOL dict (the schema) and a handler callable
-    is registered. Modules and packages starting with _ are skipped.
-    """
-    try:
-        package = importlib.import_module(package_name)
-    except ImportError:
-        logger.debug("Tool package '%s' not found — skipping", package_name)
-        return {}
-
-    registry: dict = {}
-    for _, modname, ispkg in pkgutil.iter_modules(package.__path__):
-        if modname.startswith("_"):
-            continue
-        if ispkg:
-            sub_tools = _discover_tools(f"{package_name}.{modname}")
-            registry.update(sub_tools)
-        else:
-            module = importlib.import_module(f"{package_name}.{modname}")
-            if hasattr(module, "TOOL") and hasattr(module, "handler"):
-                name = module.TOOL["name"]
-                registry[name] = {
-                    "schema": module.TOOL,
-                    "handler": module.handler,
-                }
-    return registry
-
-
-def build_tool_registry(package_name: str) -> dict:
-    """Build the combined tool registry for a bot.
-
-    Tool belt tools (basic_bot.tool_belt) are always loaded. Plugin tools from the
-    downstream bot's own tool_box package are auto-discovered and loaded by default.
-    For the downstream bot, plugin tools can be disabled with env var TOOL_BOX_ENABLED=false.
-    """
-    registry = _discover_tools("basic_bot.tool_belt")
-
-    if TOOL_BOX_ENABLED:
-        plugin_tools = _discover_tools(f"{package_name}.tool_box")
-        registry.update(plugin_tools)
-
-    return registry
 
 
 def _execute_tool(
