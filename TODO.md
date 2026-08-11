@@ -2,7 +2,10 @@
 
 ## v0.6.0 — Repo Split
 
-### Factory refactor
+### Factory and tools refactor
+
+Split tool discovery out of `chat.py`
+
 `factory.py` changes from package_name to path.
 
 3 repo split: basic-bot (engine), basic-ui (simple one-agent UI), and build-a-bot (clone, configure, assemble).
