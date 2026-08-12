@@ -16,7 +16,6 @@ class BotRuntime:
 
     agent_id: str
     agent_path: Path
-    package_name: str
     store: MessageStore
     persona: str
     tool_registry: dict
