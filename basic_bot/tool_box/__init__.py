@@ -1,1 +1,0 @@
-"""Plugin tools — drop-in tools for downstream bots."""
