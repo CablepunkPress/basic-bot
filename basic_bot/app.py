@@ -31,7 +31,7 @@ logger = logging.getLogger(__name__)
 
 # Resolve agent path — the repo root (parent of this package)
 AGENT_PATH = Path(__file__).parent.parent
-runtime = create_runtime(AGENT_PATH, "basic_bot")
+runtime = create_runtime(AGENT_PATH)
 
 
 @asynccontextmanager
