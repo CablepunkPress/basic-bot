@@ -1,7 +1,5 @@
 import os
 
-CONVERSATION_COLLECTION = "basic-bot-sessions"
-
 # Sliding context window
 WINDOW_FLOOR = int(os.environ.get("WINDOW_FLOOR", "20"))     # minimum messages in the sliding window
 WINDOW_CEILING = int(os.environ.get("WINDOW_CEILING", "40"))  # fold triggers when messages reach this count
@@ -19,7 +17,6 @@ DEFAULT_MODEL = "claude-haiku-4-5-20251001"
 FALLBACK_MODEL = "claude-haiku-4-5-20251001"
 
 # Storage backend — local SQLite by default; cloud deploys set STORAGE_BACKEND=firestore
-SQLITE_DIR = os.environ.get("SQLITE_DIR", os.path.expanduser("~/.basic-bot"))
 STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "sqlite")
 
 # Long-term memory (RAG) — local llama-server by default; cloud deploys set EMBEDDING_PROVIDER=vertex
