@@ -1,23 +1,5 @@
 # TODO
 
-## v0.6.0 — Repo Split
-
-### Factory and tools refactor
-
-Split tool discovery out of `chat.py`
-
-`factory.py` changes from package_name to path.
-
-3 repo split: basic-bot (engine), basic-ui (simple one-agent UI), and build-a-bot (clone, configure, assemble).
-
-basic-ui is for standalone agent builds. Bountiful integrates unique agents (as opposed to house agent) in Operator.
-
-Also: separate repo to handle cloud deployments
-
-### Favicon 404
-Local web UI returns 404 for `/favicon.ico` on every page load.
-
-
 ## v0.7.0 — Open Source Release
 
 ### README
@@ -49,6 +31,12 @@ MIT. Confirm license file is present and `pyproject.toml` declares it.
 
 
 ## v0.8.0 — Local Models
+
+### Deployment
+Local vs Cloud
+
+### Models
+Local vs API
 
 ### Inference provider selection
 Add inference provider switch: API or Local
