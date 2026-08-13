@@ -5,7 +5,7 @@ WINDOW_FLOOR = int(os.environ.get("WINDOW_FLOOR", "20"))     # minimum messages 
 WINDOW_CEILING = int(os.environ.get("WINDOW_CEILING", "40"))  # fold triggers when messages reach this count
 
 # Summarization
-SUMMARY_MAX_TOKENS = int(os.environ.get("SUMMARY_MAX_TOKENS", "1000"))
+SUMMARY_MAX_TOKENS = int(os.environ.get("SUMMARY_MAX_TOKENS", "2000"))
 SUMMARY_MIN_CHARS = int(os.environ.get("SUMMARY_MIN_CHARS", "40"))
 SUMMARY_MODEL = "claude-haiku-4-5-20251001"
 
