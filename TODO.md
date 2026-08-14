@@ -11,6 +11,11 @@ This should be done in conjunction with Bountiful GUI. Basic Bot is the engine; 
 
 v0.6.0 README update is engine-focused and link to build-a-bot new repo for end users
 
+### Build-A-Bot Shims
+Script logic into engine package; template scripts become stable shims
+`run.py` calls `basic_bot.launch(ROOT)`
+`add_secrets.py` calls `basic_bot.setup_secrets(ROOT)`
+
 ### Code sweep
 Audit: hardcoded paths, stale comments. Dockerfile for cloud needs switched to pyproject.toml.
 
