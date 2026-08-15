@@ -64,6 +64,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
 
     # Persona — user-authored, in the agent directory
     persona_text = (agent_path / "persona.md").read_text().strip()
+    persona_text = persona_text.replace("{{ name }}", dashboard.get("name", agent_id))
 
     # Capabilities — engine-owned, always from the basic_bot package
     capabilities_path = Path(__file__).parent / "instructions" / "capabilities.md"
