@@ -1,5 +1,7 @@
 # TODO
 
+Covers basic-bot (engine), plus basic-ui, build-a-bot, extend-a-bot.
+
 ## v0.7.0 — Open Source Release
 
 ### README
@@ -11,21 +13,6 @@ This should be done in conjunction with Bountiful GUI. Basic Bot is the engine; 
 
 v0.6.0 README update is engine-focused and link to build-a-bot new repo for end users
 
-### Code sweep
-Audit: hardcoded paths, stale comments. Dockerfile for cloud needs switched to pyproject.toml.
-
-### Model order
-Currently, models display in alphabetical order. Should be in ascending order (Haiku then Sonnet then Opus). When selecting, should always default to low effort level as well.
-
-### extract_reply edge case
-Sonnet can return thinking-only responses with no `TextBlock`. Current
-Haiku fallback is correct recovery but the error log is noisy. Clean
-up the logging path.
-
-### Proxy timeout
-Raise `/api/chat` timeout from 30s to 120s. Sonnet with high effort,
-Deep Reasoning, and tools exceeds 30s regularly.
-
 ### License
 MIT. Confirm license file is present and `pyproject.toml` declares it.
 
@@ -35,18 +22,20 @@ MIT. Confirm license file is present and `pyproject.toml` declares it.
 ### Deployment
 Local vs Cloud
 
-Local: build-a-bot
-Cloud: build-a-bot-cloud
+Local deployment: build-a-bot
+Cloud deployment: build-a-bot-cloud
 
 ### Inference provider selection for local deployment
 Add inference provider switch: API or Local
 
 Local first. Same provider. Idea is to run on minimal hardware AND not need to use add_secrets.py. Target: Nvidia 3060 12GB + 32GB. Future target: build for desktop agent computers (Nvidia DGX Spark, AMD Ryzen AI Halo)
+[local] = local deployment, local models
 Embeddings:
 Summarization:
 Inference: 
 Inference (coding): GPT-OSS-20B
 
+[hybrid] = local deployment, cloud models
 API second. Same provider. Idea is to not run any model locally and rely entirely on API calls.
 Embeddings:
 Summarization:
@@ -54,6 +43,19 @@ Inference:
 Inference (optional): Claude API, etc.
 
 Currently, embeddings are Qwen3-Embedding running on CPU, summarization is Haiku 4.5 API, and inference is Claude API. Default should be one provider of the full stack (embeddings, summarization, inference) for each deployment scenario. One API key for the full stack, not 2-3. Add additional keys for inference choice. Embeddings and summarization needs to be opionated.
+
+
+### Chat abstraction
+
+chat_with_model (currently chat_with_claude)
+
+messages: list of {role, content}
+
+response: {text, tool_calls, thinking, model_used}
+
+tool_call: {name, input, id}
+
+tool_result: {id, content}
 
 ### Build-A-Bot Shims
 Script logic into engine package; template scripts become stable shims
@@ -75,8 +77,10 @@ Bonus: UI should indicate a fold. Opportune time to integrate planned "what's ha
 
 ## v0.9.0 — Plugin Tools
 
-### Tool Box
-Web search tool and repo tools. GitHub tools already built and in-use with Cablepunk.
+### Tool Box --> extend-a-bot
+Web search tool
+GitHub repo tools (completed)
+central.db read-only tool 
 
 ### Write tool confirmation gate
 Tools with `requires_confirmation: True` in their definition return a
@@ -93,9 +97,6 @@ meta-tool finds the right tool by description and loads its full
 definition on demand. Same pattern Claude Code uses internally. Build
 when the tool count actually causes selection problems, not before.
 
-### Extend-A-Bot repo
-`tool_box` tools should be able to be dropped in or imported from publicly avaialble repo: `CablepunkPress/extend-a-bot`. `tool_belt` tools are for agent to use its memory with its database. `tool_box` tools are plugin tools for the wider web (GitHub repos, search). Bountiful House Agent also needs access to user database(s) such as default `content.db`.
-
 
 ## Unscheduled
 
@@ -109,10 +110,22 @@ When llama-server is unavailable, RAG embedding fails and the window
 grows past the ceiling indefinitely. Expected behavior, but worth
 documenting for users and potentially surfacing a warning in the UI.
 
+### extract_reply edge case
+Sonnet can return thinking-only responses with no `TextBlock`. Current
+Haiku fallback is correct recovery but the error log is noisy. Clean
+up the logging path.
+
+### Proxy timeout
+Raise `/api/chat` timeout from 30s to 120s. Sonnet with high effort,
+Deep Reasoning, and tools exceeds 30s regularly.
+
 ### Repeated fold-failure logging
 First failure logs the full traceback. Subsequent retries of the same
 batch should log a single-line message until the fold succeeds or a
 new error occurs.
+
+### Model order
+Currently, models display in alphabetical order. Should be in ascending order (Haiku then Sonnet then Opus). When selecting, should always default to low effort level as well.
 
 ### Scripts
 Scripts needed reviewed for relevancy and updated.
