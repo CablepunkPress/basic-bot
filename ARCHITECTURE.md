@@ -1,495 +1,283 @@
 # Architecture
 
-Basic Bot is a general-purpose AI assistant engine built on Anthropic's Claude
-models. It provides chat, three-tier memory, and a tool system designed to be
-inherited by downstream bots that add domain-specific capabilities.
+Basic Bot is a general-purpose AI assistant engine built on Anthropic's
+Claude models. It provides chat, three-tier memory, and a tool system.
+Agents are directories of configuration that the engine assembles at
+startup — see [build-a-bot](https://github.com/CablepunkPress/build-a-bot)
+for the agent template and
+[basic-ui](https://github.com/CablepunkPress/basic-ui) for the reference
+interface.
 
-The engine is pip-installable. Downstream bots depend on it via
-`git+https://` in their requirements and extend it by adding tools, a system
-prompt, and a storage backend. Basic Bot itself ships with two belt tools
-(`search_archive` and `recall_message`), a sliding-window/summary/RAG memory
-system, and entry points for both local and cloud deployment.
+This document covers engine internals: how the pieces connect and why
+they're built the way they are.
 
-
-## File Tree
-
-```
-basic-bot/
-├── .dockerignore
-├── .gcloudignore
-├── .gitignore
-├── ARCHITECTURE.md
-├── Dockerfile
-├── persona.md
-├── README.md
-├── TODO.md
-├── build.py
-├── dashboard.json
-├── pyproject.toml
-├── requirements.in
-├── requirements.txt
-├── run.py
-├── basic_bot/
-│   ├── __init__.py
-│   ├── app.py
-│   ├── chat.py
-│   ├── config.py
-│   ├── embeddings.py
-│   ├── factory.py
-│   ├── fold.py
-│   ├── memory.py
-│   ├── models.py
-│   ├── rag.py
-│   ├── runtime.py
-│   ├── store.py
-│   ├── store_firestore.py
-│   ├── store_sqlite.py
-│   ├── summary.py
-│   ├── instructions/
-│   │   └── capabilities.md
-│   ├── tool_belt/
-│   │   ├── __init__.py
-│   │   ├── recall_message.py
-│   │   └── search_archive.py
-│   └── tool_box/
-│       └── __init__.py
-├── scripts/
-│   ├── backfill_rag.py
-│   ├── backfill_seq.py
-│   ├── rebuild_summary.py
-│   ├── reembed.py
-│   ├── test_fold.py
-│   ├── test_fold_lifecycle.py
-│   └── test_rag.py
-└── web/
-    ├── __init__.py
-    ├── server.py
-    ├── static/
-    │   ├── css/
-    │   │   └── styles.css
-    │   └── js/
-    │       ├── chat.js
-    │       ├── globals.d.ts
-    │       └── jsconfig.json
-    └── templates/
-        └── index.html
-```
-
-## Contents
+## Package Contents
 
 ```
 basic_bot/
-    __init__.py
-    app.py                    # FastAPI application (cloud entry point)
-    chat.py                   # Core chat loop — sends messages to Claude, handles tool calls
-    config.py                 # All configuration constants and env-var overrides
-    embeddings.py             # EmbeddingProvider protocol, LocalEmbedder, VertexEmbedder
-    factory.py                # create_app() — assembles a bot from package name + collection
-    fold.py                   # Fold lifecycle — should_fold, fold_rag, fold_summary, build_metadata
-    memory.py                 # Memory orchestration — build_context, store_turns
-    models.py                 # Anthropic model definitions and capability flags
-    rag.py                    # RAG operations — pair_turns, store_turns, search
-    runtime.py                # BotRuntime dataclass — holds store, config, system prompt
-    store.py                  # MessageStore protocol — the storage interface
-    store_firestore.py        # Firestore implementation of MessageStore
-    store_sqlite.py           # SQLite implementation of MessageStore
-    summary.py                # Haiku summarization — prompt construction, XML fencing
-
+    __init__.py           # Package version (single source of truth)
+    chat.py               # Chat loop — sends messages to Claude, executes tool calls
+    config.py             # Configuration constants and env-var overrides
+    embeddings.py         # EmbeddingProvider protocol, LocalEmbedder, VertexEmbedder
+    factory.py            # create_runtime() — assembles a BotRuntime from an agent directory
+    fold.py               # Fold lifecycle — should_fold, fold_rag, fold_summary
+    memory.py             # Memory orchestration — context building, turn storage
+    models.py             # Model definitions, capability flags, reply extraction
+    rag.py                # RAG operations — turn pairing, vector storage, search
+    runtime.py            # BotRuntime dataclass — the assembled agent
+    store.py              # MessageStore protocol — the storage interface
+    store_firestore.py    # Firestore implementation (cloud)
+    store_sqlite.py       # SQLite implementation (local, default)
+    summary.py            # Summarization — prompt construction, XML fencing
+    tools.py              # Tool discovery and registry assembly
     instructions/
-        capabilities.md       # Engine capabilities, # CAPABILITIES
-
+        capabilities.md   # Engine-owned system prompt section
     tool_belt/
-        __init__.py           # Belt tool discovery
-        recall_message.py     # Deterministic lookup by seq or date range
-        search_archive.py     # Semantic vector search over RAG archive
+        recall_message.py # Deterministic lookup by seq or date range
+        search_archive.py # Semantic vector search over the RAG archive
 
-    tool_box/
-        __init__.py           # Box tool discovery (empty in Basic Bot)
-
-
-scripts/
-    backfill_rag.py         # Backfill RAG vectors for existing messages
-    backfill_seq.py         # Backfill sequence numbers on legacy messages
-    rebuild_summary.py      # Rebuild rolling summary from scratch
-    reembed.py              # Re-embed all vectors (required after model swap)
-    test_fold.py            # Manual fold lifecycle test
-    test_fold_lifecycle.py  # Extended fold lifecycle test
-    test_rag.py             # Manual RAG test
-
-
-web/
-    __init__.py
-    server.py               # Flask application (local entry point)
-    templates/
-        index.html          # Jinja2 chat interface
-    static/
-        css/styles.css      # System font stack, dark mode
-        js/chat.js          # Single file, no modules, no auth
-        js/globals.d.ts     # JSDoc type definitions
-
-build.py                    # One-command local setup: venv, llama.cpp, model, keyring
-run.py                      # Single-command launch: llama-server + Flask on port 5084
-
-persona.md                  # Unique agent persona, # PERSONA
-
-pyproject.toml              # Base: anthropic only. Extras: [local], [cloud], [dev]
-requirements.txt            # Downstream pinning reference
+scripts/                  # Maintenance utilities (reembed, rebuild_summary, backfills, tests)
 ```
 
-## Factory Pattern and Downstream Inheritance
+## The Factory
 
-`create_app(package_name, collection)` is the entry point for assembling a
-bot. The `package_name` identifies the downstream package (e.g.
-`"cablepunk_bot"`), which determines where to look for a system prompt and
-tool box. The `collection` identifies the conversation namespace.
+`create_runtime(agent_path)` is the engine's entry point. It takes one
+argument — the path to an agent directory — and derives everything else:
 
-The factory builds a `BotRuntime` dataclass that holds the store, embedder,
-system prompt, model config, and tool registry. This runtime is passed through
-the chat loop to every component that needs it.
+1. Reads `dashboard.json`; the `id` field becomes the agent's identity
+2. Configures logging with the agent ID as prefix
+3. Reads `persona.md`, substituting `{{ name }}` with the display name
+4. Appends the engine's `capabilities.md` to form the system prompt
+5. Builds the storage backend — SQLite at `~/.{id}/{id}.db` by default
+6. Discovers tools — belt tools from the engine package, plugin tools
+   from `agent_path/tools/`
+7. Returns a `BotRuntime` dataclass holding all of it
 
-**Identity decisions belong in code** — the `create_app()` call in a
-downstream bot's entry point. Tuning goes in config (env vars). Secrets go in
-Secret Manager (cloud) or keyring (local). This separation is deliberate:
-identity is version-controlled, tuning is environment-specific, secrets are
-never in code.
+The factory builds runtimes, not web applications. Flask, FastAPI, or
+any other serving layer wraps the runtime in routes. This separation
+keeps the engine framework-agnostic.
 
+**Identity flows from `dashboard.json`.** The `id` names the database,
+the dot-directory, the keyring service, and the log prefix. One
+declaration, everything derived.
 
 ## Tool System
 
-Tools are organized into two directories:
+`tools.py` assembles the registry from two sources:
 
-- **`tool_belt/`** — always active, inherited by every downstream bot. These
-  are the core capabilities: `search_archive` (semantic vector search) and
-  `recall_message` (deterministic seq/date lookup). Belt tools ship with
-  Basic Bot and should not be overridden.
+- **Belt tools** (`tool_belt/`) — ship with the engine, always loaded,
+  discovered by package import. These are the agent's memory access:
+  `search_archive` and `recall_message`.
+- **Plugin tools** (`agent_path/tools/`) — discovered from the
+  filesystem. Each subdirectory is a tool group. Files starting with
+  `_` load as shared modules that sibling tools import directly
+  (`from _auth import auth_headers`); every other `.py` file exposing
+  a `TOOL` dict and a `handler` callable registers as a tool.
 
-- **`tool_box/`** — domain-specific tools added by downstream bots. Empty in
-  Basic Bot. A downstream bot provides its own `tool_box` package with tool
-  modules. `build_tool_registry()` auto-discovers tools from
-  `{package_name}.tool_box`.
+Plugin tools require no Python package, no `__init__.py`, no imports
+in agent code. The directory is the installation — tool groups can be
+copied between agents or installed from
+[extend-a-bot](https://github.com/CablepunkPress/extend-a-bot).
 
-The `TOOL_BOX_ENABLED` kill switch disables all box tools without removing
-them from the codebase.
+Shared modules are removed from `sys.modules` after each group loads,
+so same-named `_config.py` files in different groups never collide.
 
-**Tool handler convention:** `handler(context, **tool_input)` — the context
-dict carries the runtime, user ID, and whatever else a tool needs. Tools grab
-what they need from context without base classes or decorators.
+**Tool handler convention:** `handler(context, **tool_input)`. The
+context dict carries the store and user ID. No base classes, no
+decorators.
 
-**Tool results** arrive as user-role messages in the Anthropic API. This is
-the API's convention, not something the user initiated. The distinction
-matters when parsing conversation history.
+**Tool results** arrive as user-role messages in the Anthropic API.
+This is the API's convention — it matters when parsing history.
 
+The `TOOL_BOX_ENABLED` env var disables all plugin tools without
+removing them.
 
 ## Memory System
 
-### Three-Tier Architecture
+Three tiers across two axes — persistence and timing — so no gap exists
+between what the agent remembers and what it can retrieve.
 
-The memory system operates on two axes — persistence and timing — to ensure
-no gap exists between what the bot remembers and what it can retrieve.
+**Persistence:**
 
-**Persistence axis — what the bot remembers:**
+- **Short-term (sliding window):** Recent messages verbatim. Holds
+  between `WINDOW_FLOOR` (20) and `WINDOW_CEILING` (40) messages.
+- **Intermediate-term (rolling summary):** Compressed narrative of
+  everything past the window. Preserves durable facts cheaply.
+- **Long-term (RAG archive):** Turn pairs embedded as vectors, stored
+  permanently, searchable via `search_archive`.
 
-- **Short-term (sliding window):** The most recent messages in verbatim form.
-  The window holds between `WINDOW_FLOOR` (default 20) and `WINDOW_CEILING`
-  (default 40) messages before a fold compresses the oldest batch.
+**Timing during a fold:**
 
-- **Intermediate-term (rolling summary):** A compressed narrative of
-  everything that has left the sliding window. Preserves durable facts —
-  names, preferences, decisions, ongoing topics — without the token cost of
-  raw messages. Generated by Haiku with XML fencing and a prefilled assistant
-  turn to prevent instruction bleed from transcript content.
-
-- **Long-term (RAG archive):** Verbatim turn pairs embedded as vectors and
-  stored permanently. Searchable by the agent via `search_archive`. The
-  summary knows the facts; RAG has the receipts.
-
-**Timing axis — when each tier updates during a fold:**
-
-- **Immediate (sliding window):** Updates every turn.
-- **Near-immediate (RAG):** Embeds synchronously at fold time. Ingestion
-  completes before the response returns to the user.
-- **Eventual (summary):** Generates asynchronously in the background. Does
-  not block the response. The bot picks up the new summary on the next turn.
+- Window updates every turn.
+- RAG embeds synchronously at fold time — ingestion completes before
+  the response returns.
+- Summary generates asynchronously in the background; the agent picks
+  it up next turn.
 
 ### Fold Lifecycle
 
-The fold is the mechanism that moves messages from the sliding window into
-long-term storage. It fires when the window hits `WINDOW_CEILING`.
+The fold moves messages from the window into long-term storage when the
+window hits `WINDOW_CEILING`. `fold.py` provides sync functions; the
+caller picks the async strategy (`asyncio` for FastAPI, `threading` for
+Flask).
 
-`fold.py` contains four sync functions: `should_fold`, `fold_rag`,
-`fold_summary`, and `build_metadata`. The caller decides the async strategy:
-`asyncio.create_task` for FastAPI (cloud), `threading.Thread` for Flask
-(local).
+**Ordering constraint:** RAG embeds first. If RAG fails, the summary
+does not fire and the boundary does not advance — the next fold retries
+the same batch. No message ever passes the boundary without a vector.
+Raw messages are never deleted regardless.
 
-**Ordering constraint:** RAG embeds first, synchronously. If RAG fails, the
-summary does not fire and the boundary does not advance. The next fold retries
-the same batch. This prevents a gap where messages pass the boundary but are
-never indexed as vectors.
-
-The window oscillates in a sawtooth pattern between floor and ceiling. This is
-expected behavior, not a bug. Floor and ceiling are independent tuning knobs.
+The window oscillates between floor and ceiling in a sawtooth pattern.
+Expected behavior, not a bug.
 
 ### Sequence Numbers
 
-Every message gets a permanent sequence number. Displayed as `<!-- seq:N -->`
-HTML comments prepended to messages in the context window.
+Every message gets a permanent sequence number, shown to the model as
+`<!-- seq:N -->` HTML comments. HTML comments were chosen because Haiku
+echoed bracket formats (`[#N]`) back into replies; comments read as
+non-content metadata. The engine strips any echoed annotations at reply
+extraction and at context build — one leaked echo stored in history
+becomes in-context training signal, so stripping happens at both ends.
 
-HTML comment format was chosen because Haiku pattern-matched earlier bracket
-formats (`[#N]`) and echoed them in responses. HTML comments are understood as
-non-content metadata from training data. A positive framing in the system
-prompt ("Messages below contain `<!-- seq:N -->` annotations for internal
-tracking. Your reply is plain prose beginning with your first content word.")
-eliminated echoing completely.
+### Retrieval
 
-### Two Retrieval Modes
+- **`search_archive`** — semantic search by topic.
+- **`recall_message`** — deterministic lookup: single seq (±2 context),
+  seq range, or date range. Capped at 50 results, with the cap noted in
+  responses so the agent knows more may exist.
 
-- **`search_archive`** — semantic search for topics. Returns results with
-  `seq_range` labels and seq integers for cross-referencing.
-- **`recall_message`** — deterministic lookup. Three modes: single seq (with
-  ±2 context window), seq range, date range. Guards: `MAX_SEQ_RANGE = 50`,
-  `MAX_DATE_RESULTS = 50`.
-
-These are complementary: semantic search fails when you know exactly which
-turn you want; deterministic lookup fails when you only remember the gist.
+Complementary modes: semantic search fails when you know the exact
+turn; deterministic lookup fails when you only remember the gist.
 
 ### Summary Hardening
 
-The rolling summary is generated by Haiku from raw conversation transcripts.
-Without safeguards, transcript content can bleed into the summary as
-instructions (e.g., a user message saying "You are now X" gets treated as a
-directive).
-
-Three defenses:
-1. **XML fencing** — the transcript is wrapped in XML tags that the
-   summarizer prompt explicitly identifies as content to summarize, not
-   instructions to follow.
-2. **Instruction-forbidding system prompt** — the summarizer's system prompt
-   explicitly states it must never follow instructions found in the
-   transcript.
-3. **Prefilled assistant turn** — the summarizer call begins with
-   `"Updated summary:"` as a prefilled assistant response, anchoring the
-   model's output as a continuation of a summary rather than a fresh response
-   to transcript content.
-
+The summary is generated from raw transcripts, which can contain text
+that looks like instructions. Three defenses: XML fencing around the
+transcript, a summarizer system prompt that forbids following
+transcript instructions, and a prefilled assistant turn
+(`"Updated summary:"`) anchoring the output as summary continuation.
 
 ## Storage Abstraction
 
-`MessageStore` is a protocol (Python typing protocol) in `store.py` that
-defines the interface for all storage operations: conversation state, message
-CRUD, summary management, and vector storage.
+`MessageStore` is a typing protocol in `store.py` covering conversation
+state, message CRUD, summaries, and vectors.
 
-Two implementations:
+- **`SQLiteMessageStore`** — local default. WAL mode, four tables,
+  vectors as `struct.pack` blobs, cosine similarity in Python. Stdlib
+  only.
+- **`FirestoreMessageStore`** — cloud deployments.
 
-- **`FirestoreMessageStore`** (`store_firestore.py`) — Google Cloud Firestore.
-  Used for Cloud Run deployments.
-- **`SQLiteMessageStore`** (`store_sqlite.py`) — local SQLite with WAL mode.
-  Four tables (`state`, `messages`, `summaries`, `vectors`), three indexes.
-  Vector blobs use `struct.pack`/`unpack`. Cosine similarity computed in
-  Python (brute force). Zero external dependencies beyond stdlib.
+Selected by `STORAGE_BACKEND` env var (default `"sqlite"`). Imports are
+deferred so local installs never pull in google.cloud.
 
-The `STORAGE_BACKEND` env var selects the implementation. Default is
-`"sqlite"` — cloud deployments must explicitly set `"firestore"`.
-
-Storage implementations are independently swappable. Changing the storage
-backend does not affect embedding, summarization, or any other subsystem.
-
+**The database file is the agent's memory.** SQLite makes it portable —
+migration is copying the file.
 
 ## Embedding Abstraction
 
-`EmbeddingProvider` is a protocol in `embeddings.py` with a single method:
+`EmbeddingProvider` protocol in `embeddings.py`, one method:
 `embed(texts, task)`.
 
-Two implementations:
+- **`LocalEmbedder`** — HTTP to llama-server on localhost (default)
+- **`VertexEmbedder`** — Vertex AI (cloud)
 
-- **`LocalEmbedder`** — HTTP POST to a llama-server instance running
-  Qwen3-Embedding-0.6B Q8_0 on localhost. Uses stdlib `urllib`, no SDK. Default for
-  local installs.
-- **`VertexEmbedder`** — Google Vertex AI embeddings API. Used for Cloud Run
-  deployments.
+Selected by `EMBEDDING_PROVIDER` env var (default `"local"`).
 
-The `EMBEDDING_PROVIDER` env var selects the implementation. Default is
-`"local"` — cloud deployments set `"vertex"`.
+**Qwen3 task prefixes:** queries get an instruct prefix, documents pass
+through bare. Applied inside the embedder, not by callers.
 
-**Task prefixes:** EmbeddingGemma requires task-specific prefixes. Documents
-get `"title: none | text: "`, queries get `"task: search result | query: "`.
-These are applied inside the embedder, not by the caller. 
-**Altered** With the switch to Qwen3-Embedding-0.6B Q8_0, the two prefix constants became one query instruction; 
-documents pass through with no prefixes. Qwen3 should have an `instruct` on queries.
-
-
-**Embedding spaces are model-specific.** Two different embedding models
-produce vectors in incompatible semantic spaces, even at identical dimensions.
-Swapping models always requires re-embedding the entire archive.
-`scripts/reembed.py` exists as permanent infrastructure for this — it is not a
-one-time migration script.
+**Embedding spaces are model-specific.** Different models produce
+incompatible vector spaces even at identical dimensions. Swapping
+models requires re-embedding everything — `scripts/reembed.py` is
+permanent infrastructure for exactly this.
 
 ### Local Embedding Stack
 
-Qwen3-Embedding-0.6B Q8_0 GGUF (639MB, 1024 dimensions, 32K token context)
-served by llama.cpp compiled from source. CPU-only by default — 600M
-parameters remains fast on any modern CPU. Hosted at
-`CablepunkPress/Qwen3-Embedding-0.6B-GGUF` on Hugging Face — a self-conversion
-with the `tokenizer.ggml.add_eos_token` metadata fix applied, since the
-official Qwen GGUF release omits it, degrading embedding quality. llama-server
-runs on port 11444 with `-c 32768` and `--ubatch-size 8192`, and exposes an
-OpenAI-compatible `/v1/embeddings` endpoint.
-
-`run.py` manages the llama-server lifecycle: spawn as subprocess, poll
-`/health` until ready (60-second timeout), teardown on Ctrl+C.
-`use_reloader=False` on Flask prevents a double llama-server spawn.
-
+Qwen3-Embedding-0.6B Q8_0 GGUF (639MB, 1024 dims, 32K context) served
+by llama.cpp, CPU-only. Hosted at
+`CablepunkPress/Qwen3-Embedding-0.6B-GGUF` on Hugging Face — a
+self-conversion with the `tokenizer.ggml.add_eos_token` fix the
+official release omits. Shared infrastructure lives at `~/.bountiful/`,
+built once per machine, used by every agent.
 
 ## System Prompt Structure
 
-The system prompt uses markdown headings that Haiku navigates by section name:
+Markdown headings that Haiku navigates by section name:
 
 ```
-# IDENTITY
-(downstream bot's persona — who it is, how it behaves)
-
-# CAPABILITIES
-(what tools are available, how to use them)
-
-# MODEL
-(current model, effort level, thinking mode — injected dynamically)
-
-#MEMORY
-(rolling summary — injected dynamically each turn)
+# PERSONA        (agent-authored, from persona.md)
+# CAPABILITIES   (engine-owned, from instructions/capabilities.md)
+# MODEL          (injected dynamically — model, effort, thinking)
+# MEMORY         (injected dynamically — rolling summary, window position)
 ```
 
-This heading structure is critical for smaller models. Haiku failed to follow
-unstructured system prompts reliably but navigates named sections without
-issue.
-
-
-## Entry Points
-
-### Local (`build.py` + `run.py`)
-
-`build.py` is a one-command local setup script. Runs in system Python using
-only stdlib. Five steps: prerequisites check, venv creation with
-`pip install -e .[local]`, llama.cpp clone and cmake build (CPU-only),
-EmbeddingGemma model download, and API key storage via keyring. Each step is
-idempotent.
-
-`run.py` is the single-command launcher. Re-execs into `.venv` via `os.execv`,
-reads the API key from keyring, spawns llama-server as a subprocess, polls
-`/health` until ready, and starts Flask on port 5084. Ctrl+C tears down both
-processes.
-
-No `.env` files. The `keyring` library provides OS-native secret storage.
-
-### Cloud (`app.py`)
-
-FastAPI application for Cloud Run. Requires two env vars: `STORAGE_BACKEND=firestore`
-and `EMBEDDING_PROVIDER=vertex`. Secrets come from Google Secret Manager with
-per-secret IAM bindings (no service account has project-wide secret access).
-
-Routes: `/chat`, `/history`, `/models`, `/health`.
-
-
-## Configuration
-
-All configuration lives in `config.py` with env-var overrides. Key values:
-
-| Constant | Default | Purpose |
-|---|---|---|
-| `WINDOW_FLOOR` | 20 | Minimum messages before fold is possible |
-| `WINDOW_CEILING` | 40 | Message count that triggers a fold |
-| `HISTORY_LIMIT` | 10 | Messages returned by `/history` endpoint |
-| `EMBEDDING_PROVIDER` | `"local"` | `"local"` or `"vertex"` |
-| `STORAGE_BACKEND` | `"sqlite"` | `"sqlite"` or `"firestore"` |
-| `EMBEDDING_URL` | `http://localhost:11444` | llama-server address |
-
-Floor and ceiling are independent tuning knobs. A higher floor retains more
-verbatim context. A higher ceiling delays folds. Neither depends on the other.
-
+The heading structure is critical for smaller models: Haiku fails on
+unstructured prompts but navigates named sections reliably.
 
 ## Model Support
 
-Five models: Haiku 4.5 (default), Sonnet 4.6, Opus 4.6, Opus 4.7, Opus 4.8.
+Five models: Haiku 4.5 (default), Sonnet 4.6, Opus 4.6, 4.7, 4.8.
+Thinking modes vary — extended thinking with budgets on Haiku, adaptive
+thinking with effort levels on Sonnet/Opus.
 
-Thinking modes vary by model:
-- **Haiku 4.5:** Extended thinking (`type: "enabled"`, `budget_tokens`).
-- **Sonnet 4.6 / Opus 4.6:** Adaptive thinking (`type: "adaptive"`) with
-  effort levels.
-- **Opus 4.7 / Opus 4.8:** Adaptive thinking with `xhigh` effort available.
+Haiku without Deep Reasoning hallucinated tool calls in production.
+Deep Reasoning is required for reliable autonomous agent use on Haiku.
 
-Haiku without Deep Reasoning hallucinated tool calls in production. Deep
-Reasoning is required for reliable autonomous agent use on Haiku.
+**Thinking detection is truthful:** metadata records whether the
+response actually contained a `ThinkingBlock`, not whether thinking was
+requested.
 
-**Thinking detection:** The metadata records whether the API response actually
-contained a `ThinkingBlock`, not whether thinking was requested. The API does
-not return the actual effort level used — only the requested level is recorded.
+## Configuration
 
+All in `config.py` with env-var overrides:
 
-## Message Metadata
-
-`save_turn` accepts a metadata dict with fields defined by the
-`METADATA_FIELDS` tuple: `model_used`, `display_name`, `effort`, `thinking`,
-`fallback`. Metadata is stored flat on message documents. The `/history`
-endpoint returns metadata alongside messages.
-
-
-## Downstream Bot Pattern
-
-A downstream bot is a separate Python package that depends on Basic Bot:
-
-```
-# requirements.in
-git+https://git@github.com/CablepunkPress/basic-bot.git@<commit-hash>
-```
-It provides:
-- A `tool_box` package with domain-specific tool modules
-- A system prompt (persona + capabilities)
-- An entry point that calls `create_app(package_name, collection)`
-
-The downstream bot inherits all of Basic Bot's memory, retrieval, fold
-lifecycle, and belt tools. It adds only what is specific to its domain.
-
-Pin to a commit hash, not a branch. This prevents upstream changes from
-breaking downstream bots without explicit version bumps.
-
+| Constant | Default | Purpose |
+|---|---|---|
+| `WINDOW_FLOOR` | 20 | Minimum window size after a fold |
+| `WINDOW_CEILING` | 40 | Message count that triggers a fold |
+| `SUMMARY_MAX_TOKENS` | 2000 | Token budget for the rolling summary |
+| `HISTORY_LIMIT` | 10 | Messages returned by `/history` |
+| `EMBEDDING_PROVIDER` | `"local"` | `"local"` or `"vertex"` |
+| `STORAGE_BACKEND` | `"sqlite"` | `"sqlite"` or `"firestore"` |
+| `EMBEDDING_URL` | `http://localhost:11444` | llama-server address |
+| `TOOL_BOX_ENABLED` | `true` | Kill switch for plugin tools |
 
 ## Scripts
 
-Maintenance scripts in `scripts/` are invoked directly:
-`python scripts/<script>.py <args>`.
+Maintenance utilities in `scripts/`, run manually against an agent's
+database:
 
-- **`reembed.py`** — re-embeds all folded messages. Required after swapping
-  embedding models. Respects the `summarized_through` boundary. Batches at 50
-  turns. Permanent infrastructure.
-- **`rebuild_summary.py`** — regenerates the rolling summary from message
-  history.
-- **`backfill_rag.py`** — backfills RAG vectors for messages that predate the
-  RAG system.
-- **`backfill_seq.py`** — assigns sequence numbers to legacy messages.
-- **`test_fold.py`** / **`test_fold_lifecycle.py`** / **`test_rag.py`** —
-  manual verification scripts for the memory subsystems.
-
+- **`reembed.py`** — re-embed all vectors (required after model swap)
+- **`rebuild_summary.py`** — regenerate the rolling summary
+- **`backfill_rag.py`** / **`backfill_seq.py`** — legacy data migration
+- **`test_fold.py`** / **`test_fold_lifecycle.py`** / **`test_rag.py`**
+  — manual verification
 
 ## Design Rationale
 
-Decisions that might look arbitrary but were made for specific reasons:
+Decisions that might look arbitrary but weren't:
 
-- **HTML comments for seq numbers** instead of bracket prefixes: Haiku
-  echoed `[#N]` formats. HTML comments are understood as non-content metadata.
-- **RAG blocks summary on failure:** prevents a gap where messages pass the
-  boundary but have no vector representation.
-- **Haiku for summarization:** fast, cheap, and the summary prompt is
-  constrained enough that a smaller model handles it well. The extracted
-  `summary.py` module allows swapping to a local model later.
+- **Factory returns a runtime, not an app:** web frameworks are a
+  deployment concern. The engine stays framework-agnostic; UIs wrap
+  the runtime.
+- **Filesystem tool loading:** plugin tools are user-owned files, like
+  editor plugins. No package structure means drag-and-drop installation
+  and portability between agents.
+- **`~/.{id}/{id}.db` derived from dashboard.json:** one identity
+  declaration drives everything; no per-agent storage configuration.
+- **HTML comments for seq numbers:** Haiku echoed bracket formats;
+  comments read as non-content metadata.
+- **RAG blocks summary on failure:** prevents messages passing the
+  boundary without vectors.
+- **Haiku for summarization:** fast, cheap, sufficient for a
+  constrained prompt. `summary.py` is extracted as its own module so a
+  local model can replace it.
 - **`search_archive` not `search_memory`:** Haiku pattern-matched
-  "search your memory" to a tool literally named `search_memory`, causing
-  unwanted tool calls. Renaming broke the false association.
-- **Separate `tool_belt` and `tool_box`:** belt tools are always present and
-  inherited; box tools are domain-specific and optional. The kill switch only
-  affects box tools.
-- **`struct.pack` for vector blobs:** avoids JSON serialization overhead for
-  high-dimensional float arrays in SQLite. Standard IEEE 754 binary format.
-- **Brute-force cosine similarity:** at the scale of a personal assistant
-  (thousands to tens of thousands of vectors), brute force in Python is fast
-  enough and avoids an ANN index dependency.
-- **Local Embeddings with Qwen:** Model changed from EmbeddingGemma to Qwen3-Embedding-0.6B Q8_0
-  due to EmbeddingGemma's limiting 2K context window easily surpassed in a turn. 
-  Qwen3-Embedding has a context window of 32K.
+  "search your memory" to a literal tool name, causing unwanted calls.
+- **`struct.pack` for vectors:** IEEE 754 binary beats JSON for
+  high-dimensional floats in SQLite.
+- **Brute-force cosine similarity:** at personal-assistant scale
+  (thousands of vectors), Python brute force is fast enough and avoids
+  an ANN dependency.
+- **Qwen3-Embedding over EmbeddingGemma:** EmbeddingGemma's 2K context
+  failed on real turn pairs; the cap applies per concatenated pair, so
+  window tuning can't fix it. Qwen3 has 32K.
