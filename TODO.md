@@ -11,11 +11,6 @@ This should be done in conjunction with Bountiful GUI. Basic Bot is the engine; 
 
 v0.6.0 README update is engine-focused and link to build-a-bot new repo for end users
 
-### Build-A-Bot Shims
-Script logic into engine package; template scripts become stable shims
-`run.py` calls `basic_bot.launch(ROOT)`
-`add_secrets.py` calls `basic_bot.setup_secrets(ROOT)`
-
 ### Code sweep
 Audit: hardcoded paths, stale comments. Dockerfile for cloud needs switched to pyproject.toml.
 
@@ -35,20 +30,35 @@ Deep Reasoning, and tools exceeds 30s regularly.
 MIT. Confirm license file is present and `pyproject.toml` declares it.
 
 
-## v0.8.0 — Local Models
+## v0.8.0 — Local Deployment, Local Models
 
 ### Deployment
 Local vs Cloud
 
-### Models
-Local vs API
+Local: build-a-bot
+Cloud: build-a-bot-cloud
 
-### Inference provider selection
+### Inference provider selection for local deployment
 Add inference provider switch: API or Local
 
-Default should be local models, secondary should be API calls. Currently, engine only runs on Anthropic models. 
+Local first. Same provider. Idea is to run on minimal hardware AND not need to use add_secrets.py. Target: Nvidia 3060 12GB + 32GB. Future target: build for desktop agent computers (Nvidia DGX Spark, AMD Ryzen AI Halo)
+Embeddings:
+Summarization:
+Inference: 
+Inference (coding): GPT-OSS-20B
 
-First candidate for local inference is GPT-OSS-20B
+API second. Same provider. Idea is to not run any model locally and rely entirely on API calls.
+Embeddings:
+Summarization:
+Inference:
+Inference (optional): Claude API, etc.
+
+Currently, embeddings are Qwen3-Embedding running on CPU, summarization is Haiku 4.5 API, and inference is Claude API. Default should be one provider of the full stack (embeddings, summarization, inference) for each deployment scenario. One API key for the full stack, not 2-3. Add additional keys for inference choice. Embeddings and summarization needs to be opionated.
+
+### Build-A-Bot Shims
+Script logic into engine package; template scripts become stable shims
+`run.py` calls `basic_bot.launch(ROOT)`
+`add_secrets.py` calls `basic_bot.setup_secrets(ROOT)`
 
 ### Local summarization
 Replace Haiku API call for summary generation with a local model via
@@ -104,6 +114,9 @@ First failure logs the full traceback. Subsequent retries of the same
 batch should log a single-line message until the fold succeeds or a
 new error occurs.
 
+### Scripts
+Scripts needed reviewed for relevancy and updated.
+
 ### Streaming (SSE)
 Deferred. Bot → proxy → frontend SSE chain. Stream only final text,
 not thinking blocks.
@@ -112,6 +125,9 @@ not thinking blocks.
 Cablepunk Bot needs file attachments for some tool
 workflows. Basic Bot doesn't need them but the engine should support
 them for downstream bots.
+
+### Cloud Deployment
+Resume.
 
 ### Firestore-to-SQLite migration script
 Permanent infrastructure in `scripts/`. Reads messages, state, and
