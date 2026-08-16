@@ -2,20 +2,6 @@
 
 Covers basic-bot (engine), plus basic-ui, build-a-bot, extend-a-bot.
 
-## v0.7.0 — Open Source Release
-
-### README
-User-facing documentation: what Basic Bot is, how to install, how to
-run, how to build a downstream bot. Feature-focused, not architecture-
-focused (ARCHITECTURE.md covers internals).
-
-This should be done in conjunction with Bountiful GUI. Basic Bot is the engine; Bountiful is the UI. Basic Bot `web\` (UI) and `build.py` and `run.py` will be be deprecated in favor of Bountiful. Basic Bot is "House Agent" of Bountiful. Deferred and revised: see v0.8.0
-
-v0.6.0 README update is engine-focused and link to build-a-bot new repo for end users
-
-### License
-MIT. Confirm license file is present and `pyproject.toml` declares it.
-
 
 ## v0.8.0 — Local Deployment, Local Models
 
