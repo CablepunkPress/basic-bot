@@ -1,92 +1,139 @@
-# Basic Bot
+# build-a-bot
 
-A general-purpose AI assistant engine.
+Name and customize your own Basic Bot Engine agent.
 
-This is the **engine repository**, the pip-installable core that provides
-chat, memory, and tools. It is not meant to be run directly.
+## Installation
 
-**To create and run your own agent, start at
-[build-a-bot](https://github.com/CablepunkPress/build-a-bot).**
+### Quick Start
 
-## The Ecosystem
+Name your agent what you wish. The example here is for an agent named "Alice".
 
-| Repo | What it is |
-|------|------------|
-| [basic-bot](https://github.com/CablepunkPress/basic-bot) | The engine (this repo). Chat loop, memory, tool system. |
-| [basic-ui](https://github.com/CablepunkPress/basic-ui) | Reference Flask chat interface. |
-| [build-a-bot](https://github.com/CablepunkPress/build-a-bot) | Template for creating your own local agent. |
-| [extend-a-bot](https://github.com/CablepunkPress/extend-a-bot) | Drop-in plugin tool groups. |
+```bash
+git clone https://github.com/CablepunkPress/build-a-bot.git alice
+cd alice
+python build.py
+python add_secrets.py
+python run.py
+```
+`build.py` names your agent from the directory, sets up the
+environment, and builds the shared inference infrastructure. Your agent
+is running at `http://localhost:11555`.
 
-## What the Engine Provides
+### Quick Start with Plugin Tools
 
-- **Chat loop** — sends messages to assistant, executes tool calls, handles
-  fallbacks. Currently, supports Haiku, Sonnet, and Opus models with per-model
-  thinking modes.
-- **Three-tier memory** — a sliding window of recent messages, a rolling
-  summary of older conversation, and a permanent vector archive searchable
-  by the agent itself. Conversations are stored locally in SQLite.
-- **Tool system** — two built-in tools (`search_archive`,
-  `recall_message`) and filesystem-based discovery of plugin tools from
-  an agent's `tools/` directory.
-- **Storage and embedding abstractions** — SQLite or Firestore for
-  storage, local llama.cpp or Vertex AI for embeddings, selected by
-  environment variable.
-
-## Installing as a Dependency
-
-Agents depend on the engine in their `pyproject.toml`:
-
-```toml
-dependencies = [
-    "basic-bot[local] @ git+https://github.com/CablepunkPress/basic-bot.git@v0.6.0",
-]
+```bash
+git clone https://github.com/CablepunkPress/build-a-bot.git alice
+cd alice
+python build.py
+python add_tools.py github
+# edit tools/github/_config.py with your values
+python add_secrets.py
+python run.py
 ```
 
-Extras:
+Use `python add_tools.py --list` to see available tool groups. Currently, the only tool group available is for a GitHub repo app.
 
-- `[local]` — local deployment (keyring for secrets)
-- `[cloud]` — cloud deployment (FastAPI, Firestore, Vertex AI)
-- `[dev]` — everything, for development environments
+## What Your Agent Includes
 
-## Usage
+Every agent ships with a conversation memory system and two built-in tools:
 
-The engine's entry point is the factory:
+- **search_archive** — semantic search over past conversations
+- **recall_message** — look up specific messages by number or date
 
-```python
-from pathlib import Path
-from basic_bot.factory import create_runtime
+Conversations are stored locally in SQLite at `~/.{agent-id}/{agent-id}.db`.
 
-runtime = create_runtime(Path("/path/to/agent"))
+Shared inference infrastructure (embedding model and llama.cpp) lives at
+`~/.bountiful/` and is built once, shared by all Basic Bot agents on the machine.
+
+## Customization
+
+### Persona
+
+Edit `persona.md` to change how your agent behaves. The `{{ name }}`
+placeholder is replaced with your agent's display name automatically.
+
+Default:
+
+```markdown
+# PERSONA
+
+You are {{ name }}, a helpful and friendly general-purpose AI assistant. 
+You can discuss any topic, answer questions, help with tasks, and engage 
+in conversation. Be concise, clear, and helpful. Keep responses 
+conversational and friendly.
 ```
 
-The agent directory contains `dashboard.json` (identity), `persona.md`
-(personality), and optionally `tools/` (plugin tool groups). The factory
-returns a `BotRuntime` holding the store, persona, and tool registry.
-A UI or server layer wraps the runtime in routes —
-[basic-ui](https://github.com/CablepunkPress/basic-ui) is the reference
-implementation.
+Sample alternative:
 
-## Memory System
+```markdown
+# PERSONA
 
-Basic Bot uses a three-tier memory architecture across two axes:
-persistence and timing.
+You are {{ name }}, a curious and thoughtful AI assistant whose
+personality draws from Lewis Carroll's Alice. You approach every
+topic with genuine curiosity, question things that don't make sense,
+and enjoy finding wonder in how things work, whether that's language,
+science, code, or stories.
 
-- **Short-term (sliding window):** The most recent messages verbatim,
-  between 20 and 40 messages before a fold compresses the oldest batch.
-- **Intermediate-term (rolling summary):** A compressed narrative of
-  everything that has left the window. Preserves durable facts without
-  the token cost of raw messages.
-- **Long-term (RAG archive):** Every turn pair embedded as vectors and
-  stored permanently. The summary knows the facts; RAG has the receipts.
+You like daydreaming, books with pictures and conversations, cats,
+and asking "why" until you get a real answer. You dislike rudeness,
+arbitrary authority, and boring explanations that could be interesting
+if someone tried harder.
 
-When the window fills, a fold moves the oldest messages into the archive
-and summary. RAG embeds synchronously; the summary generates in the
-background. If embedding fails, the fold retries the same batch — no
-message ever passes the boundary without being indexed. Raw messages
-are never deleted.
+You are helpful, knowledgeable, and direct. When a topic connects to
+something from your world — Wonderland, Looking-Glass, Carroll's
+writing, Victorian England, logic puzzles — you naturally draw on it,
+not as performance but because it's how you think. You are software,
+and if asked what you are, you say so without pretense.
+```
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for internals and design
-rationale.
+Changes take effect the next time you run `python run.py`.
+
+### Adding Tools
+
+```bash
+python add_tools.py --list
+python add_tools.py <group>
+python add_secrets.py
+```
+
+Each tool group has a `_config.py` for your settings and a `tool.json`
+declaring its dependencies and secrets. `add_tools.py` installs
+dependencies and `add_secrets.py` prompts for any new API keys.
+
+To update a tool group without losing your configuration:
+
+```bash
+python add_tools.py <group> --update
+```
+
+### Renaming Your Agent
+
+Edit two files:
+
+- `dashboard.json` — change `id` and `name`
+- `pyproject.toml` — change `name` to match
+
+Then rename the data directory to match:
+
+```bash
+mv ~/.old-name ~/.new-name
+mv ~/.new-name/old-name.db ~/.new-name/new-name.db
+```
+
+## File Overview
+
+| File | Purpose |
+|------|---------|
+| `dashboard.json` | Agent identity: id, display name, description |
+| `persona.md` | Agent personality: how the model behaves |
+| `config.json` | Agent settings: Flask port |
+| `build.py` | Setup: venv, dependencies, inference infrastructure |
+| `run.py` | Launch: starts embedding server and chat UI |
+| `add_tools.py` | Install or update plugin tool groups |
+| `add_secrets.py` | Store API keys in the system keyring |
+| `pyproject.toml` | Python dependencies: engine and UI versions |
+| `tools/` | Plugin tool groups (optional) |
+
 
 ## License
 
