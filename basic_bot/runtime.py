@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 
+from basic_bot.providers.protocol import InferenceProvider
 from basic_bot.store import MessageStore
 
 

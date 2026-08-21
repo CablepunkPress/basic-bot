@@ -12,8 +12,10 @@ import logging
 from pathlib import Path
 
 from basic_bot.config import STORAGE_BACKEND
+from basic_bot.providers.claude import ClaudeProvider
 from basic_bot.runtime import BotRuntime
 from basic_bot.tools import build_registry
+
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +52,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     Returns:
         A BotRuntime with store, persona, tools, and identity configured.
     """
+
     agent_path = Path(agent_path).resolve()
 
     # Dashboard — agent identity, loaded first so agent_id drives logging
@@ -77,6 +80,8 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
 
     # Tools — belt from engine, box from agent_path/tools/
     tool_registry = build_registry(agent_path)
+
+    provider = ClaudeProvider()
 
     return BotRuntime(
         agent_id=agent_id,
