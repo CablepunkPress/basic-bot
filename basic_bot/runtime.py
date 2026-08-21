@@ -20,3 +20,4 @@ class BotRuntime:
     persona: str
     tool_registry: dict
     dashboard: dict
+    provider: InferenceProvider
