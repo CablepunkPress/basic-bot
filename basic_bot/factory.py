@@ -90,4 +90,5 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
         persona=persona,
         tool_registry=tool_registry,
         dashboard=dashboard,
+        provider=provider,
     )
