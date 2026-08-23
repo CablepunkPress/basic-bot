@@ -1,37 +1,36 @@
 """Rolling summary generation.
 
 Folds a batch of aged-out messages into an updated running summary
-using a dedicated Haiku call. This is a separate API call from the
-main conversation — the model acts as a summarization function, not
-a conversational agent.
+using the configured inference provider. This is a separate call
+from the main conversation — the model acts as a summarization
+function, not a conversational agent.
 
 The summary is one component of the three-tier memory system:
   - Sliding window: immediate (verbatim recent messages)
   - RAG: near-immediate (searchable turn pairs, embedded at fold time)
   - Summary: eventual (compressed context, generated async after fold)
 
-This module owns the Haiku call and prompt. It does not decide when
-to fold or where to store the result — that's the caller's job.
-A future local model could replace Haiku here without touching
-anything else.
+This module owns the prompt. It does not decide when to fold or
+where to store the result — that's the caller's job.
 """
 
 import logging
 
-import anthropic
-
-from basic_bot.config import SUMMARY_MAX_TOKENS, SUMMARY_MIN_CHARS, SUMMARY_MODEL
-from basic_bot.models import extract_reply
+from basic_bot.config import SUMMARY_MAX_TOKENS, SUMMARY_MIN_CHARS
+from basic_bot.providers.protocol import InferenceProvider
 
 logger = logging.getLogger(__name__)
 
-_client = anthropic.Anthropic()
 
-
-def summarize_batch(existing_summary: str, messages: list[dict[str, str]]) -> str:
+def summarize_batch(
+    provider: InferenceProvider,
+    existing_summary: str,
+    messages: list[dict[str, str]],
+) -> str:
     """Fold a batch of aged-out messages into the rolling summary.
 
     Args:
+        provider: The inference provider to use for summarization.
         existing_summary: The current rolling summary ("" if first fold).
         messages: List of {"role": str, "content": str} dicts from the
             fold batch, in chronological order.
@@ -64,16 +63,15 @@ def summarize_batch(existing_summary: str, messages: list[dict[str, str]]) -> st
     )
     user_content = "\n\n".join(parts)
 
-    response = _client.messages.create(
-        model=SUMMARY_MODEL,
-        max_tokens=SUMMARY_MAX_TOKENS,
-        system=system,
+    response = provider.chat(
         messages=[
             {"role": "user", "content": user_content},
-            {"role": "assistant", "content": "Updated summary:"},
         ],
+        system=system,
+        model_id=provider.get_fallback_model(),
     )
-    result = extract_reply(response).strip()
+
+    result = response.text.strip()
 
     if len(result) < SUMMARY_MIN_CHARS:
         logger.warning(
