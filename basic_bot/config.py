@@ -9,13 +9,6 @@ SUMMARY_MAX_TOKENS = int(os.environ.get("SUMMARY_MAX_TOKENS", "2000"))
 SUMMARY_MIN_CHARS = int(os.environ.get("SUMMARY_MIN_CHARS", "40"))
 SUMMARY_MODEL = "claude-haiku-4-5-20251001"
 
-# Models
-DEFAULT_MAX_TOKENS = 1024
-THINKING_MAX_TOKENS = 16384
-EXTENDED_BUDGET_TOKENS = 5000
-DEFAULT_MODEL = "claude-haiku-4-5-20251001"
-FALLBACK_MODEL = "claude-haiku-4-5-20251001"
-
 # Storage backend — local SQLite by default; cloud deploys set STORAGE_BACKEND=firestore
 STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "sqlite")
 
