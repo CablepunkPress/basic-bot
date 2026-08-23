@@ -7,7 +7,6 @@ WINDOW_CEILING = int(os.environ.get("WINDOW_CEILING", "40"))  # fold triggers wh
 # Summarization
 SUMMARY_MAX_TOKENS = int(os.environ.get("SUMMARY_MAX_TOKENS", "2000"))
 SUMMARY_MIN_CHARS = int(os.environ.get("SUMMARY_MIN_CHARS", "40"))
-SUMMARY_MODEL = "claude-haiku-4-5-20251001"
 
 # Storage backend — local SQLite by default; cloud deploys set STORAGE_BACKEND=firestore
 STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "sqlite")
