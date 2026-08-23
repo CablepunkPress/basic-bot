@@ -13,6 +13,7 @@ threading.Thread for Flask.
 import logging
 
 from basic_bot.config import WINDOW_CEILING, WINDOW_FLOOR
+from basic_bot.providers.protocol import InferenceProvider
 from basic_bot.rag import store_turns
 from basic_bot.store import MessageStore
 from basic_bot.summary import summarize_batch
@@ -62,7 +63,11 @@ def fold_rag(store: MessageStore, user_id: str, state: dict) -> list[dict] | Non
 
 
 def fold_summary(
-    store: MessageStore, user_id: str, existing_summary: str, chunk: list[dict],
+    provider: InferenceProvider,
+    store: MessageStore,
+    user_id: str,
+    existing_summary: str,
+    chunk: list[dict],
 ) -> None:
     """Generate and save the updated rolling summary.
 
@@ -74,7 +79,7 @@ def fold_summary(
     batch = [{"role": m["role"], "content": m["content"]} for m in chunk]
 
     try:
-        new_summary = summarize_batch(existing_summary, batch)
+        new_summary = summarize_batch(provider, existing_summary, batch)
 
         if not new_summary:
             logger.warning(
@@ -98,7 +103,7 @@ def fold_summary(
 
 
 def build_metadata(result: dict) -> dict:
-    """Extract the metadata to persist from a chat_with_claude result.
+    """Extract the metadata to persist from a chat result.
 
     Values reflect what the API actually returned, not what was requested
     (except effort, which the API does not echo back).
