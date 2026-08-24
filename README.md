@@ -3,7 +3,8 @@
 A general-purpose AI assistant engine.
 
 This is the **engine repository**, the pip-installable core that provides
-chat, memory, and tools. It is not meant to be run directly.
+chat, memory, tools, and inference provider abstraction. It is not meant
+to be run directly.
 
 **To create and run your own agent, start at
 [build-a-bot](https://github.com/CablepunkPress/build-a-bot).**
@@ -12,25 +13,33 @@ chat, memory, and tools. It is not meant to be run directly.
 
 | Repo | What it is |
 |------|------------|
-| [basic-bot](https://github.com/CablepunkPress/basic-bot) | The engine (this repo). Chat loop, memory, tool system. |
-| [basic-ui](https://github.com/CablepunkPress/basic-ui) | Reference Flask chat interface. |
+| [basic-bot](https://github.com/CablepunkPress/basic-bot) | The engine (this repo). Chat loop, memory, tool system, provider abstraction. |
+| [basic-ui](https://github.com/CablepunkPress/basic-ui) | Reference Flask chat interface and local launch orchestration. |
 | [build-a-bot](https://github.com/CablepunkPress/build-a-bot) | Template for creating your own local agent. |
 | [extend-a-bot](https://github.com/CablepunkPress/extend-a-bot) | Drop-in plugin tool groups. |
 
 ## What the Engine Provides
 
-- **Chat loop** — sends messages to assistant, executes tool calls, handles
-  fallbacks. Currently, supports Haiku, Sonnet, and Opus models with per-model
-  thinking modes.
+- **Chat loop** — provider-agnostic conversation orchestration, tool
+  execution, and fallback handling.
+- **Provider abstraction** — inference goes through an `InferenceProvider`
+  protocol. Currently ships with `ClaudeProvider` (Haiku, Sonnet, Opus).
+  Adding a provider means adding one file.
 - **Three-tier memory** — a sliding window of recent messages, a rolling
   summary of older conversation, and a permanent vector archive searchable
   by the agent itself. Conversations are stored locally in SQLite.
+  Summarization goes through the provider.
 - **Tool system** — two built-in tools (`search_archive`,
   `recall_message`) and filesystem-based discovery of plugin tools from
   an agent's `tools/` directory.
 - **Storage and embedding abstractions** — SQLite or Firestore for
   storage, local llama.cpp or Vertex AI for embeddings, selected by
   environment variable.
+- **Infrastructure management** — builds llama.cpp from source,
+  downloads embedding models, manages llama-server lifecycle. Shared
+  across all agents at `~/.bountiful/`.
+- **Agent setup utilities** — interactive keyring setup and tool group
+  installation, called by build-a-bot's shim scripts.
 
 ## Installing as a Dependency
 
@@ -38,7 +47,7 @@ Agents depend on the engine in their `pyproject.toml`:
 
 ```toml
 dependencies = [
-    "basic-bot[local] @ git+https://github.com/CablepunkPress/basic-bot.git@v0.6.0",
+    "basic-bot[local] @ git+https://github.com/CablepunkPress/basic-bot.git@main",
 ]
 ```
 
@@ -60,9 +69,10 @@ runtime = create_runtime(Path("/path/to/agent"))
 ```
 
 The agent directory contains `dashboard.json` (identity), `persona.md`
-(personality), and optionally `tools/` (plugin tool groups). The factory
-returns a `BotRuntime` holding the store, persona, and tool registry.
-A UI or server layer wraps the runtime in routes —
+(personality), `config.json` (settings), and optionally `tools/`
+(plugin tool groups). The factory returns a `BotRuntime` holding the
+store, persona, tool registry, and inference provider. A UI or server
+layer wraps the runtime in routes —
 [basic-ui](https://github.com/CablepunkPress/basic-ui) is the reference
 implementation.
 
@@ -75,7 +85,8 @@ persistence and timing.
   between 20 and 40 messages before a fold compresses the oldest batch.
 - **Intermediate-term (rolling summary):** A compressed narrative of
   everything that has left the window. Preserves durable facts without
-  the token cost of raw messages.
+  the token cost of raw messages. Generated through the inference
+  provider.
 - **Long-term (RAG archive):** Every turn pair embedded as vectors and
   stored permanently. The summary knows the facts; RAG has the receipts.
 
