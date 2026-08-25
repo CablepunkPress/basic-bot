@@ -8,6 +8,9 @@ WINDOW_CEILING = int(os.environ.get("WINDOW_CEILING", "40"))  # fold triggers wh
 SUMMARY_MAX_TOKENS = int(os.environ.get("SUMMARY_MAX_TOKENS", "2000"))
 SUMMARY_MIN_CHARS = int(os.environ.get("SUMMARY_MIN_CHARS", "40"))
 
+# Local inference
+INFERENCE_URL = os.environ.get("INFERENCE_URL", "http://localhost:11445")
+
 # Storage backend — local SQLite by default; cloud deploys set STORAGE_BACKEND=firestore
 STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "sqlite")
 
