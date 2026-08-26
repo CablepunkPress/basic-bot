@@ -14,8 +14,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
-from basic_bot.infra.llamacpp import SERVER_BIN
-from basic_bot.infra.models import MODEL_FILE
+from basic_bot.infrastructure.llamacpp import SERVER_BIN
+from basic_bot.infrastructure.models import MODEL_FILE
 
 BOUNTIFUL_HOME = Path.home() / ".bountiful"
 LLAMA_LOG = BOUNTIFUL_HOME / "llama-server.log"
