@@ -78,6 +78,7 @@ def ensure(embedding_url: str) -> subprocess.Popen | None:
             "--ubatch-size", "8192",
             "--ctx-size", "8192",
             "--parallel", "1",
+            "--n-gpu-layers", "0",
         ],
         stdout=log,
         stderr=subprocess.STDOUT,
