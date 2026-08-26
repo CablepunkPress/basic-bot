@@ -9,6 +9,7 @@ not the routes.
 
 import json
 import logging
+import tomllib
 from pathlib import Path
 
 from basic_bot.config import STORAGE_BACKEND
@@ -20,14 +21,14 @@ logger = logging.getLogger(__name__)
 
 
 def _read_config(agent_path: Path) -> dict:
-    """Read agent config.json, returning empty dict if absent.
+    """Read agent config.toml, returning empty dict if absent.
 
     The engine provides defaults for missing fields — agents only
     need to include values that differ from defaults.
     """
-    config_file = agent_path / "config.json"
+    config_file = agent_path / "config.toml"
     if config_file.exists():
-        return json.loads(config_file.read_text())
+        return tomllib.loads(config_file.read_text())
     return {}
 
 
