@@ -38,12 +38,12 @@ def _build_provider(config: dict):
     Imports are deferred so a local-only install never pulls in the
     Anthropic SDK and an API-only install never imports LocalProvider.
     """
-    provider_name = config.get("inference_provider", "claude")
+    provider_name = config.get("inference_provider") or "claude"
 
     if provider_name == "local":
         from basic_bot.providers.local import LocalProvider
 
-        model_id = config.get("default_model", "qwen3-8b")
+        model_id = config.get("default_model") or "qwen3-8b"
         kwargs: dict = {"model_id": model_id}
 
         max_tokens = config.get("max_tokens")
