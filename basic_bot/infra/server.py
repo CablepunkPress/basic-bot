@@ -4,6 +4,7 @@ Start, health-check, and stop the shared llama-server process
 for local embeddings (and eventually summarization/inference).
 """
 
+import os
 import socket
 import subprocess
 import sys
@@ -68,6 +69,9 @@ def ensure(embedding_url: str) -> subprocess.Popen | None:
             "Run 'python build.py' first."
         )
 
+    env = os.environ.copy()
+    env["CUDA_VISIBLE_DEVICES"] = ""
+
     log = open(LLAMA_LOG, "w")
     process = subprocess.Popen(
         [
@@ -82,6 +86,7 @@ def ensure(embedding_url: str) -> subprocess.Popen | None:
         ],
         stdout=log,
         stderr=subprocess.STDOUT,
+        env=env,
     )
     print(f"llama-server starting on port {port} (log: {LLAMA_LOG})")
 
