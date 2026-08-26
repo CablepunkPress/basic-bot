@@ -1,8 +1,8 @@
 """Factory for building bot runtimes.
 
 create_runtime() assembles a BotRuntime from an agent directory.
-The agent directory contains persona.md, dashboard.json, and an
-optional tools/ directory. Web framework setup (Flask, FastAPI)
+The agent directory contains persona.md, dashboard.json, config.json,
+and an optional tools/ directory. Web framework setup (Flask, FastAPI)
 is the caller's responsibility — the factory builds the runtime,
 not the routes.
 """
@@ -12,12 +12,51 @@ import logging
 from pathlib import Path
 
 from basic_bot.config import STORAGE_BACKEND
-from basic_bot.providers.claude import ClaudeProvider
 from basic_bot.runtime import BotRuntime
 from basic_bot.tools import build_registry
 
 
 logger = logging.getLogger(__name__)
+
+
+def _read_config(agent_path: Path) -> dict:
+    """Read agent config.json, returning empty dict if absent.
+
+    The engine provides defaults for missing fields — agents only
+    need to include values that differ from defaults.
+    """
+    config_file = agent_path / "config.json"
+    if config_file.exists():
+        return json.loads(config_file.read_text())
+    return {}
+
+
+def _build_provider(config: dict):
+    """Create the inference provider from agent config.
+
+    Imports are deferred so a local-only install never pulls in the
+    Anthropic SDK and an API-only install never imports LocalProvider.
+    """
+    provider_name = config.get("inference_provider", "claude")
+
+    if provider_name == "local":
+        from basic_bot.providers.local import LocalProvider
+
+        model_id = config.get("default_model", "qwen3-8b")
+        kwargs: dict = {"model_id": model_id}
+
+        max_tokens = config.get("max_tokens")
+        if max_tokens:
+            kwargs["max_tokens"] = max_tokens
+
+        return LocalProvider(**kwargs)
+
+    if provider_name == "claude":
+        from basic_bot.providers.claude import ClaudeProvider
+
+        return ClaudeProvider()
+
+    raise ValueError(f"Unknown inference provider: {provider_name!r}")
 
 
 def _build_store(backend: str, collection: str):
@@ -47,7 +86,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
 
     Args:
         agent_path: Directory containing persona.md, dashboard.json,
-            and optionally tools/.
+            and optionally config.json and tools/.
 
     Returns:
         A BotRuntime with store, persona, tools, and identity configured.
@@ -65,9 +104,23 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
         force=True,
     )
 
+    # Config — agent settings, defaults for missing fields
+    config = _read_config(agent_path)
+
     # Persona — user-authored, in the agent directory
     persona_text = (agent_path / "persona.md").read_text().strip()
     persona_text = persona_text.replace("{{ name }}", dashboard.get("name", agent_id))
+
+    # Context — user-added domain knowledge files (optional)
+    context_dir = agent_path / "context"
+    if context_dir.is_dir():
+        context_parts = []
+        for md_file in sorted(context_dir.glob("*.md")):
+            if md_file.name.startswith("_"):
+                continue
+            context_parts.append(md_file.read_text().strip())
+        if context_parts:
+            persona_text += "\n\n" + "\n\n".join(context_parts)
 
     # Capabilities — engine-owned, always from the basic_bot package
     capabilities_path = Path(__file__).parent / "instructions" / "capabilities.md"
@@ -81,7 +134,8 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     # Tools — belt from engine, box from agent_path/tools/
     tool_registry = build_registry(agent_path)
 
-    provider = ClaudeProvider()
+    # Provider — selected by config, defaults to Claude
+    provider = _build_provider(config)
 
     return BotRuntime(
         agent_id=agent_id,
