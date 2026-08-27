@@ -3,8 +3,9 @@
 Talks to llama-server's OpenAI-compatible /v1/chat/completions endpoint.
 One server, one model — the model is chosen at construction time and is
 the only entry get_models() returns. The full catalog of models the
-ecosystem knows how to run lives in MODEL_CATALOG; infra/ uses it to
-download and launch, this provider uses it to describe what's loaded.
+ecosystem knows how to run lives in MODEL_CATALOG; infrastructure/ uses
+it to download and launch, this provider uses it to describe what's
+loaded.
 
 Translation between the engine's internal message format and the OpenAI
 chat format happens entirely inside this class, mirroring how
@@ -30,9 +31,9 @@ _SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
 DEFAULT_MAX_TOKENS = 4096
 REQUEST_TIMEOUT = 300  # local generation on constrained hardware is slow
 
-# Every model the local stack knows how to serve. infra/ reads this to
-# download GGUFs and launch llama-server with --alias set to the key.
-# The provider serves whichever one the server was launched with.
+# Every model the local stack knows how to serve. infrastructure/ reads
+# this to download GGUFs and launch llama-server with --alias set to
+# the key. The provider serves whichever one the server was launched with.
 MODEL_CATALOG: dict[str, ModelInfo] = {
     "qwen3-8b-q4_k_m": ModelInfo(
         id="qwen3-8b-q4_k_m",
@@ -44,26 +45,28 @@ MODEL_CATALOG: dict[str, ModelInfo] = {
         effort_levels=None,
         thinking_type="qwen",
     ),
-    "qwen3-8b-q8_0": ModelInfo(
-        id="qwen3-8b-q8_0",
-        display_name="Qwen3 8B Q8_0",
-        provider="Alibaba",
-        family="Qwen",
-        host="local",
-        rank=2,
-        effort_levels=None,
-        thinking_type="qwen",
-    ),
-        "qwen3.5-9b-q5_k_m": ModelInfo(
-        id="qwen3.5-9b-q5_k_m",
-        display_name="Qwen3.5 9B Q5_K_M",
-        provider="Alibaba",
-        family="Qwen",
-        host="local",
-        rank=3,
-        effort_levels=None,
-        thinking_type="qwen",
-    ),
+}
+
+# Sampling defaults per model family, split by thinking mode.
+# Applied automatically by the provider — never exposed to users.
+# Values from official Qwen3 recommendations for quantized models.
+SAMPLING_DEFAULTS: dict[str, dict] = {
+    "qwen": {
+        "thinking": {
+            "temperature": 0.6,
+            "top_p": 0.95,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 0.0,
+        },
+        "non_thinking": {
+            "temperature": 0.7,
+            "top_p": 0.8,
+            "top_k": 20,
+            "min_p": 0.0,
+            "presence_penalty": 1.5,
+        },
+    },
 }
 
 
@@ -116,6 +119,8 @@ class LocalProvider:
         effort: str | None = None,
         thinking: bool = False,
     ) -> ChatResponse:
+        model_info = MODEL_CATALOG[self._model_id]
+
         payload: dict = {
             "model": self._model_id,
             "messages": self._build_messages(system, messages),
@@ -125,9 +130,15 @@ class LocalProvider:
         if tools:
             payload["tools"] = [self._translate_tool(t) for t in tools]
 
-        model_info = MODEL_CATALOG[self._model_id]
+        # Thinking toggle
         if model_info.thinking_type == "qwen":
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
+
+        # Sampling parameters — model family defaults, keyed by thinking mode
+        family = model_info.family.lower()
+        if family in SAMPLING_DEFAULTS:
+            mode = "thinking" if thinking else "non_thinking"
+            payload.update(SAMPLING_DEFAULTS[family][mode])
 
         data = self._post(payload)
         return self._parse_response(data)
@@ -212,13 +223,17 @@ class LocalProvider:
                 ToolCall(name=fn["name"], input=tool_input, id=tc["id"])
             )
 
-        # llama-server echoes its --alias here. infra/ launches with
-        # --alias set to the catalog id, so a mismatch in chat.py means
-        # the server is running a different model than the provider
-        # believes — a real misconfiguration worth surfacing.
+        # llama-server echoes its --alias here.
         model_used = data.get("model", self._model_id)
 
         thinking = bool(message.get("reasoning_content"))
+
+        # Warn on truncation
+        finish_reason = choice.get("finish_reason")
+        if finish_reason == "length":
+            logger.warning(
+                "Response truncated — hit max_tokens (%d)", self._max_tokens,
+            )
 
         return ChatResponse(
             text=text,
