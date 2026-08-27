@@ -21,4 +21,5 @@ class BotRuntime:
     persona: str
     tool_registry: dict
     dashboard: dict
-    provider: InferenceProvider
+    chat_provider: InferenceProvider
+    summary_provider: InferenceProvider
