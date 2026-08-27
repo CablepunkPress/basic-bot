@@ -131,8 +131,9 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     # Tools — belt from engine, box from agent_path/tools/
     tool_registry = build_registry(agent_path)
 
-    # Provider — selected by config, defaults to Claude
-    provider = _build_provider(config)
+    # Providers — summary always local, chat selected by config
+    summary_provider = _build_summary_provider(config)
+    chat_provider = _build_chat_provider(config)
 
     return BotRuntime(
         agent_id=agent_id,
@@ -141,5 +142,6 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
         persona=persona,
         tool_registry=tool_registry,
         dashboard=dashboard,
-        provider=provider,
+        chat_provider=chat_provider,
+        summary_provider=summary_provider,
     )
