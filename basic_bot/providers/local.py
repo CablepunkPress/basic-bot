@@ -54,6 +54,16 @@ MODEL_CATALOG: dict[str, ModelInfo] = {
         effort_levels=None,
         thinking_type="qwen",
     ),
+        "qwen3.5-9b-q5_k_m": ModelInfo(
+        id="qwen3.5-9b-q5_k_m",
+        display_name="Qwen3.5 9B Q5_K_M",
+        provider="Alibaba",
+        family="Qwen",
+        host="local",
+        rank=3,
+        effort_levels=None,
+        thinking_type="qwen",
+    ),
 }
 
 
