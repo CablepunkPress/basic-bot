@@ -34,9 +34,9 @@ REQUEST_TIMEOUT = 300  # local generation on constrained hardware is slow
 # download GGUFs and launch llama-server with --alias set to the key.
 # The provider serves whichever one the server was launched with.
 MODEL_CATALOG: dict[str, ModelInfo] = {
-    "qwen3-8b": ModelInfo(
-        id="qwen3-8b",
-        display_name="Qwen3 8B",
+    "qwen3-8b-q4_k_m": ModelInfo(
+        id="qwen3-8b-q4_k_m",
+        display_name="Qwen3 8B Q4_K_M",
         provider="Alibaba",
         family="Qwen",
         host="local",
@@ -44,9 +44,9 @@ MODEL_CATALOG: dict[str, ModelInfo] = {
         effort_levels=None,
         thinking_type="qwen",
     ),
-    "qwen3.6-35b-a3b": ModelInfo(
-        id="qwen3.6-35b-a3b",
-        display_name="Qwen3.6 35B A3B",
+    "qwen3-8b-q8_0": ModelInfo(
+        id="qwen3-8b-q8_0",
+        display_name="Qwen3 8B Q8_0",
         provider="Alibaba",
         family="Qwen",
         host="local",
