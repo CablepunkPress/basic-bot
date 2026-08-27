@@ -32,29 +32,25 @@ def _read_config(agent_path: Path) -> dict:
     return {}
 
 
-def _build_provider(config: dict):
-    """Create the inference provider from agent config.
+def _build_summary_provider(config: dict):
+    """Summary always runs on the local model. The local inference
+    server is permanent infrastructure — the memory tier."""
+    from basic_bot.providers.local import LocalProvider
 
-    Imports are deferred so a local-only install never pulls in the
-    Anthropic SDK and an API-only install never imports LocalProvider.
-    """
+    model_id = config.get("summary_model") or "qwen3-8b-q4_k_m"
+    return LocalProvider(model_id)
+
+
+def _build_chat_provider(config: dict):
     provider_name = config.get("inference_provider") or "claude"
 
     if provider_name == "local":
         from basic_bot.providers.local import LocalProvider
-
-        model_id = config.get("default_model") or "qwen3-8b"
-        kwargs: dict = {"model_id": model_id}
-
-        max_tokens = config.get("max_tokens")
-        if max_tokens:
-            kwargs["max_tokens"] = max_tokens
-
-        return LocalProvider(**kwargs)
+        model_id = config.get("default_model") or "qwen3-8b-q4_k_m"
+        return LocalProvider(model_id)
 
     if provider_name == "claude":
         from basic_bot.providers.claude import ClaudeProvider
-
         return ClaudeProvider()
 
     raise ValueError(f"Unknown inference provider: {provider_name!r}")
