@@ -97,6 +97,12 @@ def build_system_prompt(
         "Deep Reasoning is enabled." if thinking else "Deep Reasoning is disabled."
     )
 
+    if runtime.tool_registry:
+        tool_names = ", ".join(sorted(runtime.tool_registry.keys()))
+        config_lines.append(
+            f"You have {len(runtime.tool_registry)} tools: {tool_names}."
+        )
+
     parts = [
         runtime.persona,
         "# MODEL\n\n" + "\n".join(config_lines),
