@@ -1,7 +1,7 @@
-"""Entry point for `python -m basic_bot.infra`."""
+"""Entry point for `python -m basic_bot.infrastructure`."""
 
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
-from basic_bot.infrastructure.models import download
+from basic_bot.infrastructure.models import download_embedding_model
 
 
 def main() -> None:
@@ -11,8 +11,8 @@ def main() -> None:
     print("  llama.cpp (CPU)")
     build()
 
-    print(f"  embedding model")
-    download()
+    print("  embedding model")
+    download_embedding_model()
 
 
 if __name__ == "__main__":
