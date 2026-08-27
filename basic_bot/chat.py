@@ -126,7 +126,7 @@ async def chat_with_model(
     Returns a result dict with the reply text and metadata reflecting
     what the API actually used (not what was requested, where detectable).
     """
-    provider: InferenceProvider = runtime.provider
+    provider: InferenceProvider = runtime.chat_provider
 
     if model_id is None:
         model_id = provider.get_default_model()
