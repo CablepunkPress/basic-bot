@@ -42,6 +42,15 @@ INFERENCE_MODELS: dict[str, dict] = {
             "-np", "1",
         ],
     },
+        "qwen3.5-9b-q5_k_m": {
+        "filename": "Qwen3.5-9B-Q5_K_M.gguf",
+        "url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf",
+        "launch_args": [
+            "--n-gpu-layers", "-1",
+            "--flash-attn", "on",
+            "-np", "1",
+        ],
+    },
 }
 
 
