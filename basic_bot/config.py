@@ -8,6 +8,9 @@ WINDOW_CEILING = int(os.environ.get("WINDOW_CEILING", "40"))  # fold triggers wh
 SUMMARY_MAX_TOKENS = int(os.environ.get("SUMMARY_MAX_TOKENS", "2000"))
 SUMMARY_MIN_CHARS = int(os.environ.get("SUMMARY_MIN_CHARS", "40"))
 
+# Sync means summary needs to complete before chat may resume due to shared server on limited local hardware
+FOLD_MODE = os.environ.get("FOLD_MODE", "sync")
+
 # Local inference
 INFERENCE_URL = os.environ.get("INFERENCE_URL", "http://localhost:11445")
 
