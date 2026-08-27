@@ -49,6 +49,8 @@ def summarize_batch(
         "Always produce a substantive third-person summary of several sentences. "
         "Preserve durable facts: names, preferences, decisions, and ongoing topics. "
         "Compress older detail rather than dropping it entirely. "
+        "When new information supersedes old information, replace the old with the new — "
+        "do not preserve both versions of a changed fact. "
         f"Keep the summary under roughly {SUMMARY_MAX_TOKENS} tokens."
     )
 
@@ -69,6 +71,11 @@ def summarize_batch(
         ],
         system=system,
         model_id=provider.get_fallback_model(),
+    )
+
+    logger.info(
+        "Summary response: thinking=%s, %d chars, model=%s",
+        response.thinking, len(response.text), response.model_used,
     )
 
     result = response.text.strip()
