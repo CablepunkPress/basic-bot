@@ -57,7 +57,7 @@ SAMPLING_DEFAULTS: dict[str, dict] = {
             "top_p": 0.95,
             "top_k": 20,
             "min_p": 0.0,
-            "presence_penalty": 0.0,
+            "presence_penalty": 1.5, # not 0 because using quantized model
         },
         "non_thinking": {
             "temperature": 0.7,
