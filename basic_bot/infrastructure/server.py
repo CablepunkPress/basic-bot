@@ -22,11 +22,15 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from basic_bot.infrastructure.llamacpp import SERVER_BIN
+from basic_bot.infrastructure.models import (
+    CHAT_MODEL_FILE,
+    EMBEDDING_MODEL_FILE,
+    SUMMARY_MODEL_FILE,
+)
 
 logger = logging.getLogger(__name__)
 
 BOUNTIFUL_HOME = Path.home() / ".bountiful"
-MODELS_DIR = BOUNTIFUL_HOME / "models"
 
 # --- Server roles ---
 
@@ -72,7 +76,7 @@ class ServerConfig:
 def _embedding_config() -> ServerConfig:
     return ServerConfig(
         role=EMBEDDING,
-        model_path=MODELS_DIR / "Qwen3-Embedding-0.6B-Q8_0.gguf",
+        model_path=EMBEDDING_MODEL_FILE,
         port=PORTS[EMBEDDING],
         launch_args=[
             "--embeddings",
@@ -88,7 +92,7 @@ def _embedding_config() -> ServerConfig:
 def _summary_config() -> ServerConfig:
     return ServerConfig(
         role=SUMMARY,
-        model_path=MODELS_DIR / "Qwen3-8B-Q4_K_M.gguf",
+        model_path=SUMMARY_MODEL_FILE,
         port=PORTS[SUMMARY],
         launch_args=[
             "--n-gpu-layers", "-1",
@@ -101,10 +105,9 @@ def _summary_config() -> ServerConfig:
 
 
 def _chat_config() -> ServerConfig:
-    # TODO: Exact filename TBD after download and testing
     return ServerConfig(
         role=CHAT,
-        model_path=MODELS_DIR / "Qwen3.6-35B-A3B-IQ4_NL.gguf",
+        model_path=CHAT_MODEL_FILE,
         port=PORTS[CHAT],
         launch_args=[
             "--n-gpu-layers", "-1",
