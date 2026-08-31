@@ -7,7 +7,11 @@ Entry point for `python -m basic_bot.`.
 """
 
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
-from basic_bot.infrastructure.models import download_embedding_model
+from basic_bot.infrastructure.models import (
+    download_chat_model,
+    download_embedding_model,
+    download_summary_model,
+)
 
 
 def main() -> None:
@@ -19,10 +23,10 @@ def main() -> None:
     print("  llama.cpp (CPU)")
     build()
 
-    print("  embedding model")
+    print("  models")
     download_embedding_model()
-    # TODO: download_summary_model()
-    # TODO: download_chat_model()
+    download_summary_model()
+    download_chat_model()
 
 
 if __name__ == "__main__":
