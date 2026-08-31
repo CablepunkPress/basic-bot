@@ -1,13 +1,13 @@
-"""Fold lifecycle — shared between FastAPI and Flask servers.
+"""Fold lifecycle — manages the sliding window boundary.
 
 The fold is the mechanism that keeps the sliding window bounded.
 When unsummarized messages reach WINDOW_CEILING, the fold:
-  1. Embeds the oldest batch into RAG (synchronous, must succeed)
-  2. Generates an updated rolling summary (background, can fail safely)
+  1. Embeds the oldest batch into RAG (must succeed)
+  2. Generates an updated rolling summary (can fail safely)
 
-All functions are synchronous. The caller decides how to run the
-summary in the background — asyncio.create_task for FastAPI,
-threading.Thread for Flask.
+In sequential mode, the fold cycles through servers one at a time:
+chat stops → embedding starts/runs/stops → summary starts/runs/stops
+→ chat restarts. Only one llama-server process runs at any moment.
 """
 
 import logging
@@ -71,9 +71,8 @@ def fold_summary(
 ) -> None:
     """Generate and save the updated rolling summary.
 
-    Synchronous. The caller is responsible for running this in the
-    background (asyncio task, thread, etc.). If it fails, RAG already
-    captured the data — the summary catches up on the next fold.
+    Synchronous. If it fails, RAG already captured the data — the
+    summary catches up on the next fold.
     """
     new_through = chunk[-1]["seq"]
     batch = [{"role": m["role"], "content": m["content"]} for m in chunk]
@@ -96,10 +95,62 @@ def fold_summary(
         )
     except Exception:
         logger.exception(
-            "Background summary failed for user %s — summary left unchanged, "
+            "Summary failed for user %s — summary left unchanged, "
             "RAG has the data",
             user_id,
         )
+
+
+def fold_sequential(
+    runtime,
+    store: MessageStore,
+    user_id: str,
+    state: dict,
+) -> None:
+    """Full fold with sequential server lifecycle.
+
+    Stops the chat server, cycles through embedding and summary
+    servers one at a time, then restarts chat. Only one llama-server
+    process runs at any given moment.
+    """
+    from basic_bot.diagnostics import snapshot_memory
+    from basic_bot.infrastructure.server import start, stop, CHAT, EMBEDDING, SUMMARY
+
+    existing_summary = state["summary"]
+
+    snapshot_memory("pre-fold")
+    logger.info("Fold triggered — stopping chat server")
+
+    stop(CHAT)
+    snapshot_memory("chat-stopped")
+
+    # --- Embedding phase ---
+    start(EMBEDDING)
+    chunk = fold_rag(store, user_id, state)
+    stop(EMBEDDING)
+    snapshot_memory("embedding-done")
+
+    if chunk is None:
+        logger.warning("RAG failed — restarting chat, skipping summary")
+        start(CHAT)
+        snapshot_memory("chat-resumed")
+        return
+
+    # --- Summary phase ---
+    start(SUMMARY)
+    fold_summary(
+        runtime.summary_provider,
+        store,
+        user_id,
+        existing_summary,
+        chunk,
+    )
+    stop(SUMMARY)
+    snapshot_memory("summary-done")
+
+    # --- Resume chat ---
+    start(CHAT)
+    snapshot_memory("chat-resumed")
 
 
 def build_metadata(result: dict) -> dict:
