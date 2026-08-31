@@ -1,8 +1,11 @@
 """Download and manage models.
 
 Models are stored at ~/.bountiful/models/, shared by all agents
-on the machine. Two categories: one embedding model (small, CPU)
-and inference models (large, GPU).
+on the machine. Three roles: embedding (CPU), summary (GPU),
+and chat (GPU). Each role has one model, selected per hardware
+profile.
+
+Hardware profile: NVIDIA RTX 3060 12GB + 32GB DDR4
 """
 
 import sys
@@ -12,7 +15,10 @@ from pathlib import Path
 BOUNTIFUL_HOME = Path.home() / ".bountiful"
 MODELS_DIR = BOUNTIFUL_HOME / "models"
 
-# --- Embedding model (built automatically by build.py) ---
+
+# --- Embedding model ---
+# Qwen3-Embedding-0.6B Q8_0, self-hosted with EOS token fix
+# CPU-only, ~639MB
 
 EMBEDDING_MODEL_NAME = "Qwen3-Embedding-0.6B-Q8_0.gguf"
 EMBEDDING_MODEL_FILE = MODELS_DIR / EMBEDDING_MODEL_NAME
@@ -21,82 +27,75 @@ EMBEDDING_MODEL_URL = (
     f"/resolve/main/{EMBEDDING_MODEL_NAME}"
 )
 
-# --- Inference model catalog (downloaded on demand) ---
 
-INFERENCE_MODELS: dict[str, dict] = {
-    "qwen3-8b-q4_k_m": {
-        "filename": "Qwen3-8B-Q4_K_M.gguf",
-        "url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf",
-        "launch_args": [
-            "--n-gpu-layers", "-1",
-            "--flash-attn", "on",
-            "-np", "1",
-        ],
-    },
-    "qwen3-8b-q8_0": {
-        "filename": "Qwen3-8B-Q8_0.gguf",
-        "url": "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf",
-        "launch_args": [
-            "--n-gpu-layers", "-1",
-            "--flash-attn", "on",
-            "-np", "1",
-        ],
-    },
-        "qwen3.5-9b-q5_k_m": {
-        "filename": "Qwen3.5-9B-Q5_K_M.gguf",
-        "url": "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf",
-        "launch_args": [
-            "--n-gpu-layers", "-1",
-            "--flash-attn", "on",
-            "-np", "1",
-        ],
-    },
-}
+# --- Summary model ---
+# Qwen3-8B Q4_K_M — pure transformer, proven for summary folding
+# GPU, ~4.7GB on disk
+
+SUMMARY_MODEL_NAME = "Qwen3-8B-Q4_K_M.gguf"
+SUMMARY_MODEL_FILE = MODELS_DIR / SUMMARY_MODEL_NAME
+SUMMARY_MODEL_URL = (
+    "https://huggingface.co/Qwen/Qwen3-8B-GGUF"
+    f"/resolve/main/{SUMMARY_MODEL_NAME}"
+)
 
 
-def get_inference_model_path(model_id: str) -> Path:
-    """Return the expected file path for an inference model."""
-    if model_id not in INFERENCE_MODELS:
-        raise ValueError(
-            f"Unknown inference model: {model_id!r}\n"
-            f"Known models: {sorted(INFERENCE_MODELS)}"
-        )
-    return MODELS_DIR / INFERENCE_MODELS[model_id]["filename"]
+# --- Chat model ---
+# Qwen3.6-35B-A3B IQ4_NL — MoE, 3B active per token
+# GPU + CPU offload via -ncmoe, ~20.8GB on disk
+
+CHAT_MODEL_NAME = "Qwen_Qwen3.6-35B-A3B-IQ4_NL.gguf"
+CHAT_MODEL_FILE = MODELS_DIR / CHAT_MODEL_NAME
+CHAT_MODEL_URL = (
+    "https://huggingface.co/bartowski/Qwen_Qwen3.6-35B-A3B-GGUF"
+    f"/resolve/main/{CHAT_MODEL_NAME}"
+)
 
 
-def get_inference_launch_args(model_id: str) -> list[str]:
-    """Return the llama-server launch flags for a model."""
-    if model_id not in INFERENCE_MODELS:
-        raise ValueError(f"Unknown inference model: {model_id!r}")
-    return list(INFERENCE_MODELS[model_id]["launch_args"])
+# --- Download utilities ---
 
-
-def _fail(message: str) -> None:
-    sys.exit(f"\nERROR: {message}")
-
-
-def download_embedding_model() -> None:
-    """Download the embedding model if not already present."""
-    if EMBEDDING_MODEL_FILE.exists():
-        print(f"    already done — {EMBEDDING_MODEL_FILE} exists")
-        return
-
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-    partial = EMBEDDING_MODEL_FILE.with_suffix(".partial")
-
+def _progress(label: str):
+    """Return a reporthook that prints download progress."""
     def report(count: int, block_size: int, total: int) -> None:
         if total > 0:
             done = min(count * block_size, total)
             percent = done * 100 // total
             mb = done // (1024 * 1024)
-            print(f"\r    {percent}% ({mb} MB)", end="", flush=True)
+            total_mb = total // (1024 * 1024)
+            print(f"\r    {label}: {percent}% ({mb}/{total_mb} MB)", end="", flush=True)
+    return report
+
+
+def _download(name: str, url: str, dest: Path) -> None:
+    """Download a model file if not already present."""
+    if dest.exists():
+        print(f"    {name}: already downloaded")
+        return
+
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+    partial = dest.with_suffix(".partial")
 
     try:
-        urllib.request.urlretrieve(EMBEDDING_MODEL_URL, partial, reporthook=report)
+        urllib.request.urlretrieve(url, partial, reporthook=_progress(name))
     except Exception as e:
         if partial.exists():
             partial.unlink()
-        _fail(f"model download failed: {e}\nURL: {EMBEDDING_MODEL_URL}")
+        sys.exit(f"\nERROR: download failed: {e}\nURL: {url}")
 
-    partial.rename(EMBEDDING_MODEL_FILE)
-    print(f"\n    saved to {EMBEDDING_MODEL_FILE}")
+    partial.rename(dest)
+    print(f"\n    {name}: saved to {dest}")
+
+
+def download_embedding_model() -> None:
+    """Download the embedding model if not already present."""
+    _download("embedding", EMBEDDING_MODEL_URL, EMBEDDING_MODEL_FILE)
+
+
+def download_summary_model() -> None:
+    """Download the summary model if not already present."""
+    _download("summary", SUMMARY_MODEL_URL, SUMMARY_MODEL_FILE)
+
+
+def download_chat_model() -> None:
+    """Download the chat model if not already present."""
+    _download("chat", CHAT_MODEL_URL, CHAT_MODEL_FILE)
