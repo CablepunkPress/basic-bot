@@ -21,7 +21,6 @@ import re
 import urllib.error
 import urllib.request
 
-from basic_bot.config import INFERENCE_URL
 from basic_bot.providers.protocol import ChatResponse, ModelInfo, ToolCall
 
 logger = logging.getLogger(__name__)
