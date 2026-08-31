@@ -9,14 +9,11 @@ import logging
 
 import psutil
 
+from basic_bot.infrastructure.server import PORTS
+
 logger = logging.getLogger(__name__)
 
-# Port-to-role mapping matches infrastructure/server.py
-_PORT_ROLES = {
-    11333: "embedding",
-    11444: "summary",
-    11555: "chat",
-}
+_PORT_ROLES = {port: role for role, port in PORTS.items()}
 
 
 def _find_llama_servers() -> dict[str, dict]:
