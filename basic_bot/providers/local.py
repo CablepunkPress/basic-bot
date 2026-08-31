@@ -75,7 +75,7 @@ class LocalProvider:
     def __init__(
         self,
         model_id: str,
-        base_url: str = INFERENCE_URL,
+        base_url: str,
         max_tokens: int = DEFAULT_MAX_TOKENS,
     ):
         if model_id not in MODEL_CATALOG:
