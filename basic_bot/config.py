@@ -8,18 +8,21 @@ WINDOW_CEILING = int(os.environ.get("WINDOW_CEILING", "40"))  # fold triggers wh
 SUMMARY_MAX_TOKENS = int(os.environ.get("SUMMARY_MAX_TOKENS", "2000"))
 SUMMARY_MIN_CHARS = int(os.environ.get("SUMMARY_MIN_CHARS", "40"))
 
-# Local inference
-INFERENCE_URL = os.environ.get("INFERENCE_URL", "http://localhost:11445")
+# Local models: three roles, three servers, three ports
+EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://localhost:11333")
+SUMMARY_URL = os.environ.get("SUMMARY_URL", "http://localhost:11444")
+CHAT_URL = os.environ.get("CHAT_URL", "http://localhost:11555")
 
-# Storage backend — local SQLite by default; cloud deploys set STORAGE_BACKEND=firestore
+# Storage backend — local SQLite by default; 
+# cloud deploys set STORAGE_BACKEND=firestore
 STORAGE_BACKEND = os.environ.get("STORAGE_BACKEND", "sqlite")
 
-# Long-term memory (RAG) — local llama-server by default; cloud deploys set EMBEDDING_PROVIDER=vertex
+# LOCAL Long-term memory (RAG) — local llama-server by default; 
+# cloud deploys set EMBEDDING_PROVIDER=vertex
 EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "local")
-EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://localhost:11444")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "1024"))
 
-# Long-term memory (RAG) — values for cloud deploys
+# CLOUD Long-term memory (RAG) — values for cloud deploys
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
 EMBEDDING_LOCATION = os.environ.get("EMBEDDING_LOCATION", "us-east5")
 
