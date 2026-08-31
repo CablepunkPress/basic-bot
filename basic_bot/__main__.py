@@ -3,7 +3,6 @@
 Called by build.py in 'bountiful' repo.
 
 Entry point for `python -m basic_bot.`.
-
 """
 
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
