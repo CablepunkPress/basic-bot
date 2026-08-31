@@ -71,6 +71,7 @@ def summarize_batch(
         ],
         system=system,
         model_id=provider.get_fallback_model(),
+        thinking=False,
     )
 
     logger.info(
