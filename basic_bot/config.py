@@ -23,6 +23,7 @@ EMBEDDING_PROVIDER = os.environ.get("EMBEDDING_PROVIDER", "local")
 EMBEDDING_DIMENSIONS = int(os.environ.get("EMBEDDING_DIMENSIONS", "1024"))
 
 # CLOUD Long-term memory (RAG) — values for cloud deploys
+# local llama-server by default; cloud deploys set EMBEDDING_PROVIDER=vertex
 EMBEDDING_MODEL = os.environ.get("EMBEDDING_MODEL", "text-embedding-004")
 EMBEDDING_LOCATION = os.environ.get("EMBEDDING_LOCATION", "us-east5")
 
