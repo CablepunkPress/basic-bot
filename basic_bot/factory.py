@@ -33,21 +33,22 @@ def _read_config(agent_path: Path) -> dict:
 
 
 def _build_summary_provider(config: dict):
-    """Summary always runs on the local model. The local inference
-    server is permanent infrastructure — the memory tier."""
+    """Summary always runs on the local model."""
+    from basic_bot.config import SUMMARY_URL
     from basic_bot.providers.local import LocalProvider
 
     model_id = config.get("summary_model") or "qwen3-8b-q4_k_m"
-    return LocalProvider(model_id)
+    return LocalProvider(model_id, base_url=SUMMARY_URL)
 
 
 def _build_chat_provider(config: dict):
     provider_name = config.get("inference_provider") or "claude"
 
     if provider_name == "local":
+        from basic_bot.config import CHAT_URL
         from basic_bot.providers.local import LocalProvider
         model_id = config.get("default_model") or "qwen3-8b-q4_k_m"
-        return LocalProvider(model_id)
+        return LocalProvider(model_id, base_url=CHAT_URL)
 
     if provider_name == "claude":
         from basic_bot.providers.claude import ClaudeProvider
