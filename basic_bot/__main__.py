@@ -1,6 +1,9 @@
-"""Entry point for `python -m basic_bot.`.
+"""Build Orchestrator.
 
-Called by build.py in bountiful repo.
+Called by build.py in 'bountiful' repo.
+
+Entry point for `python -m basic_bot.`.
+
 """
 
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
