@@ -16,7 +16,7 @@ where to store the result — that's the caller's job.
 
 import logging
 
-from basic_bot.config import SUMMARY_MAX_TOKENS, SUMMARY_MIN_CHARS
+from basic_bot.config import SUMMARY_MAX_TOKENS, SUMMARY_MIN_CHARS, SUMMARY_SAMPLING
 from basic_bot.providers.protocol import InferenceProvider
 
 logger = logging.getLogger(__name__)
@@ -72,6 +72,7 @@ def summarize_batch(
         system=system,
         model_id=provider.get_fallback_model(),
         thinking=False,
+        sampling=SUMMARY_SAMPLING,
     )
 
     logger.info(
