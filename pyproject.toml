@@ -25,7 +25,7 @@ cloud = [
     "google-genai",
 ]
 dev = [
-    "basic-bot[local,cloud]",
+    "basic-bot[api,cloud,local]",
 ]
 
 [tool.setuptools.dynamic]
