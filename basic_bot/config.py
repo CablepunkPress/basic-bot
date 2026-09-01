@@ -48,7 +48,7 @@ SUMMARY_SAMPLING = {
 # repetition ruts in quantized models
 CHAT_SAMPLING = {
     "thinking": {
-        "temperature": 1.0,
+        "temperature": 0.6,
         "top_p": 0.95,
         "top_k": 20,
         "min_p": 0.0,
