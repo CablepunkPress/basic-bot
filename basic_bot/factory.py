@@ -36,7 +36,7 @@ def _build_summary_provider(config: dict):
     from basic_bot.config import SUMMARY_URL
     from basic_bot.providers.local import LocalProvider
 
-    model_id = config.get("summary_model") or "qwen3-8b-q4_k_m"
+    model_id = config.get("summary_model") or "qwen3-8b-q8_0"
     max_tokens = config.get("max_tokens", 4096)
     return LocalProvider(model_id, base_url=SUMMARY_URL, max_tokens=max_tokens)
 
@@ -47,7 +47,7 @@ def _build_chat_provider(config: dict):
     if provider_name == "local":
         from basic_bot.config import CHAT_URL
         from basic_bot.providers.local import LocalProvider
-        model_id = config.get("default_model") or "qwen3-8b-q4_k_m"
+        model_id = config.get("default_model") or "qwen3-8b-q8_0"
         max_tokens = config.get("max_tokens", 4096)
         return LocalProvider(model_id, base_url=CHAT_URL, max_tokens=max_tokens)
 
