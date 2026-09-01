@@ -7,16 +7,18 @@ name = "basic-bot"
 dynamic = ["version"]
 description = "A general-purpose AI assistant engine"
 requires-python = ">=3.14"
-dependencies = [
-    "anthropic",
-]
+dependencies = []
 
 [project.optional-dependencies]
 local = [
     "keyring",
     "psutil",
 ]
+api = [
+    "anthropic",
+]
 cloud = [
+    "basic-bot[api]",
     "fastapi",
     "uvicorn[standard]",
     "google-cloud-firestore",
