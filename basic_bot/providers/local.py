@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 _SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
 
 DEFAULT_MAX_TOKENS = 4096
-REQUEST_TIMEOUT = 300  # local generation on constrained hardware is slow
+REQUEST_TIMEOUT = 600  # local generation on constrained hardware is slow
 
 # Every model the local stack knows how to serve. infrastructure/ reads
 # this to download GGUFs and launch llama-server with --alias set to
