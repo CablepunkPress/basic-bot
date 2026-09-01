@@ -107,6 +107,7 @@ class ClaudeProvider:
         model_id: str,
         effort: str | None = None,
         thinking: bool = False,
+        sampling: dict | None = None,
     ) -> ChatResponse:
         """Send messages to Claude and return a ChatResponse."""
         if model_id not in MODELS:

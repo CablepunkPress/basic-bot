@@ -63,6 +63,7 @@ class InferenceProvider(Protocol):
         model_id: str,
         effort: str | None = None,
         thinking: bool = False,
+        sampling: dict | None = None,
     ) -> ChatResponse:
         """Send messages and return a response.
 

@@ -46,28 +46,6 @@ MODEL_CATALOG: dict[str, ModelInfo] = {
     ),
 }
 
-# Sampling defaults per model family, split by thinking mode.
-# Applied automatically by the provider — never exposed to users.
-# Values from official Qwen3 recommendations for quantized models.
-SAMPLING_DEFAULTS: dict[str, dict] = {
-    "qwen": {
-        "thinking": {
-            "temperature": 0.6,
-            "top_p": 0.95,
-            "top_k": 20,
-            "min_p": 0.0,
-            "presence_penalty": 1.5, # not 0 because using quantized model
-        },
-        "non_thinking": {
-            "temperature": 0.7,
-            "top_p": 0.8,
-            "top_k": 20,
-            "min_p": 0.0,
-            "presence_penalty": 1.5,
-        },
-    },
-}
-
 
 class LocalProvider:
     """InferenceProvider implementation for a local llama-server."""
@@ -117,6 +95,7 @@ class LocalProvider:
         model_id: str | None = None,
         effort: str | None = None,
         thinking: bool = False,
+        sampling: dict | None = None,
     ) -> ChatResponse:
         model_info = MODEL_CATALOG[self._model_id]
 
@@ -129,15 +108,16 @@ class LocalProvider:
         if tools:
             payload["tools"] = [self._translate_tool(t) for t in tools]
 
-        # Thinking toggle
         if model_info.thinking_type == "qwen":
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
 
-        # Sampling parameters — model family defaults, keyed by thinking mode
-        family = model_info.family.lower()
-        if family in SAMPLING_DEFAULTS:
+        # Sampling — caller override or config defaults
+        if sampling:
+            payload.update(sampling)
+        else:
+            from basic_bot.config import CHAT_SAMPLING
             mode = "thinking" if thinking else "non_thinking"
-            payload.update(SAMPLING_DEFAULTS[family][mode])
+            payload.update(CHAT_SAMPLING[mode])
 
         data = self._post(payload)
         return self._parse_response(data)
