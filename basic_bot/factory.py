@@ -33,12 +33,12 @@ def _read_config(agent_path: Path) -> dict:
 
 
 def _build_summary_provider(config: dict):
-    """Summary always runs on the local model."""
     from basic_bot.config import SUMMARY_URL
     from basic_bot.providers.local import LocalProvider
 
     model_id = config.get("summary_model") or "qwen3-8b-q4_k_m"
-    return LocalProvider(model_id, base_url=SUMMARY_URL)
+    max_tokens = config.get("max_tokens", 4096)
+    return LocalProvider(model_id, base_url=SUMMARY_URL, max_tokens=max_tokens)
 
 
 def _build_chat_provider(config: dict):
@@ -48,7 +48,8 @@ def _build_chat_provider(config: dict):
         from basic_bot.config import CHAT_URL
         from basic_bot.providers.local import LocalProvider
         model_id = config.get("default_model") or "qwen3-8b-q4_k_m"
-        return LocalProvider(model_id, base_url=CHAT_URL)
+        max_tokens = config.get("max_tokens", 4096)
+        return LocalProvider(model_id, base_url=CHAT_URL, max_tokens=max_tokens)
 
     if provider_name == "claude":
         from basic_bot.providers.claude import ClaudeProvider
