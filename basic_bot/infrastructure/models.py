@@ -27,27 +27,17 @@ EMBEDDING_MODEL_URL = (
     f"/resolve/main/{EMBEDDING_MODEL_NAME}"
 )
 
-
-# --- Summary model ---
-# Qwen3-8B Q4_K_M — pure transformer, proven for summary folding
-# GPU, ~4.7GB on disk
-
-SUMMARY_MODEL_NAME = "Qwen3-8B-Q4_K_M.gguf"
+SUMMARY_MODEL_NAME = "Qwen3-8B-Q8_0.gguf"
 SUMMARY_MODEL_FILE = MODELS_DIR / SUMMARY_MODEL_NAME
 SUMMARY_MODEL_URL = (
     "https://huggingface.co/Qwen/Qwen3-8B-GGUF"
     f"/resolve/main/{SUMMARY_MODEL_NAME}"
 )
 
-
-# --- Chat model ---
-# Qwen3.6-35B-A3B IQ4_NL — MoE, 3B active per token
-# GPU + CPU offload via -ncmoe, ~20.8GB on disk
-
-CHAT_MODEL_NAME = "Qwen_Qwen3.6-35B-A3B-IQ4_NL.gguf"
+CHAT_MODEL_NAME = "Qwen3-8B-Q8_0.gguf"
 CHAT_MODEL_FILE = MODELS_DIR / CHAT_MODEL_NAME
 CHAT_MODEL_URL = (
-    "https://huggingface.co/bartowski/Qwen_Qwen3.6-35B-A3B-GGUF"
+    "https://huggingface.co/Qwen/Qwen3-8B-GGUF"
     f"/resolve/main/{CHAT_MODEL_NAME}"
 )
 
