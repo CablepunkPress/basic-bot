@@ -99,7 +99,7 @@ def _summary_config() -> ServerConfig:
             "--flash-attn", "on",
             "--ctx-size", "16384",
             "--parallel", "1",
-            "--alias", "qwen3-8b-q4_k_m",
+            "--alias", "qwen3-8b-q8_0",
         ],
     )
 
@@ -111,12 +111,10 @@ def _chat_config() -> ServerConfig:
         port=PORTS[CHAT],
         launch_args=[
             "--n-gpu-layers", "-1",
-            "--n-cpu-moe", "25",
             "--flash-attn", "on",
             "--ctx-size", "32768",
             "--parallel", "1",
-            "--no-mmap",
-            "--alias", "qwen3.6-35b-a3b-iq4_nl",
+            "--alias", "qwen3-8b-q8_0",
         ],
     )
 
