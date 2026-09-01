@@ -35,4 +35,4 @@ version = {attr = "basic_bot.__version__"}
 include = ["basic_bot*"]
 
 [tool.setuptools.package-data]
-basic_bot = ["instructions/*.md"]
+basic_bot = ["instructions/*.md", "profiles/*.toml"]
