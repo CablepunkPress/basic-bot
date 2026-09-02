@@ -2,6 +2,9 @@
 
 Clones the repo into ~/.bountiful/llama.cpp and compiles llama-server
 with cmake. Checks for required build tools before starting.
+
+Build flags (e.g. -DGGML_CUDA=ON) are passed by __main__.py based
+on hardware detection.
 """
 
 import os
@@ -42,8 +45,13 @@ def check_prerequisites() -> None:
     print("    git, cmake, and a C++ compiler found")
 
 
-def build() -> None:
-    """Clone and compile llama-server if not already built."""
+def build(flags: list[str] | None = None) -> None:
+    """Clone and compile llama-server if not already built.
+
+    Args:
+        flags: Additional cmake flags, e.g. ["-DGGML_CUDA=ON"].
+               Determined by hardware detection in __main__.py.
+    """
     if SERVER_BIN.exists():
         print(f"    already done — {SERVER_BIN} exists")
         return
@@ -57,17 +65,26 @@ def build() -> None:
         if result.returncode != 0:
             _fail("git clone of llama.cpp failed — see output above")
 
-    print("    compiling llama-server — this takes a few minutes...")
-    configure = subprocess.run(["cmake", "-B", "build"], cwd=LLAMA_DIR)
+    cmake_flags = flags or []
+    flag_str = " ".join(cmake_flags) if cmake_flags else "CPU-only"
+    print(f"    compiling llama-server ({flag_str}) — this takes a few minutes...")
+
+    configure = subprocess.run(
+        ["cmake", "-B", "build"] + cmake_flags,
+        cwd=LLAMA_DIR,
+    )
     if configure.returncode != 0:
         _fail("cmake configure failed — see output above")
+
+    # CUDA builds segfault with too many parallel jobs
+    jobs = "4" if any("CUDA" in f for f in cmake_flags) else str(os.cpu_count() or 4)
 
     result = subprocess.run(
         [
             "cmake", "--build", "build",
             "--config", "Release",
             "--target", "llama-server",
-            "-j", str(os.cpu_count() or 4),
+            "-j", jobs,
         ],
         cwd=LLAMA_DIR,
     )
