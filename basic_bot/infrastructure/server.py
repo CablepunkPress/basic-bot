@@ -1,9 +1,6 @@
 """llama-server lifecycle management.
 
-Three server roles on dedicated ports:
-  - Embedding (CPU, port 11333)
-  - Summary   (GPU, port 11444)
-  - Chat      (GPU, port 11555)
+Three server roles on dedicated ports set in config.py
 
 Sequential mode: only one server runs at a time.
 At startup, only the chat server loads.
@@ -23,6 +20,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
+from basic_bot.config import EMBEDDING_PORT, SUMMARY_PORT, CHAT_PORT
 from basic_bot.infrastructure.llamacpp import SERVER_BIN
 
 logger = logging.getLogger(__name__)
@@ -36,10 +34,10 @@ EMBEDDING = "embedding"
 SUMMARY = "summary"
 CHAT = "chat"
 
-PORTS = {
-    EMBEDDING: 11333,
-    SUMMARY: 11444,
-    CHAT: 11555,
+_ROLE_PORTS = {
+    EMBEDDING: EMBEDDING_PORT,
+    SUMMARY: SUMMARY_PORT,
+    CHAT: CHAT_PORT,
 }
 
 LOG_FILES = {
@@ -158,7 +156,7 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
         stop(role)
 
     config = _config_for_role(role, model_id)
-    port = config.get("port", PORTS[role])
+    port = _ROLE_PORTS[role]
     model_path = MODELS_DIR / config["file"]
     label = f"{role.capitalize()} server"
 
