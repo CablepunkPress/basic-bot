@@ -8,9 +8,6 @@ WINDOW_CEILING = int(os.environ.get("WINDOW_CEILING", "40"))  # fold triggers wh
 SUMMARY_MAX_TOKENS = int(os.environ.get("SUMMARY_MAX_TOKENS", "2000"))
 SUMMARY_MIN_CHARS = int(os.environ.get("SUMMARY_MIN_CHARS", "40"))
 
-# Flask
-FLASK_PORT = int(os.environ.get("FLASK_PORT", "11777"))
-
 # Local llama.cpp ports
 EMBEDDING_PORT = int(os.environ.get("EMBEDDING_PORT", "11333"))
 SUMMARY_PORT = int(os.environ.get("SUMMARY_PORT", "11444"))
