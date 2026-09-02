@@ -37,33 +37,3 @@ HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "10"))
 
 # Tools — Basic Bot has a tool belt; downstream bots have an additional tool box; auto-detects tool box tools when true
 TOOL_BOX_ENABLED = os.getenv("TOOL_BOX_ENABLED", "true").lower() == "true"
-
-# --- Qwen Sampling ---
-# Summary: single-shot generation, no presence penalty,
-# thinking always off (controlled in summary.py)
-SUMMARY_SAMPLING = {
-    "temperature": 0.7,
-    "top_p": 0.8,
-    "top_k": 20,
-    "min_p": 0.0,
-    "presence_penalty": 0.0,
-}
-
-# Chat: multi-turn conversation, presence penalty prevents
-# repetition ruts in quantized models
-CHAT_SAMPLING = {
-    "thinking": {
-        "temperature": 0.6,
-        "top_p": 0.95,
-        "top_k": 20,
-        "min_p": 0.0,
-        "presence_penalty": 1.5,
-    },
-    "non_thinking": {
-        "temperature": 0.7,
-        "top_p": 0.8,
-        "top_k": 20,
-        "min_p": 0.0,
-        "presence_penalty": 1.5,
-    },
-}
