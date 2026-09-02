@@ -17,7 +17,6 @@ from basic_bot.profile import (
     detect_hardware,
     enable_default_models,
     get_downloadable_models,
-    get_profile,
     MODELS_DIR,
 )
 
@@ -78,7 +77,6 @@ def main() -> None:
 
     print("  detecting hardware")
     hw = detect_hardware()
-    profile = get_profile()
     print(f"    hardware: {hw}")
 
     print("  llama.cpp")
