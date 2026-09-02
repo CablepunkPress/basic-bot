@@ -1,7 +1,7 @@
 """Factory for building bot runtimes.
 
 create_runtime() assembles a BotRuntime from an agent directory.
-The agent directory contains persona.md, dashboard.json, config.json,
+The agent directory contains persona.md, dashboard.json, config.toml,
 and an optional tools/ directory. Web framework setup (Flask, FastAPI)
 is the caller's responsibility — the factory builds the runtime,
 not the routes.
@@ -16,39 +16,45 @@ from basic_bot.config import STORAGE_BACKEND
 from basic_bot.runtime import BotRuntime
 from basic_bot.tools import build_registry
 
-
 logger = logging.getLogger(__name__)
 
 
 def _read_config(agent_path: Path) -> dict:
-    """Read agent config.toml, returning empty dict if absent.
-
-    The engine provides defaults for missing fields — agents only
-    need to include values that differ from defaults.
-    """
+    """Read agent config.toml, returning empty dict if absent."""
     config_file = agent_path / "config.toml"
     if config_file.exists():
         return tomllib.loads(config_file.read_text())
     return {}
 
 
-def _build_summary_provider(config: dict):
+def _build_summary_provider():
+    """Summary always runs on the local model defined in the profile."""
     from basic_bot.config import SUMMARY_URL
+    from basic_bot.profile import get_summary_config
     from basic_bot.providers.local import LocalProvider
 
-    model_id = config.get("summary_model") or "qwen3-8b-q8_0"
-    max_tokens = config.get("max_tokens", 4096)
+    config = get_summary_config()
+    model_id = config["alias"]
+    max_tokens = config["max_tokens"]
     return LocalProvider(model_id, base_url=SUMMARY_URL, max_tokens=max_tokens)
 
 
 def _build_chat_provider(config: dict):
-    provider_name = config.get("inference_provider") or "claude"
+    """Build the chat provider.
+
+    Local deployment: LocalProvider from the hardware profile.
+    If inference_provider is "claude" in config.toml, uses Claude API.
+    Future: composite provider that aggregates both.
+    """
+    provider_name = config.get("inference_provider", "local")
 
     if provider_name == "local":
         from basic_bot.config import CHAT_URL
+        from basic_bot.profile import get_default_chat_model
         from basic_bot.providers.local import LocalProvider
-        model_id = config.get("default_model") or "qwen3-8b-q8_0"
-        max_tokens = config.get("max_tokens", 4096)
+
+        model_id, model_config = get_default_chat_model()
+        max_tokens = model_config["max_tokens"]
         return LocalProvider(model_id, base_url=CHAT_URL, max_tokens=max_tokens)
 
     if provider_name == "claude":
@@ -59,14 +65,7 @@ def _build_chat_provider(config: dict):
 
 
 def _build_store(backend: str, collection: str):
-    """Create the MessageStore for the configured backend.
-
-    Imports are deferred so a local install never pulls in google.cloud
-    and a cloud deploy never pulls in sqlite3 internals.
-
-    SQLite databases live at ~/.{agent_id}/{agent_id}.db — the agent ID
-    is the collection, and the dot-directory is created if absent.
-    """
+    """Create the MessageStore for the configured backend."""
     if backend == "firestore":
         from basic_bot.store_firestore import FirestoreMessageStore
         return FirestoreMessageStore(collection)
@@ -81,15 +80,7 @@ def _build_store(backend: str, collection: str):
 
 
 def create_runtime(agent_path: str | Path) -> BotRuntime:
-    """Build a fully configured bot runtime from an agent directory.
-
-    Args:
-        agent_path: Directory containing persona.md, dashboard.json,
-            and optionally config.json and tools/.
-
-    Returns:
-        A BotRuntime with store, persona, tools, and identity configured.
-    """
+    """Build a fully configured bot runtime from an agent directory."""
 
     agent_path = Path(agent_path).resolve()
 
@@ -103,7 +94,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
         force=True,
     )
 
-    # Config — agent settings, defaults for missing fields
+    # Config — agent settings
     config = _read_config(agent_path)
 
     # Persona — user-authored, in the agent directory
@@ -121,20 +112,20 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
         if context_parts:
             persona_text += "\n\n" + "\n\n".join(context_parts)
 
-    # Capabilities — engine-owned, always from the basic_bot package
+    # Capabilities — engine-owned
     capabilities_path = Path(__file__).parent / "instructions" / "capabilities.md"
     capabilities_text = capabilities_path.read_text().strip()
 
     persona = persona_text + "\n\n" + capabilities_text
 
-    # Storage — collection is the agent ID
+    # Storage
     store = _build_store(STORAGE_BACKEND, agent_id)
 
-    # Tools — belt from engine, box from agent_path/tools/
+    # Tools
     tool_registry = build_registry(agent_path)
 
-    # Providers — summary always local, chat selected by config
-    summary_provider = _build_summary_provider(config)
+    # Providers
+    summary_provider = _build_summary_provider()
     chat_provider = _build_chat_provider(config)
 
     return BotRuntime(
