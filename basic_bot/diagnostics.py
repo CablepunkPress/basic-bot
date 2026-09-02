@@ -9,11 +9,15 @@ import logging
 
 import psutil
 
-from basic_bot.infrastructure.server import PORTS
+from basic_bot.config import EMBEDDING_PORT, SUMMARY_PORT, CHAT_PORT
 
 logger = logging.getLogger(__name__)
 
-_PORT_ROLES = {port: role for role, port in PORTS.items()}
+_PORT_ROLES = {
+    EMBEDDING_PORT: "embedding",
+    SUMMARY_PORT: "summary",
+    CHAT_PORT: "chat",
+}
 
 
 def _find_llama_servers() -> dict[str, dict]:
