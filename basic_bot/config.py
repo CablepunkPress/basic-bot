@@ -8,12 +8,15 @@ WINDOW_CEILING = int(os.environ.get("WINDOW_CEILING", "40"))  # fold triggers wh
 SUMMARY_MAX_TOKENS = int(os.environ.get("SUMMARY_MAX_TOKENS", "2000"))
 SUMMARY_MIN_CHARS = int(os.environ.get("SUMMARY_MIN_CHARS", "40"))
 
+# Flask
+FLASK_PORT = int(os.environ.get("FLASK_PORT", "11777"))
+
 # Local llama.cpp ports
 EMBEDDING_PORT = int(os.environ.get("EMBEDDING_PORT", "11333"))
 SUMMARY_PORT = int(os.environ.get("SUMMARY_PORT", "11444"))
 CHAT_PORT = int(os.environ.get("CHAT_PORT", "11555"))
 
-# Local models: three roles, three servers, three ports
+# Local llama.cpp URLs
 EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://localhost:11333")
 SUMMARY_URL = os.environ.get("SUMMARY_URL", "http://localhost:11444")
 CHAT_URL = os.environ.get("CHAT_URL", "http://localhost:11555")
