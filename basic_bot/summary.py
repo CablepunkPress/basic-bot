@@ -16,7 +16,7 @@ where to store the result — that's the caller's job.
 
 import logging
 
-from basic_bot.config import SUMMARY_MAX_TOKENS, SUMMARY_MIN_CHARS
+from basic_bot.config import SUMMARY_MIN_CHARS
 from basic_bot.providers.protocol import InferenceProvider
 
 logger = logging.getLogger(__name__)
