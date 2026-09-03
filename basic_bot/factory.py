@@ -48,21 +48,33 @@ def _build_summary_sampling() -> dict:
 
 
 def _build_chat_provider(config: dict):
-    """Build the chat provider.
-
-    Default is local from the hardware profile. If inference_provider
-    is "claude" in config.toml, uses the Anthropic API instead.
-    """
     provider_name = config.get("inference_provider", "local")
 
     if provider_name == "local":
         from basic_bot.config import CHAT_URL
         from basic_bot.profile import get_default_chat_model
         from basic_bot.providers.local import LocalProvider
+        from basic_bot.providers.protocol import ModelInfo
 
         model_id, model_config = get_default_chat_model()
-        max_tokens = model_config["max_tokens"]
-        return LocalProvider(model_id, base_url=CHAT_URL, max_tokens=max_tokens)
+
+        model_info = ModelInfo(
+            id=model_id,
+            display_name=model_config["display_name"],
+            provider=model_config["provider"],
+            family=model_config["family"],
+            host="local",
+            rank=model_config.get("rank", 0),
+            thinking_type=model_config.get("thinking_type"),
+        )
+
+        return LocalProvider(
+            model_id,
+            base_url=CHAT_URL,
+            max_tokens=model_config["max_tokens"],
+            model_info=model_info,
+            sampling=model_config.get("sampling", {}),
+        )
 
     if provider_name == "claude":
         from basic_bot.providers.claude import ClaudeProvider
