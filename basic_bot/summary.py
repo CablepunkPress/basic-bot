@@ -8,7 +8,7 @@ function, not a conversational agent.
 The summary is one component of the three-tier memory system:
   - Sliding window: immediate (verbatim recent messages)
   - RAG: near-immediate (searchable turn pairs, embedded at fold time)
-  - Summary: eventual (compressed context, generated async after fold)
+  - Summary: eventual (compressed context, generated after fold)
 
 This module owns the prompt. It does not decide when to fold or
 where to store the result — that's the caller's job.
@@ -16,10 +16,16 @@ where to store the result — that's the caller's job.
 
 import logging
 
-from basic_bot.config import SUMMARY_MAX_TOKENS, SUMMARY_MIN_CHARS, SUMMARY_SAMPLING
+from basic_bot.config import SUMMARY_MAX_TOKENS, SUMMARY_MIN_CHARS
 from basic_bot.providers.protocol import InferenceProvider
 
 logger = logging.getLogger(__name__)
+
+
+def _get_summary_sampling() -> dict:
+    """Load summary sampling parameters from the hardware profile."""
+    from basic_bot.profile import get_summary_config
+    return get_summary_config()["sampling"]
 
 
 def summarize_batch(
@@ -50,8 +56,7 @@ def summarize_batch(
         "Preserve durable facts: names, preferences, decisions, and ongoing topics. "
         "Compress older detail rather than dropping it entirely. "
         "When new information supersedes old information, replace the old with the new — "
-        "do not preserve both versions of a changed fact. "
-        f"Keep the summary under roughly {SUMMARY_MAX_TOKENS} tokens."
+        "do not preserve both versions of a changed fact."
     )
 
     parts = []
@@ -72,7 +77,7 @@ def summarize_batch(
         system=system,
         model_id=provider.get_fallback_model(),
         thinking=False,
-        sampling=SUMMARY_SAMPLING,
+        sampling=_get_summary_sampling(),
     )
 
     logger.info(
