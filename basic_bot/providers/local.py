@@ -2,17 +2,13 @@
 
 Talks to llama-server's OpenAI-compatible /v1/chat/completions endpoint.
 One server, one model — the model is chosen at construction time and is
-the only entry get_models() returns. The full catalog of models the
-ecosystem knows how to run lives in MODEL_CATALOG; infrastructure/ uses
-it to download and launch, this provider uses it to describe what's
-loaded.
+the only entry get_models() returns.
 
-Translation between the engine's internal message format and the OpenAI
-chat format happens entirely inside this class, mirroring how
-ClaudeProvider owns the Anthropic translation. The engine never sees
-OpenAI message shapes.
+Model metadata and sampling parameters come from the hardware profile,
+injected at construction by the factory. This module never imports
+from profile.py or config.py for model-specific values.
 
-stdlib urllib only, matching LocalEmbedder — no SDK for localhost HTTP.
+stdlib urllib only — no SDK for localhost HTTP.
 """
 
 import json
@@ -28,41 +24,7 @@ logger = logging.getLogger(__name__)
 _SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
 
 DEFAULT_MAX_TOKENS = 4096
-REQUEST_TIMEOUT = 600  # local generation on constrained hardware is slow
-
-# Every model the local stack knows how to serve. infrastructure/ reads
-# this to download GGUFs and launch llama-server with --alias set to
-# the key. The provider serves whichever one the server was launched with.
-MODEL_CATALOG: dict[str, ModelInfo] = {
-    "qwen3-8b-q4_k_m": ModelInfo(
-        id="qwen3-8b-q4_k_m",
-        display_name="Qwen3 8B Q4_K_M",
-        provider="Alibaba",
-        family="Qwen",
-        host="local",
-        rank=1,
-        effort_levels=None,
-        thinking_type="qwen",
-    ),
-    "qwen3-8b-q8_0": ModelInfo(
-        id="qwen3-8b-q8_0",
-        display_name="Qwen3 8B Q8_0",
-        provider="Alibaba",
-        family="Qwen",
-        host="local",
-        rank=2,
-        thinking_type="qwen",
-    ),
-    "qwen3.6-35b-a3b-iq4_nl": ModelInfo(
-        id="qwen3.6-35b-a3b-iq4_nl",
-        display_name="Qwen3.6 35B-A3B IQ4_NL",
-        provider="Alibaba",
-        family="Qwen",
-        host="local",
-        rank=2,
-        thinking_type="qwen",
-    ),
-}
+REQUEST_TIMEOUT = 600
 
 
 class LocalProvider:
@@ -73,33 +35,29 @@ class LocalProvider:
         model_id: str,
         base_url: str,
         max_tokens: int = DEFAULT_MAX_TOKENS,
+        model_info: ModelInfo | None = None,
+        sampling: dict | None = None,
     ):
-        if model_id not in MODEL_CATALOG:
-            raise ValueError(
-                f"Unknown local model {model_id!r}. "
-                f"Known models: {sorted(MODEL_CATALOG)}"
-            )
         self._model_id = model_id
         self._endpoint = base_url.rstrip("/") + "/v1/chat/completions"
         self._max_tokens = max_tokens
+        self._model_info = model_info
+        self._sampling = sampling or {}
         logger.info(
-            "Local provider ready: %s at %s", model_id, self._endpoint,
+            "Local provider configured: %s → %s", model_id, self._endpoint,
         )
 
     # --- Protocol: model catalog ---
 
     def get_models(self) -> dict[str, ModelInfo]:
-        """Only the loaded model. The server runs one model; offering
-        others in the UI would offer models that can't respond."""
-        return {self._model_id: MODEL_CATALOG[self._model_id]}
+        if self._model_info:
+            return {self._model_id: self._model_info}
+        return {}
 
     def get_default_model(self) -> str:
         return self._model_id
 
     def get_fallback_model(self) -> str:
-        """Same as default. Fallback exists for API-world concerns
-        (silent substitution, cost tiers); locally there is one model
-        and it either answers or it doesn't."""
         return self._model_id
 
     # --- Protocol: chat ---
@@ -115,8 +73,6 @@ class LocalProvider:
         thinking: bool = False,
         sampling: dict | None = None,
     ) -> ChatResponse:
-        model_info = MODEL_CATALOG[self._model_id]
-
         payload: dict = {
             "model": self._model_id,
             "messages": self._build_messages(system, messages),
@@ -126,16 +82,16 @@ class LocalProvider:
         if tools:
             payload["tools"] = [self._translate_tool(t) for t in tools]
 
-        if model_info.thinking_type == "qwen":
+        # Thinking toggle — Qwen-specific
+        if self._model_info and self._model_info.thinking_type == "qwen":
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
 
-        # Sampling — caller override or config defaults
+        # Sampling — caller override (summary) or injected defaults (chat)
         if sampling:
             payload.update(sampling)
-        else:
-            from basic_bot.config import CHAT_SAMPLING
+        elif self._sampling:
             mode = "thinking" if thinking else "non_thinking"
-            payload.update(CHAT_SAMPLING[mode])
+            payload.update(self._sampling.get(mode, {}))
 
         data = self._post(payload)
         return self._parse_response(data)
@@ -143,15 +99,12 @@ class LocalProvider:
     # --- Outbound translation ---
 
     def _build_messages(self, system: str, messages: list[dict]) -> list[dict]:
-        """Engine format → OpenAI format."""
         out: list[dict] = [{"role": "system", "content": system}]
 
         for m in messages:
             role = m["role"]
 
             if role == "tool_result":
-                # Engine batches results in one message; OpenAI wants
-                # one tool message per result.
                 for r in m["results"]:
                     out.append({
                         "role": "tool",
@@ -183,7 +136,6 @@ class LocalProvider:
 
     @staticmethod
     def _translate_tool(tool: dict) -> dict:
-        """Anthropic tool schema → OpenAI function schema."""
         return {
             "type": "function",
             "function": {
@@ -220,12 +172,9 @@ class LocalProvider:
                 ToolCall(name=fn["name"], input=tool_input, id=tc["id"])
             )
 
-        # llama-server echoes its --alias here.
         model_used = data.get("model", self._model_id)
-
         thinking = bool(message.get("reasoning_content"))
 
-        # Warn on truncation
         finish_reason = choice.get("finish_reason")
         if finish_reason == "length":
             logger.warning(
