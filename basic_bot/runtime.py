@@ -1,6 +1,6 @@
 """Bot runtime — the identity and state of a running bot instance."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from basic_bot.providers.protocol import InferenceProvider
@@ -12,7 +12,9 @@ class BotRuntime:
     """Everything that distinguishes one bot from another at runtime.
 
     Built once by create_runtime() and passed through the chat functions.
-    Downstream bots never construct this directly — the factory does it.
+    The factory assembles this from the agent directory, config, and
+    hardware profile. Engine-core code reads from the runtime — it
+    never reaches outward to profiles or infrastructure.
     """
 
     agent_id: str
@@ -23,3 +25,4 @@ class BotRuntime:
     dashboard: dict
     chat_provider: InferenceProvider
     summary_provider: InferenceProvider
+    summary_sampling: dict = field(default_factory=dict)
