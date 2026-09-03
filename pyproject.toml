@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "basic-bot"
 dynamic = ["version"]
-description = "A general-purpose AI assistant engine"
+description = "A local-first AI assistant engine"
 requires-python = ">=3.14"
 dependencies = []
 
@@ -17,15 +17,8 @@ local = [
 api = [
     "anthropic",
 ]
-cloud = [
-    "basic-bot[api]",
-    "fastapi",
-    "uvicorn[standard]",
-    "google-cloud-firestore",
-    "google-genai",
-]
 dev = [
-    "basic-bot[api,cloud,local]",
+    "basic-bot[local,api]",
 ]
 
 [tool.setuptools.dynamic]
