@@ -1,10 +1,13 @@
 """Factory for building bot runtimes.
 
 create_runtime() assembles a BotRuntime from an agent directory.
-The agent directory contains persona.md, dashboard.json, config.toml,
-and an optional tools/ directory. Web framework setup (Flask, FastAPI)
-is the caller's responsibility — the factory builds the runtime,
-not the routes.
+This is the seam between deployment-specific configuration (profiles,
+hardware detection) and engine-core code that never knows what it's
+running on.
+
+Everything deployment-specific gets resolved here and injected into
+the runtime. Engine-core code reads from the runtime, never reaches
+outward.
 """
 
 import json
@@ -12,7 +15,6 @@ import logging
 import tomllib
 from pathlib import Path
 
-from basic_bot.config import STORAGE_BACKEND
 from basic_bot.runtime import BotRuntime
 from basic_bot.tools import build_registry
 
@@ -39,12 +41,17 @@ def _build_summary_provider():
     return LocalProvider(model_id, base_url=SUMMARY_URL, max_tokens=max_tokens)
 
 
+def _build_summary_sampling() -> dict:
+    """Load summary sampling from the hardware profile."""
+    from basic_bot.profile import get_summary_config
+    return get_summary_config()["sampling"]
+
+
 def _build_chat_provider(config: dict):
     """Build the chat provider.
 
-    Local deployment: LocalProvider from the hardware profile.
-    If inference_provider is "claude" in config.toml, uses Claude API.
-    Future: composite provider that aggregates both.
+    Default is local from the hardware profile. If inference_provider
+    is "claude" in config.toml, uses the Anthropic API instead.
     """
     provider_name = config.get("inference_provider", "local")
 
@@ -64,19 +71,13 @@ def _build_chat_provider(config: dict):
     raise ValueError(f"Unknown inference provider: {provider_name!r}")
 
 
-def _build_store(backend: str, collection: str):
-    """Create the MessageStore for the configured backend."""
-    if backend == "firestore":
-        from basic_bot.store_firestore import FirestoreMessageStore
-        return FirestoreMessageStore(collection)
+def _build_store(agent_id: str):
+    """Create the SQLite store for the agent."""
+    from basic_bot.store_sqlite import SQLiteMessageStore
 
-    if backend == "sqlite":
-        from basic_bot.store_sqlite import SQLiteMessageStore
-        sqlite_dir = Path.home() / f".{collection}"
-        sqlite_dir.mkdir(exist_ok=True)
-        return SQLiteMessageStore(str(sqlite_dir / f"{collection}.db"))
-
-    raise ValueError(f"Unknown storage backend: {backend!r}")
+    sqlite_dir = Path.home() / f".{agent_id}"
+    sqlite_dir.mkdir(exist_ok=True)
+    return SQLiteMessageStore(str(sqlite_dir / f"{agent_id}.db"))
 
 
 def create_runtime(agent_path: str | Path) -> BotRuntime:
@@ -119,7 +120,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     persona = persona_text + "\n\n" + capabilities_text
 
     # Storage
-    store = _build_store(STORAGE_BACKEND, agent_id)
+    store = _build_store(agent_id)
 
     # Tools
     tool_registry = build_registry(agent_path)
@@ -127,6 +128,9 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     # Providers
     summary_provider = _build_summary_provider()
     chat_provider = _build_chat_provider(config)
+
+    # Sampling — resolved from profile, carried on runtime
+    summary_sampling = _build_summary_sampling()
 
     return BotRuntime(
         agent_id=agent_id,
@@ -137,4 +141,5 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
         dashboard=dashboard,
         chat_provider=chat_provider,
         summary_provider=summary_provider,
+        summary_sampling=summary_sampling,
     )
