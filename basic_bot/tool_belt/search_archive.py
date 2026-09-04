@@ -39,6 +39,7 @@ def handler(context: dict, **tool_input) -> str:
         context["store"],
         context["user_id"],
         query,
+        context["embedder"],
     )
 
     if not results:
