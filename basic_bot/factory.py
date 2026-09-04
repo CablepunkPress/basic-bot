@@ -29,6 +29,14 @@ def _read_config(agent_path: Path) -> dict:
     return {}
 
 
+def _build_embedder():
+    """Build the local embedding provider."""
+    from basic_bot.config import EMBEDDING_URL
+    from basic_bot.embeddings import LocalEmbedder
+
+    return LocalEmbedder(EMBEDDING_URL)
+
+
 def _build_summary_provider():
     """Summary always runs on the local model defined in the profile."""
     from basic_bot.config import SUMMARY_URL
@@ -48,6 +56,11 @@ def _build_summary_sampling() -> dict:
 
 
 def _build_chat_provider(config: dict):
+    """Build the chat provider.
+
+    Default is local from the hardware profile. If inference_provider
+    is "claude" in config.toml, uses the Anthropic API instead.
+    """
     provider_name = config.get("inference_provider", "local")
 
     if provider_name == "local":
@@ -137,6 +150,9 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     # Tools
     tool_registry = build_registry(agent_path)
 
+    # Embedder
+    embedder = _build_embedder()
+
     # Providers
     summary_provider = _build_summary_provider()
     chat_provider = _build_chat_provider(config)
@@ -154,4 +170,5 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
         chat_provider=chat_provider,
         summary_provider=summary_provider,
         summary_sampling=summary_sampling,
+        embedder=embedder,
     )
