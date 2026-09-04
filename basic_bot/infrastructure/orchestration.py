@@ -39,7 +39,7 @@ def fold_sequential(
 
     # --- Embedding phase ---
     start(EMBEDDING)
-    chunk = fold_rag(store, user_id, state)
+    chunk = fold_rag(store, user_id, state, runtime.embedder)
     stop(EMBEDDING)
     snapshot_memory("embedding-done")
 
