@@ -1,14 +1,13 @@
-"""Embedding provider — local llama-server only.
+"""Local embedding provider.
 
 Turns text into vectors via the llama-server /v1/embeddings endpoint.
-The rest of the system calls embed() and never knows the details.
+Built by the factory, carried on the runtime. Engine-core code
+receives it as a parameter — never imports it directly.
 """
 
 import json
 import logging
 import urllib.request
-
-from basic_bot.config import EMBEDDING_URL
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +26,7 @@ class LocalEmbedder:
 
     def __init__(self, base_url: str):
         self._endpoint = base_url.rstrip("/") + "/v1/embeddings"
-        logger.info("Local embedder ready: %s", self._endpoint)
+        logger.info("Local embedder configured: %s", self._endpoint)
 
     def embed(self, texts: list[str], task: str = "document") -> list[list[float]]:
         if task == "query":
@@ -47,18 +46,3 @@ class LocalEmbedder:
 
         items = sorted(data["data"], key=lambda item: item["index"])
         return [item["embedding"] for item in items]
-
-
-_embedder: LocalEmbedder | None = None
-
-
-def embed(texts: list[str], task: str = "document") -> list[list[float]]:
-    """Embed a list of texts into vectors.
-
-    task is "document" (storing turns) or "query" (searching).
-    Returns one vector per input text, in order.
-    """
-    global _embedder
-    if _embedder is None:
-        _embedder = LocalEmbedder(EMBEDDING_URL)
-    return _embedder.embed(texts, task)
