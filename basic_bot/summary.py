@@ -5,13 +5,10 @@ using the configured inference provider. This is a separate call
 from the main conversation — the model acts as a summarization
 function, not a conversational agent.
 
-The summary is one component of the three-tier memory system:
-  - Sliding window: immediate (verbatim recent messages)
-  - RAG: near-immediate (searchable turn pairs, embedded at fold time)
-  - Summary: eventual (compressed context, generated after fold)
-
 This module owns the prompt. It does not decide when to fold or
-where to store the result — that's the caller's job.
+where to store the result — that's the caller's job. Sampling
+parameters are passed in by the caller — this module never reaches
+outward to profiles or config for model-specific values.
 """
 
 import logging
@@ -22,16 +19,11 @@ from basic_bot.providers.protocol import InferenceProvider
 logger = logging.getLogger(__name__)
 
 
-def _get_summary_sampling() -> dict:
-    """Load summary sampling parameters from the hardware profile."""
-    from basic_bot.profile import get_summary_config
-    return get_summary_config()["sampling"]
-
-
 def summarize_batch(
     provider: InferenceProvider,
     existing_summary: str,
     messages: list[dict[str, str]],
+    sampling: dict,
 ) -> str:
     """Fold a batch of aged-out messages into the rolling summary.
 
@@ -40,6 +32,8 @@ def summarize_batch(
         existing_summary: The current rolling summary ("" if first fold).
         messages: List of {"role": str, "content": str} dicts from the
             fold batch, in chronological order.
+        sampling: Sampling parameters (temperature, top_p, etc.)
+            injected by the caller from the runtime.
 
     Returns:
         The updated summary text, or "" if the result was implausibly short.
@@ -77,7 +71,7 @@ def summarize_batch(
         system=system,
         model_id=provider.get_fallback_model(),
         thinking=False,
-        sampling=_get_summary_sampling(),
+        sampling=sampling,
     )
 
     logger.info(
