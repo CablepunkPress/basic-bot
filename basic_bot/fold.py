@@ -33,7 +33,7 @@ def should_fold(store: MessageStore, user_id: str) -> dict | None:
     return None
 
 
-def fold_rag(store: MessageStore, user_id: str, state: dict) -> list[dict] | None:
+def fold_rag(store: MessageStore, user_id: str, state: dict, embedder) -> list[dict] | None:
     """Embed and store the fold batch into RAG.
 
     Returns the chunk of messages that were folded, or None if embedding
@@ -46,7 +46,7 @@ def fold_rag(store: MessageStore, user_id: str, state: dict) -> list[dict] | Non
     chunk = tail[:fold_size]
 
     try:
-        stored = store_turns(store, user_id, chunk)
+        stored = store_turns(store, user_id, chunk, embedder)
         logger.info("Embedded %d turn(s) in RAG for user %s", stored, user_id)
         return chunk
     except Exception:
