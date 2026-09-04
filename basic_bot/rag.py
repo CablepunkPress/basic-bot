@@ -4,15 +4,13 @@ Stores verbatim turn pairs with embedding vectors at fold time (when
 messages leave the sliding window and enter the summary). Retrieves
 them by semantic search when the agent invokes search_archive.
 
-The embedding call is delegated to embeddings.py, which handles
-provider selection (Vertex, local llama-server). This module pairs
-text with vectors and hands them to the store. It never writes to
-the database directly.
+The embedder is received as a parameter from the runtime — this
+module never constructs or imports one directly. It pairs text with
+vectors and hands them to the store.
 """
 
 import logging
 
-from basic_bot.embeddings import embed
 from basic_bot.store import MessageStore
 
 logger = logging.getLogger(__name__)
@@ -49,6 +47,7 @@ def store_turns(
     store: MessageStore,
     user_id: str,
     messages: list[dict],
+    embedder,
 ) -> int:
     """Embed and store turn pairs from a folded batch.
 
@@ -61,7 +60,7 @@ def store_turns(
         return 0
 
     texts = [t["content"] for t in turns]
-    vectors = embed(texts, task="document")
+    vectors = embedder.embed(texts, task="document")
 
     store_ready = []
     for turn, vector in zip(turns, vectors):
@@ -85,11 +84,12 @@ def search_memory(
     store: MessageStore,
     user_id: str,
     query: str,
+    embedder,
     limit: int = RAG_RESULT_LIMIT,
 ) -> list[dict]:
     """Search past conversation turns by semantic similarity.
 
     Returns up to limit results, each with verbatim content and seq range.
     """
-    query_vector = embed([query], task="query")[0]
+    query_vector = embedder.embed([query], task="query")[0]
     return store.search_vectors(user_id, query_vector, limit)
