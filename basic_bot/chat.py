@@ -168,7 +168,7 @@ async def chat_with_model(
     tool_schemas = [
         entry["schema"] for entry in runtime.tool_registry.values()
     ]
-    context = {"user_id": user_id, "store": runtime.store}
+    context = {"user_id": user_id, "store": runtime.store, "embedder": runtime.embedder}
 
     logger.info(
         "Sending to %s (effort=%s, thinking=%s) — %d messages, %d tools",
