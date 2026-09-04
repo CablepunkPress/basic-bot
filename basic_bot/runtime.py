@@ -3,6 +3,7 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 
+from basic_bot.embeddings import LocalEmbedder
 from basic_bot.providers.protocol import InferenceProvider
 from basic_bot.store import MessageStore
 
@@ -26,3 +27,4 @@ class BotRuntime:
     chat_provider: InferenceProvider
     summary_provider: InferenceProvider
     summary_sampling: dict = field(default_factory=dict)
+    embedder: LocalEmbedder | None = None
