@@ -56,7 +56,7 @@ def detect_hardware() -> str:
 
 
 def _detect_nvidia() -> str:
-    """Identify the NVIDIA GPU and return a profile name."""
+    """Identify NVIDIA GPU by VRAM and return a profile name."""
     result = subprocess.run(
         ["nvidia-smi", "--query-gpu=name,memory.total",
          "--format=csv,noheader,nounits"],
@@ -65,18 +65,20 @@ def _detect_nvidia() -> str:
     if result.returncode != 0:
         sys.exit("nvidia-smi failed. Check your GPU drivers.")
 
-    line = result.stdout.strip()
-    logger.info("Detected GPU: %s", line)
+    lines = result.stdout.strip().split("\n")
+    name, vram_str = lines[0].split(",")
+    vram_mb = int(vram_str.strip())
+    vram_gb = vram_mb // 1024
 
-    if "3060" in line:
-        return "nvidia_3060"
-    # Future: "5090", "4090", etc.
+    logger.info("Detected: %s (%d GB VRAM)", name.strip(), vram_gb)
 
-    # Unknown NVIDIA — fall back to the most constrained profile
-    logger.warning(
-        "No exact profile for this GPU. Using nvidia_3060 as fallback."
-    )
-    return "nvidia_3060"
+    if vram_gb < 12:
+        sys.exit(
+            f"GPU has {vram_gb}GB VRAM. Bountiful requires at least 12GB."
+        )
+
+    # Future: if vram_gb >= 24: return "nvidia_24gb", etc.
+    return "nvidia_12gb"
 
 
 def _detect_apple() -> str:

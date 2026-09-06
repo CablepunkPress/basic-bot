@@ -1,4 +1,5 @@
-# Hardware Profile: NVIDIA RTX 3060 12GB + 32GB DDR4
+# Hardware Profile: NVIDIA 12GB+ VRAM
+# Tested on: RTX 3060 12GB + 32GB DDR4
 #
 # Sequential server mode — one llama-server process at a time.
 # All models fit in 12GB VRAM individually. No CPU offloading
