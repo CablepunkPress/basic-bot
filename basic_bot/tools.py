@@ -19,7 +19,7 @@ import pkgutil
 import sys
 from pathlib import Path
 
-from basic_bot.config import TOOL_BOX_ENABLED
+import basic_bot.config as config
 
 logger = logging.getLogger(__name__)
 
@@ -117,7 +117,7 @@ def load_box(tools_dir: Path) -> dict:
     Loose .py files in tools/ load first, then each subdirectory as a
     group. Returns an empty dict if disabled or the directory is absent.
     """
-    if not TOOL_BOX_ENABLED:
+    if not config.TOOL_BOX_ENABLED:
         logger.info("Tool box disabled")
         return {}
 

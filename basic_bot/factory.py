@@ -31,22 +31,21 @@ def _read_config(agent_path: Path) -> dict:
 
 def _build_embedder():
     """Build the local embedding provider."""
-    from basic_bot.config import EMBEDDING_URL
+    import basic_bot.config as config
     from basic_bot.embeddings import LocalEmbedder
-
-    return LocalEmbedder(EMBEDDING_URL)
+    return LocalEmbedder(config.EMBEDDING_URL)
 
 
 def _build_summary_provider():
     """Summary always runs on the local model defined in the profile."""
-    from basic_bot.config import SUMMARY_URL
+    import basic_bot.config as config
     from basic_bot.profile import get_summary_config
     from basic_bot.providers.local import LocalProvider
 
-    config = get_summary_config()
-    model_id = config["alias"]
-    max_tokens = config["max_tokens"]
-    return LocalProvider(model_id, base_url=SUMMARY_URL, max_tokens=max_tokens)
+    summary_config = get_summary_config()
+    model_id = summary_config["alias"]
+    max_tokens = summary_config["max_tokens"]
+    return LocalProvider(model_id, base_url=config.SUMMARY_URL, max_tokens=max_tokens)
 
 
 def _build_summary_sampling() -> dict:
@@ -55,16 +54,19 @@ def _build_summary_sampling() -> dict:
     return get_summary_config()["sampling"]
 
 
-def _build_chat_provider(config: dict):
-    """Build the chat provider.
-
-    Default is local from the hardware profile. If inference_provider
-    is "claude" in config.toml, uses the Anthropic API instead.
+def _build_chat_provider(agent_config: dict):
     """
-    provider_name = config.get("inference_provider", "local")
+    Build the chat provider.
+
+    Default is local. Uses LocalProvider backed by llama-server. 
+    Model selection (embedding, summary, chat) comes from hardware profile: GGUF on local VRAM.
+
+    If inference_provider = "claude" added to agent's config.toml, uses the Anthropic API instead for chat.
+    """
+    provider_name = agent_config.get("inference_provider", "local")
 
     if provider_name == "local":
-        from basic_bot.config import CHAT_URL
+        import basic_bot.config as config
         from basic_bot.profile import get_default_chat_model
         from basic_bot.providers.local import LocalProvider
         from basic_bot.providers.protocol import ModelInfo
@@ -83,7 +85,7 @@ def _build_chat_provider(config: dict):
 
         return LocalProvider(
             model_id,
-            base_url=CHAT_URL,
+            base_url=config.CHAT_URL,
             max_tokens=model_config["max_tokens"],
             model_info=model_info,
             sampling=model_config.get("sampling", {}),

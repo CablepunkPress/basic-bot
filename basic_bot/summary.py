@@ -13,7 +13,7 @@ outward to profiles or config for model-specific values.
 
 import logging
 
-from basic_bot.config import SUMMARY_MIN_CHARS
+import basic_bot.config as config
 from basic_bot.providers.protocol import InferenceProvider
 
 logger = logging.getLogger(__name__)
@@ -81,7 +81,7 @@ def summarize_batch(
 
     result = response.text.strip()
 
-    if len(result) < SUMMARY_MIN_CHARS:
+    if len(result) < config.SUMMARY_MIN_CHARS:
         logger.warning(
             "Summary came back implausibly short (%d chars) — returning empty",
             len(result),

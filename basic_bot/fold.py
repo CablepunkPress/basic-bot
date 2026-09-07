@@ -13,7 +13,7 @@ to sequence the fold.
 
 import logging
 
-from basic_bot.config import WINDOW_CEILING, WINDOW_FLOOR
+import basic_bot.config as config
 from basic_bot.providers.protocol import InferenceProvider
 from basic_bot.rag import store_turns
 from basic_bot.store import MessageStore
@@ -28,7 +28,7 @@ def should_fold(store: MessageStore, user_id: str) -> dict | None:
     boundary = state["summarized_through"]
     latest = state["next_seq"] - 1
 
-    if latest - boundary >= WINDOW_CEILING:
+    if latest - boundary >= config.WINDOW_CEILING:
         return state
     return None
 
@@ -40,7 +40,7 @@ def fold_rag(store: MessageStore, user_id: str, state: dict, embedder) -> list[d
     failed. When None, the caller must not advance the summary boundary.
     """
     boundary = state["summarized_through"]
-    fold_size = WINDOW_CEILING - WINDOW_FLOOR
+    fold_size = config.WINDOW_CEILING - config.WINDOW_FLOOR
 
     tail = store.get_messages_after(user_id, boundary)
     chunk = tail[:fold_size]

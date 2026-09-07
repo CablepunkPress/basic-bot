@@ -20,7 +20,7 @@ import urllib.error
 import urllib.request
 from pathlib import Path
 
-from basic_bot.config import EMBEDDING_PORT, SUMMARY_PORT, CHAT_PORT
+import basic_bot.config as config
 from basic_bot.infrastructure.llamacpp import SERVER_BIN
 
 logger = logging.getLogger(__name__)
@@ -35,9 +35,9 @@ SUMMARY = "summary"
 CHAT = "chat"
 
 _ROLE_PORTS = {
-    EMBEDDING: EMBEDDING_PORT,
-    SUMMARY: SUMMARY_PORT,
-    CHAT: CHAT_PORT,
+    EMBEDDING: config.EMBEDDING_PORT,
+    SUMMARY: config.SUMMARY_PORT,
+    CHAT: config.CHAT_PORT,
 }
 
 LOG_FILES = {

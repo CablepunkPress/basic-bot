@@ -14,14 +14,14 @@ messages by number. The richer data is available to callers that need it
 
 import re
 
-from basic_bot.config import WINDOW_FLOOR
+import basic_bot.config as config
 from basic_bot.store import MessageStore
 
 _SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
 
 
 def get_messages(
-    store: MessageStore, user_id: str, limit: int = WINDOW_FLOOR,
+    store: MessageStore, user_id: str, limit: int = config.WINDOW_FLOOR,
 ) -> list[dict]:
     """Get recent messages for a user, in chronological order.
 

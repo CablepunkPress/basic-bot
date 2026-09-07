@@ -9,14 +9,14 @@ import logging
 
 import psutil
 
-from basic_bot.config import EMBEDDING_PORT, SUMMARY_PORT, CHAT_PORT
+import basic_bot.config as config
 
 logger = logging.getLogger(__name__)
 
 _PORT_ROLES = {
-    EMBEDDING_PORT: "embedding",
-    SUMMARY_PORT: "summary",
-    CHAT_PORT: "chat",
+    config.EMBEDDING_PORT: "embedding",
+    config.SUMMARY_PORT: "summary",
+    config.CHAT_PORT: "chat",
 }
 
 
