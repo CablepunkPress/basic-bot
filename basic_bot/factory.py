@@ -41,11 +41,27 @@ def _build_summary_provider():
     import basic_bot.config as config
     from basic_bot.profile import get_summary_config
     from basic_bot.providers.local import LocalProvider
+    from basic_bot.providers.protocol import ModelInfo
 
     summary_config = get_summary_config()
     model_id = summary_config["alias"]
     max_tokens = summary_config["max_tokens"]
-    return LocalProvider(model_id, base_url=config.SUMMARY_URL, max_tokens=max_tokens)
+
+    model_info = ModelInfo(
+        id=model_id,
+        display_name=summary_config.get("alias", model_id),
+        provider=summary_config["provider"],
+        family=summary_config["family"],
+        host="local",
+        thinking_type=summary_config.get("thinking_type"),
+    )
+
+    return LocalProvider(
+        model_id,
+        base_url=config.SUMMARY_URL,
+        max_tokens=max_tokens,
+        model_info=model_info,
+    )
 
 
 def _build_summary_sampling() -> dict:
