@@ -11,7 +11,6 @@ hardware profile loaded by basic_bot.profile.
 """
 
 import logging
-import os
 import socket
 import subprocess
 import sys
@@ -80,15 +79,6 @@ def _build_launch_args(config: dict) -> list[str]:
     args += ["--parallel", "1"]
 
     return args
-
-
-def _build_env(config: dict) -> dict | None:
-    """Build environment overrides from profile config."""
-    if config.get("hide_gpu"):
-        env = os.environ.copy()
-        env["CUDA_VISIBLE_DEVICES"] = ""
-        return env
-    return None
 
 
 def _config_for_role(role: str, model_id: str | None = None) -> dict:
@@ -182,15 +172,12 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
         "--port", str(port),
     ] + launch_args
 
-    # Build environment
-    env = _build_env(config)
-
     # Start and wait for health
     log_path = LOG_FILES[role]
     log_file = open(log_path, "w")
 
     process = subprocess.Popen(
-        cmd, stdout=log_file, stderr=subprocess.STDOUT, env=env,
+        cmd, stdout=log_file, stderr=subprocess.STDOUT,
     )
     print(f"{label} starting on port {port} (log: {log_path})")
 
