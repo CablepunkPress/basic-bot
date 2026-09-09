@@ -1,9 +1,9 @@
 """Local fold orchestration.
 
 Sequences the fold lifecycle with server management: stops chat,
-cycles embedding and summary servers, restarts chat. This is
-local-only infrastructure — engine-core fold logic lives in
-basic_bot.fold.
+runs embedding (handled by ManagedEmbedder), cycles summary server,
+restarts chat. This is local-only infrastructure — engine-core fold
+logic lives in basic_bot.fold.
 """
 
 import logging
@@ -22,12 +22,12 @@ def fold_sequential(
 ) -> None:
     """Full fold with sequential server lifecycle.
 
-    Stops the chat server, cycles through embedding and summary
-    servers one at a time, then restarts chat. Only one llama-server
-    process runs at any given moment.
+    Stops the chat server, runs embedding (server lifecycle handled
+    by ManagedEmbedder transparently), cycles the summary server,
+    then restarts chat.
     """
     from basic_bot.diagnostics import snapshot_memory
-    from basic_bot.infrastructure.server import start, stop, CHAT, EMBEDDING, SUMMARY
+    from basic_bot.infrastructure.server import start, stop, CHAT, SUMMARY
 
     existing_summary = state["summary"]
 
@@ -38,9 +38,8 @@ def fold_sequential(
     snapshot_memory("chat-stopped")
 
     # --- Embedding phase ---
-    start(EMBEDDING)
+    # ManagedEmbedder handles server start/stop transparently
     chunk = fold_rag(store, user_id, state, runtime.embedder)
-    stop(EMBEDDING)
     snapshot_memory("embedding-done")
 
     if chunk is None:
