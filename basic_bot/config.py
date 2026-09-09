@@ -1,6 +1,9 @@
-"""Engine defaults
+"""Engine defaults.
 
-Override these values in Bountiful agent's config.toml
+Override these values in Bountiful agent's config.toml.
+
+Consumers must use `import basic_ui.config as ui_config` and
+then `ui_config.X` — never `from basic_ui.config import X`.
 """
 
 # Sliding context window
