@@ -12,8 +12,20 @@ has no knowledge of infrastructure or server management.
 import json
 import logging
 import urllib.request
+from typing import Protocol
 
 logger = logging.getLogger(__name__)
+
+
+class Embedder(Protocol):
+    """Protocol for embedding providers.
+
+    Any class with an embed() method matching this signature
+    satisfies the protocol. Both LocalEmbedder and ManagedEmbedder
+    implement it without inheriting from anything.
+    """
+
+    def embed(self, texts: list[str], task: str = "document") -> list[list[float]]: ...
 
 
 class LocalEmbedder:
@@ -60,7 +72,7 @@ class ManagedEmbedder:
     The start/stop callbacks are injected by the factory.
     """
 
-    def __init__(self, embedder: LocalEmbedder, start_fn, stop_fn):
+    def __init__(self, embedder: Embedder, start_fn, stop_fn):
         self._embedder = embedder
         self._start = start_fn
         self._stop = stop_fn
