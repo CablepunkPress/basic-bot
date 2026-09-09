@@ -30,16 +30,29 @@ def _read_config(agent_path: Path) -> dict:
 
 
 def _build_embedder():
-    """Build a managed embedder with on-demand server lifecycle."""
     import basic_bot.config as config
     from basic_bot.embeddings import LocalEmbedder, ManagedEmbedder
-    from basic_bot.infrastructure.server import start, stop, EMBEDDING
+    from basic_bot.infrastructure.server import start, stop, is_running, CHAT, EMBEDDING
+
+    _chat_was_running = False
+
+    def start_embedding():
+        nonlocal _chat_was_running
+        _chat_was_running = is_running(CHAT)
+        if _chat_was_running:
+            stop(CHAT)
+        start(EMBEDDING)
+
+    def stop_embedding():
+        stop(EMBEDDING)
+        if _chat_was_running:
+            start(CHAT)
 
     embedder = LocalEmbedder(config.EMBEDDING_URL)
     return ManagedEmbedder(
         embedder,
-        start_fn=lambda: start(EMBEDDING),
-        stop_fn=lambda: stop(EMBEDDING),
+        start_fn=start_embedding,
+        stop_fn=stop_embedding,
     )
 
 
