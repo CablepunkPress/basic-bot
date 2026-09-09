@@ -1,24 +1,41 @@
-import os
+"""Engine defaults
+
+Override these values in Bountiful agent's config.toml
+"""
 
 # Sliding context window
-WINDOW_FLOOR = int(os.environ.get("WINDOW_FLOOR", "20")) # minimum messages in the sliding window
-WINDOW_CEILING = int(os.environ.get("WINDOW_CEILING", "40")) # fold triggers when messages reach this count
+WINDOW_FLOOR = 20
+WINDOW_CEILING = 40
 
 # Summary validation
-SUMMARY_MIN_CHARS = int(os.environ.get("SUMMARY_MIN_CHARS", "40"))
+SUMMARY_MIN_CHARS = 40
 
 # Local llama.cpp ports
-EMBEDDING_PORT = int(os.environ.get("EMBEDDING_PORT", "11333"))
-SUMMARY_PORT = int(os.environ.get("SUMMARY_PORT", "11444"))
-CHAT_PORT = int(os.environ.get("CHAT_PORT", "11555"))
+EMBEDDING_PORT = 11333
+SUMMARY_PORT = 11444
+CHAT_PORT = 11555
 
 # Local llama.cpp URLs
-EMBEDDING_URL = os.environ.get("EMBEDDING_URL", "http://localhost:11333")
-SUMMARY_URL = os.environ.get("SUMMARY_URL", "http://localhost:11444")
-CHAT_URL = os.environ.get("CHAT_URL", "http://localhost:11555")
+EMBEDDING_URL = "http://localhost:11333"
+SUMMARY_URL = "http://localhost:11444"
+CHAT_URL = "http://localhost:11555"
 
-# History (UI loads last N messages at startup for user reference)
-HISTORY_LIMIT = int(os.environ.get("HISTORY_LIMIT", "10"))
+# History (UI loads last N messages at startup)
+HISTORY_LIMIT = 10
 
-# Tools — agent ships with tool_belt; plugin tools are the tool_box; auto-detects plugin agent tools/ when true
-TOOL_BOX_ENABLED = os.getenv("TOOL_BOX_ENABLED", "true").lower() == "true"
+# Tools: agent ships with tool_belt; plugin tools are the tool_box; auto-detects plugin agent tools/ when true
+TOOL_BOX_ENABLED = True
+
+
+def apply_overrides(overrides: dict) -> None:
+    """Override defaults from the agent's config.toml.
+
+    Called once at startup by launch.py before anything else
+    imports from this module. Keys in config.toml are matched
+    case-insensitively to the uppercase constants above.
+    """
+    import basic_bot.config as _self
+    for key, value in overrides.items():
+        upper_key = key.upper()
+        if hasattr(_self, upper_key):
+            setattr(_self, upper_key, value)
