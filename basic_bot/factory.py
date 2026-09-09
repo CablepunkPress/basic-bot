@@ -30,10 +30,17 @@ def _read_config(agent_path: Path) -> dict:
 
 
 def _build_embedder():
-    """Build the local embedding provider."""
+    """Build a managed embedder with on-demand server lifecycle."""
     import basic_bot.config as config
-    from basic_bot.embeddings import LocalEmbedder
-    return LocalEmbedder(config.EMBEDDING_URL)
+    from basic_bot.embeddings import LocalEmbedder, ManagedEmbedder
+    from basic_bot.infrastructure.server import start, stop, EMBEDDING
+
+    embedder = LocalEmbedder(config.EMBEDDING_URL)
+    return ManagedEmbedder(
+        embedder,
+        start_fn=lambda: start(EMBEDDING),
+        stop_fn=lambda: stop(EMBEDDING),
+    )
 
 
 def _build_summary_provider():
