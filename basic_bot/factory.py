@@ -29,7 +29,12 @@ def _read_config(agent_path: Path) -> dict:
     return {}
 
 
-def _build_embedder():
+def _build_embedder(chat_registry):
+    """Build a ManagedEmbedder with lifecycle callbacks.
+
+    The chat_registry reference lets the restart closure use the
+    correct local model — not just the profile default.
+    """
     import basic_bot.config as config
     from basic_bot.embeddings import LocalEmbedder, ManagedEmbedder
     from basic_bot.infrastructure.server import start, stop, is_running, CHAT, EMBEDDING
@@ -46,7 +51,8 @@ def _build_embedder():
     def stop_embedding():
         stop(EMBEDDING)
         if _chat_was_running:
-            start(CHAT)
+            model_id = chat_registry.active_local_model
+            start(CHAT, model_id)
 
     embedder = LocalEmbedder(config.EMBEDDING_URL)
     return ManagedEmbedder(
@@ -90,25 +96,15 @@ def _build_summary_sampling() -> dict:
     return get_summary_config()["sampling"]
 
 
-def _build_chat_provider(agent_config: dict):
-    """
-    Build the chat provider.
+def _build_local_chat_providers() -> dict:
+    """Build a LocalProvider for each available local chat model."""
+    import basic_bot.config as config
+    from basic_bot.profile import get_available_chat_models
+    from basic_bot.providers.local import LocalProvider
+    from basic_bot.providers.protocol import ModelInfo
 
-    Default is local. Uses LocalProvider backed by llama-server. 
-    Model selection (embedding, summary, chat) comes from hardware profile: GGUF on local VRAM.
-
-    If inference_provider = "claude" added to agent's config.toml, uses the Anthropic API instead for chat.
-    """
-    provider_name = agent_config.get("inference_provider", "local")
-
-    if provider_name == "local":
-        import basic_bot.config as config
-        from basic_bot.profile import get_default_chat_model
-        from basic_bot.providers.local import LocalProvider
-        from basic_bot.providers.protocol import ModelInfo
-
-        model_id, model_config = get_default_chat_model()
-
+    providers = {}
+    for model_id, model_config in get_available_chat_models().items():
         model_info = ModelInfo(
             id=model_id,
             display_name=model_config["display_name"],
@@ -118,20 +114,66 @@ def _build_chat_provider(agent_config: dict):
             rank=model_config.get("rank", 0),
             thinking_type=model_config.get("thinking_type"),
         )
-
-        return LocalProvider(
+        providers[model_id] = LocalProvider(
             model_id,
             base_url=config.CHAT_URL,
             max_tokens=model_config["max_tokens"],
             model_info=model_info,
             sampling=model_config.get("sampling", {}),
         )
+    return providers
 
-    if provider_name == "claude":
-        from basic_bot.providers.claude import ClaudeProvider
-        return ClaudeProvider()
 
-    raise ValueError(f"Unknown inference provider: {provider_name!r}")
+def _build_api_chat_provider():
+    """Build ClaudeProvider if an API key is available. None otherwise."""
+    import os
+    if not os.environ.get("ANTHROPIC_API_KEY"):
+        return None
+    from basic_bot.providers.claude import ClaudeProvider
+    return ClaudeProvider()
+
+
+def _build_chat_registry(agent_config: dict):
+    """Build the composite chat provider with lifecycle management.
+
+    Merges local and API models into one catalog. Lifecycle closures
+    follow the same pattern as _build_embedder — factory captures
+    infrastructure imports, registry calls through closures.
+    """
+    from basic_bot.infrastructure.server import start, stop, CHAT
+    from basic_bot.profile import get_default_chat_model
+    from basic_bot.providers.registry import ChatProviderRegistry
+
+    local_providers = _build_local_chat_providers()
+    api_provider = _build_api_chat_provider()
+
+    local_default_id, _ = get_default_chat_model()
+    provider_name = agent_config.get("inference_provider", "local")
+
+    if provider_name == "claude" and api_provider:
+        default_model = api_provider.get_default_model()
+        initial_active = "api"
+        initial_local_model = None
+    else:
+        default_model = local_default_id
+        initial_active = "local"
+        initial_local_model = local_default_id
+
+    def start_local(model_id):
+        start(CHAT, model_id)
+
+    def stop_local():
+        stop(CHAT)
+
+    return ChatProviderRegistry(
+        local_providers=local_providers,
+        api_provider=api_provider,
+        default_model=default_model,
+        start_local=start_local,
+        stop_local=stop_local,
+        initial_active=initial_active,
+        initial_local_model=initial_local_model,
+    )
 
 
 def _build_store(agent_id: str):
@@ -188,12 +230,12 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     # Tools
     tool_registry = build_registry(agent_path)
 
-    # Embedder
-    embedder = _build_embedder()
-
-    # Providers
+    # Providers — registry first, embedder needs the reference
     summary_provider = _build_summary_provider()
-    chat_provider = _build_chat_provider(config)
+    chat_provider = _build_chat_registry(config)
+
+    # Embedder — captures registry for correct model restart
+    embedder = _build_embedder(chat_provider)
 
     # Sampling — resolved from profile, carried on runtime
     summary_sampling = _build_summary_sampling()
