@@ -20,32 +20,30 @@ def fold_sequential(
     user_id: str,
     state: dict,
 ) -> None:
-    """Full fold with sequential server lifecycle.
-
-    Stops the chat server, runs embedding (server lifecycle handled
-    by ManagedEmbedder transparently), cycles the summary server,
-    then restarts chat.
-    """
+    """Full fold with sequential server lifecycle."""
     from basic_bot.diagnostics import snapshot_memory
-    from basic_bot.infrastructure.server import start, stop, CHAT, SUMMARY
+    from basic_bot.infrastructure.server import start, stop, is_running, CHAT, SUMMARY
 
     existing_summary = state["summary"]
+    chat_was_running = is_running(CHAT)
 
     snapshot_memory("pre-fold")
-    logger.info("Fold triggered — stopping chat server")
 
-    stop(CHAT)
-    snapshot_memory("chat-stopped")
+    if chat_was_running:
+        logger.info("Fold triggered — stopping chat server")
+        stop(CHAT)
+        snapshot_memory("chat-stopped")
 
     # --- Embedding phase ---
-    # ManagedEmbedder handles server start/stop transparently
     chunk = fold_rag(store, user_id, state, runtime.embedder)
     snapshot_memory("embedding-done")
 
     if chunk is None:
-        logger.warning("RAG failed — restarting chat, skipping summary")
-        start(CHAT)
-        snapshot_memory("chat-resumed")
+        logger.warning("RAG failed — skipping summary")
+        if chat_was_running:
+            model_id = getattr(runtime.chat_provider, "active_local_model", None)
+            start(CHAT, model_id)
+            snapshot_memory("chat-resumed")
         return
 
     # --- Summary phase ---
@@ -62,5 +60,7 @@ def fold_sequential(
     snapshot_memory("summary-done")
 
     # --- Resume chat ---
-    start(CHAT)
-    snapshot_memory("chat-resumed")
+    if chat_was_running:
+        model_id = getattr(runtime.chat_provider, "active_local_model", None)
+        start(CHAT, model_id)
+        snapshot_memory("chat-resumed")
