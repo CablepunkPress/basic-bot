@@ -98,7 +98,7 @@ presence_penalty = 1.5
 # Unsloth quantization. Do NOT use for summary (destroys existing summaries).
 # Sampling per Qwen3.5-9B card recommendations for general tasks.
 
-[chat.qwen3_5-9b-q5_k_m]
+[chat."qwen3.5-9b-q5_k_m"]
 file = "Qwen3.5-9B-Q5_K_M.gguf"
 url = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf"
 download = false
@@ -114,14 +114,14 @@ flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
 
-[chat.qwen3_5-9b-q5_k_m.sampling.thinking]
+[chat."qwen3.5-9b-q5_k_m".sampling.thinking]
 temperature = 1.0
 top_p = 0.95
 top_k = 20
 min_p = 0.0
 presence_penalty = 1.5
 
-[chat.qwen3_5-9b-q5_k_m.sampling.non_thinking]
+[chat."qwen3.5-9b-q5_k_m".sampling.non_thinking]
 temperature = 0.7
 top_p = 0.8
 top_k = 20
