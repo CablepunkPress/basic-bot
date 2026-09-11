@@ -2,11 +2,10 @@
 
 Called by build.py in 'bountiful' repo.
 
-Entry point for `python -m basic_bot.`.
+Entry point for `python -m basic_bot`.
 
 Detects hardware, loads the matching profile, compiles llama.cpp
-with the right flags, downloads the models the profile requires,
-and enables default chat models.
+with the right flags, and downloads the models the profile requires.
 """
 
 import sys
@@ -15,7 +14,6 @@ from pathlib import Path
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
 from basic_bot.profile import (
     detect_hardware,
-    enable_default_models,
     get_downloadable_models,
     MODELS_DIR,
 )
@@ -85,9 +83,6 @@ def main() -> None:
 
     print("  models")
     _download_models()
-
-    print("  enabling default models")
-    enable_default_models()
 
 
 if __name__ == "__main__":
