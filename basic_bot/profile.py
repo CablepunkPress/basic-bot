@@ -9,10 +9,8 @@ Each profile is a TOML file describing the models, launch args,
 sampling parameters, and UI metadata for a specific hardware
 target.
 
-User-managed model state (enabled/disabled) persists at
-~/.bountiful/models.toml, separate from the profile. Three gates
-determine whether a chat model appears in the UI: it must be in
-the profile, downloaded to disk, and enabled in models.toml.
+Two gates determine whether a chat model appears in the UI:
+it must be in the profile and downloaded to disk.
 """
 
 import logging
@@ -29,7 +27,6 @@ _profile: dict | None = None
 
 PROFILES_DIR = Path(__file__).parent / "profiles"
 MODELS_DIR = Path.home() / ".bountiful" / "models"
-MODELS_STATE = Path.home() / ".bountiful" / "models.toml"
 
 
 def detect_hardware() -> str:
@@ -128,56 +125,6 @@ def get_profile() -> dict:
     return _profile
 
 
-# --- Model state (user-managed, persists at ~/.bountiful/models.toml) ---
-
-def _load_enabled_models() -> dict[str, bool]:
-    """Load the enabled/disabled state for chat models.
-
-    Returns a dict of model_id → bool. If the file doesn't
-    exist yet, returns empty dict (nothing enabled).
-    """
-    if not MODELS_STATE.exists():
-        return {}
-    data = tomllib.loads(MODELS_STATE.read_text())
-    return data.get("chat", {})
-
-
-def save_model_state(model_id: str, enabled: bool) -> None:
-    """Enable or disable a chat model in models.toml.
-
-    Creates the file if it doesn't exist. Preserves existing entries.
-    """
-    if MODELS_STATE.exists():
-        data = tomllib.loads(MODELS_STATE.read_text())
-    else:
-        MODELS_STATE.parent.mkdir(parents=True, exist_ok=True)
-        data = {}
-
-    if "chat" not in data:
-        data["chat"] = {}
-
-    data["chat"][model_id] = enabled
-
-    # Write back — tomllib is read-only, so we write manually
-    lines = ["# Managed by build.py. Edit manually or use flags.\n\n"]
-    lines.append("[chat]\n")
-    for mid, state in data["chat"].items():
-        lines.append(f'"{mid}" = {str(state).lower()}\n')
-
-    MODELS_STATE.write_text("".join(lines))
-
-
-def enable_default_models() -> None:
-    """Enable all chat models marked download = true in the profile.
-
-    Called by __main__.py after initial build. Sets up models.toml
-    so downloaded models appear in the UI immediately.
-    """
-    for model_id, config in get_chat_models().items():
-        if config.get("download", False):
-            save_model_state(model_id, True)
-
-
 # --- Profile helpers ---
 
 def get_embedding_config() -> dict:
@@ -214,28 +161,25 @@ def get_default_chat_model() -> tuple[str, dict]:
 
 
 def get_available_chat_models() -> dict:
-    """Chat models that are in profile, downloaded, AND enabled.
+    """Chat models that are in the profile and downloaded to disk.
 
-    Profile is the menu. Filesystem is the download check.
-    models.toml is the user's toggle. All three gates must pass.
+    Profile is the menu. Filesystem is the filter.
+    If the GGUF file exists, the model is available.
     """
-    enabled = _load_enabled_models()
     return {
         model_id: config
         for model_id, config in get_chat_models().items()
         if (MODELS_DIR / config["file"]).exists()
-        and enabled.get(model_id, False)
     }
 
 
 def get_downloadable_models() -> list[dict]:
-    """All models across all roles, with download and enabled status.
+    """All models across all roles, with download status.
 
     Returns a list of dicts with role, model_id, file, url,
-    download flag, whether the file exists, and enabled state.
+    download flag, and whether the file exists on disk.
     """
     profile = get_profile()
-    enabled = _load_enabled_models()
     models = []
 
     # Embedding
@@ -268,7 +212,6 @@ def get_downloadable_models() -> list[dict]:
             "download": config.get("download", False),
             "default": config.get("default", False),
             "exists": (MODELS_DIR / config["file"]).exists(),
-            "enabled": enabled.get(model_id, False),
         })
 
     return models
