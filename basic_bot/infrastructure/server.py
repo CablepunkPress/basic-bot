@@ -153,7 +153,7 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
     # Reuse an existing healthy server on this port
     if _port_in_use(port):
         if _healthy(port):
-            print(f"{label} already running on port {port}")
+            logger.info("%s already running on port %d", label, port)
             return None
         sys.exit(
             f"Port {port} in use but not responding as llama-server."
@@ -179,14 +179,14 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
     process = subprocess.Popen(
         cmd, stdout=log_file, stderr=subprocess.STDOUT,
     )
-    print(f"{label} starting on port {port} (log: {log_path})")
+    logger.info("%s starting on port %d (log: %s)", label, port, log_path)
 
     deadline = time.monotonic() + HEALTH_TIMEOUT
     while time.monotonic() < deadline:
         if process.poll() is not None:
             sys.exit(f"{label} exited during startup — check {log_path}")
         if _healthy(port):
-            print(f"{label} ready")
+            logger.info("%s ready", label)
             _active[role] = process
             return process
         time.sleep(0.5)
@@ -205,7 +205,7 @@ def stop(role: str) -> None:
         process.wait(timeout=10)
     except subprocess.TimeoutExpired:
         process.kill()
-    logger.info(f"{role.capitalize()} server stopped")
+    logger.info("%s server stopped", role.capitalize())
 
 
 def stop_all() -> None:
