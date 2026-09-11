@@ -54,7 +54,7 @@ presence_penalty = 0.0
 # are fetched at build time. Others are available if the user
 # downloads them manually.
 #
-# The UI only shows models whose GGUF file exists on disk.
+# The UI shows models whose GGUF file exists on disk.
 
 
 # Qwen3-8B Q8_0 — same model as summary, higher precision than Q4_K_M
@@ -93,17 +93,18 @@ min_p = 0.0
 presence_penalty = 1.5
 
 
-# Qwen3-8B Q4_K_M — smaller quantization, faster inference.
-# Pure transformer, 8B dense, ~4.7GB. ~10s per response without thinking.
-# Previously the default. Good quality with thinking enabled.
+# Qwen3.5-9B Q5_K_M — hybrid SSM/attention (DeltaNet + Gated Attention)
+# 9B parameters, all active per token. ~6.1 GiB on disk.
+# Unsloth quantization. Do NOT use for summary (destroys existing summaries).
+# Sampling per Qwen3.5-9B card recommendations for general tasks.
 
-[chat.qwen3-8b-q4_k_m]
-file = "Qwen3-8B-Q4_K_M.gguf"
-url = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q4_K_M.gguf"
+[chat.qwen3_5-9b-q5_k_m]
+file = "Qwen3.5-9B-Q5_K_M.gguf"
+url = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf"
 download = false
 default = false
-alias = "qwen3-8b-q4_k_m"
-display_name = "Qwen3 8B Q4_K_M"
+alias = "qwen3.5-9b-q5_k_m"
+display_name = "Qwen3.5 9B Q5_K_M"
 provider = "Alibaba"
 family = "Qwen"
 rank = 2
@@ -113,54 +114,14 @@ flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
 
-[chat.qwen3-8b-q4_k_m.sampling.thinking]
-temperature = 0.6
-top_p = 0.95
-top_k = 20
-min_p = 0.0
-presence_penalty = 1.5
-
-[chat.qwen3-8b-q4_k_m.sampling.non_thinking]
-temperature = 0.7
-top_p = 0.8
-top_k = 20
-min_p = 0.0
-presence_penalty = 1.5
-
-
-# Qwen3.6-35B-A3B IQ4_NL — MoE, 3B active per token.
-# Hybrid architecture (DeltaNet + attention). 20.8GB on disk.
-# Requires -ncmoe offloading to system RAM on 12GB VRAM.
-# Fast for tool calling, slow for thinking on DDR4 (~25 GB/s).
-# Tested: functional but thinking often exceeds timeout.
-# Sampling per Qwen3.6 card (temperature 1.0 for thinking).
-
-[chat.qwen3_6-35b-a3b-iq4_nl]
-file = "Qwen_Qwen3.6-35B-A3B-IQ4_NL.gguf"
-url = "https://huggingface.co/bartowski/Qwen_Qwen3.6-35B-A3B-GGUF/resolve/main/Qwen_Qwen3.6-35B-A3B-IQ4_NL.gguf"
-download = false
-default = false
-alias = "qwen3.6-35b-a3b-iq4_nl"
-display_name = "Qwen3.6 35B-A3B IQ4_NL"
-provider = "Alibaba"
-family = "Qwen"
-rank = 3
-thinking_type = "qwen"
-gpu_layers = -1
-n_cpu_moe = 25
-flash_attn = "on"
-ctx_size = 32768
-no_mmap = true
-max_tokens = 16384
-
-[chat.qwen3_6-35b-a3b-iq4_nl.sampling.thinking]
+[chat.qwen3_5-9b-q5_k_m.sampling.thinking]
 temperature = 1.0
 top_p = 0.95
 top_k = 20
 min_p = 0.0
 presence_penalty = 1.5
 
-[chat.qwen3_6-35b-a3b-iq4_nl.sampling.non_thinking]
+[chat.qwen3_5-9b-q5_k_m.sampling.non_thinking]
 temperature = 0.7
 top_p = 0.8
 top_k = 20
