@@ -18,8 +18,8 @@ url = "https://huggingface.co/CablepunkPress/Qwen3-Embedding-0.6B-GGUF/resolve/m
 download = true
 alias = "qwen3-embedding-0.6b-q8_0"
 gpu_layers = -1
-ctx_size = 8192
-ubatch_size = 8192
+ctx_size = 32768
+ubatch_size = 32768
 
 
 # --- Summary ---
