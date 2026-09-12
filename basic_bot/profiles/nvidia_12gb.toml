@@ -1,10 +1,10 @@
 # Hardware Profile: NVIDIA 12GB+ VRAM
 # Tested on: RTX 3060 12GB + 32GB DDR4
-#
+
 # Sequential server mode — one llama-server process at a time.
 # All models fit in 12GB VRAM individually. No CPU offloading
 # needed for the default chat model.
-#
+
 # Build: llama.cpp compiled with -DGGML_CUDA=ON
 
 
@@ -38,7 +38,7 @@ thinking_type = "qwen"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 16384
-max_tokens = 4096
+max_tokens = 8192
 thinking = false
 
 [summary.sampling]
@@ -53,7 +53,7 @@ presence_penalty = 0.0
 # Multiple models can be defined. Only models with download = true
 # are fetched at build time. Others are available if the user
 # downloads them manually.
-#
+
 # The UI shows models whose GGUF file exists on disk.
 
 
