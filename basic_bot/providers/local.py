@@ -6,7 +6,7 @@ the only entry get_models() returns.
 
 Model metadata and sampling parameters come from the hardware profile,
 injected at construction by the factory. This module never imports
-from profile.py or config.py for model-specific values.
+from profile.py for model-specific values.
 
 stdlib urllib only — no SDK for localhost HTTP.
 """
@@ -17,14 +17,12 @@ import re
 import urllib.error
 import urllib.request
 
+import basic_bot.config as config
 from basic_bot.providers.protocol import ChatResponse, ModelInfo, ToolCall
 
 logger = logging.getLogger(__name__)
 
 _SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
-
-DEFAULT_MAX_TOKENS = 4096
-REQUEST_TIMEOUT = 600
 
 
 class LocalProvider:
@@ -34,13 +32,13 @@ class LocalProvider:
         self,
         model_id: str,
         base_url: str,
-        max_tokens: int = DEFAULT_MAX_TOKENS,
+        max_tokens: int | None = None,
         model_info: ModelInfo | None = None,
         sampling: dict | None = None,
     ):
         self._model_id = model_id
         self._endpoint = base_url.rstrip("/") + "/v1/chat/completions"
-        self._max_tokens = max_tokens
+        self._max_tokens = max_tokens or config.DEFAULT_MAX_TOKENS
         self._model_info = model_info
         self._sampling = sampling or {}
         logger.info(
@@ -192,14 +190,24 @@ class LocalProvider:
 
     def _post(self, payload: dict) -> dict:
         body = json.dumps(payload).encode("utf-8")
-        request = urllib.request.Request(
+        req = urllib.request.Request(
             self._endpoint,
             data=body,
             headers={"Content-Type": "application/json"},
         )
         try:
-            with urllib.request.urlopen(request, timeout=REQUEST_TIMEOUT) as resp:
+            with urllib.request.urlopen(req, timeout=config.REQUEST_TIMEOUT) as resp:
                 return json.loads(resp.read().decode("utf-8"))
+        except urllib.error.HTTPError as e:
+            if e.code == 400:
+                raise RuntimeError(
+                    f"Local inference server rejected request (HTTP 400) — "
+                    f"context may exceed model's max context length"
+                ) from e
+            raise RuntimeError(
+                f"Local inference server error at {self._endpoint} — "
+                f"HTTP {e.code}: {e.reason}"
+            ) from e
         except urllib.error.URLError as e:
             raise RuntimeError(
                 f"Local inference server unreachable at {self._endpoint} — "
