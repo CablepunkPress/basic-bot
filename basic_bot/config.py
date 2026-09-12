@@ -23,6 +23,11 @@ EMBEDDING_URL = "http://localhost:11333"
 SUMMARY_URL = "http://localhost:11444"
 CHAT_URL = "http://localhost:11555"
 
+# LocalProvider HTTP request timeout
+REQUEST_TIMEOUT = 600
+
+# Safety net
+
 # History (UI loads last N messages at startup)
 HISTORY_LIMIT = 10
 
