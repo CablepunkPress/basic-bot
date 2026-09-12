@@ -32,13 +32,13 @@ class LocalProvider:
         self,
         model_id: str,
         base_url: str,
-        max_tokens: int | None = None,
+        max_tokens: int,
         model_info: ModelInfo | None = None,
         sampling: dict | None = None,
     ):
         self._model_id = model_id
         self._endpoint = base_url.rstrip("/") + "/v1/chat/completions"
-        self._max_tokens = max_tokens or config.DEFAULT_MAX_TOKENS
+        self._max_tokens = max_tokens
         self._model_info = model_info
         self._sampling = sampling or {}
         logger.info(
