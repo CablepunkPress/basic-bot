@@ -26,7 +26,8 @@ CHAT_URL = "http://localhost:11555"
 # LocalProvider HTTP request timeout
 REQUEST_TIMEOUT = 600
 
-# Safety net
+# Number of most similar past turn pairs from semantic search
+RAG_RESULT_LIMIT = 5
 
 # History (UI loads last N messages at startup)
 HISTORY_LIMIT = 10

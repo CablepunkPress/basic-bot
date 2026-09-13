@@ -11,11 +11,10 @@ vectors and hands them to the store.
 
 import logging
 
+import basic_bot.config as config
 from basic_bot.store import MessageStore
 
 logger = logging.getLogger(__name__)
-
-RAG_RESULT_LIMIT = 5
 
 
 def _truncate_for_embedding(text: str, ctx_size: int) -> str:
@@ -106,11 +105,13 @@ def search_memory(
     user_id: str,
     query: str,
     embedder,
-    limit: int = RAG_RESULT_LIMIT,
+    limit: int | None = None,
 ) -> list[dict]:
     """Search past conversation turns by semantic similarity.
 
     Returns up to limit results, each with verbatim content and seq range.
     """
+    if limit is None:
+        limit = config.RAG_RESULT_LIMIT
     query_vector = embedder.embed([query], task="query")[0]
     return store.search_vectors(user_id, query_vector, limit)
