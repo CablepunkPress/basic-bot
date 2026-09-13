@@ -37,8 +37,10 @@ def _build_embedder(chat_registry):
     """
     import basic_bot.config as config
     from basic_bot.embeddings import LocalEmbedder, ManagedEmbedder
+    from basic_bot.profile import get_embedding_config
     from basic_bot.infrastructure.server import start, stop, is_running, CHAT, EMBEDDING
 
+    embedding_config = get_embedding_config()
     _chat_was_running = False
 
     def start_embedding():
@@ -54,7 +56,7 @@ def _build_embedder(chat_registry):
             model_id = chat_registry.active_local_model
             start(CHAT, model_id)
 
-    embedder = LocalEmbedder(config.EMBEDDING_URL)
+    embedder = LocalEmbedder(config.EMBEDDING_URL, ctx_size=embedding_config["ctx_size"])
     return ManagedEmbedder(
         embedder,
         start_fn=start_embedding,

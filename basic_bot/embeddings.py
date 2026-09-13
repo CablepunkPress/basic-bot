@@ -40,8 +40,9 @@ class LocalEmbedder:
         "from past conversation that answer the query\nQuery: "
     )
 
-    def __init__(self, base_url: str):
+    def __init__(self, base_url: str, ctx_size: int):
         self._endpoint = base_url.rstrip("/") + "/v1/embeddings"
+        self.ctx_size = ctx_size
         logger.info("Local embedder configured: %s", self._endpoint)
 
     def embed(self, texts: list[str], task: str = "document") -> list[list[float]]:
@@ -76,6 +77,11 @@ class ManagedEmbedder:
         self._embedder = embedder
         self._start = start_fn
         self._stop = stop_fn
+
+    @property
+    def ctx_size(self):
+        """Expose the inner embedder's context size for truncation."""
+        return self._embedder.ctx_size
 
     def embed(self, texts: list[str], task: str = "document") -> list[list[float]]:
         self._start()
