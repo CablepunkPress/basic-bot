@@ -18,6 +18,23 @@ logger = logging.getLogger(__name__)
 RAG_RESULT_LIMIT = 5
 
 
+def _truncate_for_embedding(text: str, ctx_size: int) -> str:
+    """Truncate text to fit within the embedding model's context window.
+
+    Uses a conservative estimate of 3 chars per token with 10% headroom.
+    Oversized turns get a truncated vector rather than failing the entire
+    fold — a partial vector is better than stalling the memory system.
+    """
+    max_chars = ctx_size * 3 * 9 // 10
+    if len(text) <= max_chars:
+        return text
+    logger.warning(
+        "Truncating oversized turn for embedding (%d chars → %d)",
+        len(text), max_chars,
+    )
+    return text[:max_chars]
+
+
 def pair_turns(messages: list[dict]) -> list[dict]:
     """Group raw messages into user+assistant turn pairs.
 
@@ -53,13 +70,17 @@ def store_turns(
 
     Takes the raw message dicts (with role, content, seq) from the fold batch,
     pairs them into turns, embeds in one batch call, and writes to the store.
+    Oversized turns are truncated to fit the embedding model's context window.
     Returns the number of turns stored.
     """
     turns = pair_turns(messages)
     if not turns:
         return 0
 
-    texts = [t["content"] for t in turns]
+    texts = [
+        _truncate_for_embedding(t["content"], embedder.ctx_size)
+        for t in turns
+    ]
     vectors = embedder.embed(texts, task="document")
 
     store_ready = []
