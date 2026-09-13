@@ -25,6 +25,8 @@ class Embedder(Protocol):
     implement it without inheriting from anything.
     """
 
+    ctx_size: int
+
     def embed(self, texts: list[str], task: str = "document") -> list[list[float]]: ...
 
 
