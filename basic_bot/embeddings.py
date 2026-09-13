@@ -77,13 +77,10 @@ class ManagedEmbedder:
 
     def __init__(self, embedder: Embedder, start_fn, stop_fn):
         self._embedder = embedder
+        self.ctx_size = embedder.ctx_size
         self._start = start_fn
         self._stop = stop_fn
 
-    @property
-    def ctx_size(self):
-        """Expose the inner embedder's context size for truncation."""
-        return self._embedder.ctx_size
 
     def embed(self, texts: list[str], task: str = "document") -> list[list[float]]:
         self._start()
