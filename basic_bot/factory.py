@@ -127,11 +127,13 @@ def _build_local_chat_providers() -> dict:
 
 
 def _build_api_chat_provider():
-    """Build ClaudeProvider if an API key is available. None otherwise."""
     import os
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return None
-    from basic_bot.providers.claude import ClaudeProvider
+    try:
+        from basic_bot.providers.claude import ClaudeProvider
+    except ImportError:
+        return None
     return ClaudeProvider()
 
 
