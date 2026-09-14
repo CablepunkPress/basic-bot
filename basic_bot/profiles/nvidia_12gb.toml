@@ -65,8 +65,8 @@ presence_penalty = 0.0
 [chat.qwen3-8b-q8_0]
 file = "Qwen3-8B-Q8_0.gguf"
 url = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-download = true
-default = true
+download = false
+default = false
 alias = "qwen3-8b-q8_0"
 display_name = "Qwen3 8B Q8_0"
 provider = "Alibaba"
@@ -101,8 +101,8 @@ presence_penalty = 1.5
 [chat."qwen3.5-9b-q5_k_m"]
 file = "Qwen3.5-9B-Q5_K_M.gguf"
 url = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf"
-download = false
-default = false
+download = true
+default = true
 alias = "qwen3.5-9b-q5_k_m"
 display_name = "Qwen3.5 9B Q5_K_M"
 provider = "Alibaba"
