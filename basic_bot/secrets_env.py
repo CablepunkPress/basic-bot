@@ -17,13 +17,8 @@ def load(agent_path: Path) -> None:
 
     try:
         api_key = keyring.get_password(agent_id, "anthropic_api_key")
-    except keyring.errors.KeyringError as e:
-        sys.exit(
-            f"Could not read system keyring: {e}\n"
-            "Run 'python add_secrets.py' first."
-        )
+    except keyring.errors.KeyringError:
+        return
 
-    if not api_key:
-        sys.exit("No Anthropic API key found — run 'python add_secrets.py' first.")
-
-    os.environ["ANTHROPIC_API_KEY"] = api_key
+    if api_key:
+        os.environ["ANTHROPIC_API_KEY"] = api_key
