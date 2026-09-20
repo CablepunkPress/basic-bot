@@ -1,8 +1,8 @@
 """Local inference provider.
 
 Talks to llama-server's OpenAI-compatible /v1/chat/completions endpoint.
-One server, one model — the model is chosen at construction time and is
-the only entry get_models() returns.
+Each instance wraps a single model on a single endpoint. The factory
+builds one per available model; the registry or runtime holds them.
 
 Model metadata and sampling parameters come from the hardware profile,
 injected at construction by the factory. This module never imports
@@ -59,6 +59,7 @@ class LocalProvider:
         return self._model_id
 
     # --- Protocol: chat ---
+    # --- Method for inference models (chat AND summary) ---
 
     def chat(
         self,
@@ -80,8 +81,8 @@ class LocalProvider:
         if tools:
             payload["tools"] = [self._translate_tool(t) for t in tools]
 
-        # Thinking toggle — Qwen-specific
-        if self._model_info and self._model_info.thinking_type == "qwen":
+        # Thinking: Pass thinking preference to llama-server
+        if self._model_info and self._model_info.thinking_type:
             payload["chat_template_kwargs"] = {"enable_thinking": thinking}
 
         # Sampling — caller override (summary) or injected defaults (chat)
