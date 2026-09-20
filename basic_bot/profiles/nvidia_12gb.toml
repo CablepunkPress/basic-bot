@@ -23,18 +23,20 @@ ubatch_size = 32768
 
 
 # --- Summary ---
-# Qwen3-8B Q8_0 — pure transformer, proven for summary folding
-# Thinking always off. No presence penalty (single-shot generation,
-# no prior assistant messages to parrot).
+# Gemma 4 12B IT Q5_K_M — pure transformer, 12B dense
+# Replaces Qwen3-8B for summary. Larger model with better instruction
+# following for supersession. Pure transformer avoids the hybrid
+# SSM/attention failure that destroyed summaries.
+# Thinking always off. No presence penalty (single-shot generation).
 
 [summary]
-file = "Qwen3-8B-Q8_0.gguf"
-url = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
+file = "gemma-4-12B-it-Q5_K_M.gguf"
+url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/main/gemma-4-12B-it-Q5_K_M.gguf"
 download = true
-alias = "qwen3-8b-q8_0"
-provider = "Alibaba"
-family = "Qwen"
-thinking_type = "qwen"
+alias = "gemma-4-12b-it-q5_k_m"
+provider = "Google"
+family = "Gemma"
+thinking_type = "gemma"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 16384
@@ -42,10 +44,9 @@ max_tokens = 8192
 thinking = false
 
 [summary.sampling]
-temperature = 0.7
-top_p = 0.8
-top_k = 20
-min_p = 0.0
+temperature = 1.0
+top_p = 0.95
+top_k = 64
 presence_penalty = 0.0
 
 
