@@ -13,10 +13,12 @@
 # CPU-only, ~639MB
 
 [embedding]
-file = "Qwen3-Embedding-0.6B-Q8_0.gguf"
-url = "https://huggingface.co/CablepunkPress/Qwen3-Embedding-0.6B-GGUF/resolve/main/Qwen3-Embedding-0.6B-Q8_0.gguf"
+file = "Nemotron-3-Embed-8B-Q8_0.gguf"
+url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/main/Nemotron-3-Embed-8B-Q8_0.gguf"
 download = true
-alias = "qwen3-embedding-0.6b-q8_0"
+alias = "nemotron-3-embed-8b-q8_0"
+query_prefix = "query: "
+passage_prefix = "passage: "
 gpu_layers = -1
 ctx_size = 32768
 ubatch_size = 32768
