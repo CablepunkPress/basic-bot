@@ -56,7 +56,12 @@ def _build_embedder(chat_registry):
             model_id = chat_registry.active_local_model
             start(CHAT, model_id)
 
-    embedder = LocalEmbedder(config.EMBEDDING_URL, ctx_size=embedding_config["ctx_size"])
+    embedder = LocalEmbedder(
+        config.EMBEDDING_URL,
+        ctx_size=embedding_config["ctx_size"],
+        query_prefix=embedding_config.get("query_prefix", ""),
+        passage_prefix=embedding_config.get("passage_prefix", ""),
+    )
     return ManagedEmbedder(
         embedder,
         start_fn=start_embedding,
