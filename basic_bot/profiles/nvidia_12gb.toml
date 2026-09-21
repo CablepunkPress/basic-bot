@@ -9,8 +9,8 @@
 
 
 # --- Embedding ---
-# Qwen3-Embedding-0.6B Q8_0, self-hosted with EOS token fix
-# CPU-only, ~639MB
+# Nemotron-3-Embed-8B Q8_0 — 8B dense transformer, 4096-dim vectors
+# query:/passage: prefix format. ~8.46 GB on disk.
 
 [embedding]
 file = "Nemotron-3-Embed-8B-Q8_0.gguf"
