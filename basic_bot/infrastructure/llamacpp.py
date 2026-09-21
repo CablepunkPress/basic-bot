@@ -24,10 +24,8 @@ def _fail(message: str) -> None:
 
 
 def check_prerequisites() -> None:
-    """Verify git, cmake, and a C++ compiler are available."""
+    """Verify cmake and a C++ compiler are available."""
     missing = []
-    if shutil.which("git") is None:
-        missing.append("git")
     if shutil.which("cmake") is None:
         missing.append("cmake")
     if not any(shutil.which(c) for c in ("c++", "g++", "clang++", "cc")):
@@ -37,12 +35,12 @@ def check_prerequisites() -> None:
         _fail(
             "Missing required tools: " + ", ".join(missing) + "\n"
             "Install them with your system package manager and re-run.\n"
-            "  Arch:           sudo pacman -S git cmake gcc\n"
-            "  Debian/Ubuntu:  sudo apt install git cmake build-essential\n"
-            "  Fedora:         sudo dnf install git cmake gcc-c++\n"
+            "  Arch/CachyOs:   sudo pacman -S cmake gcc\n"
+            "  Debian/Ubuntu:  sudo apt install cmake build-essential\n"
+            "  Fedora:         sudo dnf install cmake gcc-c++\n"
             "  macOS:          xcode-select --install && brew install cmake"
         )
-    print("    git, cmake, and a C++ compiler found")
+    print("    cmake and a C++ compiler found")
 
 
 def build(flags: list[str] | None = None) -> None:
