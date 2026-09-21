@@ -31,27 +31,20 @@ class Embedder(Protocol):
 
 
 class LocalEmbedder:
-    """Qwen3-Embedding via llama-server.
+    """Local embedding model via llama-server."""
 
-    Qwen3-Embedding uses an instruction prefix on queries only;
-    documents are embedded with no prefix.
-    """
-
-    QUERY_INSTRUCT = (
-        "Instruct: Given a search query, retrieve relevant passages "
-        "from past conversation that answer the query\nQuery: "
-    )
-
-    def __init__(self, base_url: str, ctx_size: int):
+    def __init__(self, base_url: str, ctx_size: int, query_prefix: str = "", passage_prefix: str = ""):
         self._endpoint = base_url.rstrip("/") + "/v1/embeddings"
         self.ctx_size = ctx_size
+        self._query_prefix = query_prefix
+        self._passage_prefix = passage_prefix
         logger.info("Local embedder configured: %s", self._endpoint)
 
     def embed(self, texts: list[str], task: str = "document") -> list[list[float]]:
         if task == "query":
-            inputs = [self.QUERY_INSTRUCT + t for t in texts]
+            inputs = [self._query_prefix + t for t in texts]
         else:
-            inputs = texts
+            inputs = [self._passage_prefix + t for t in texts]
 
         payload = json.dumps({"input": inputs}).encode("utf-8")
 
