@@ -33,12 +33,12 @@ class Embedder(Protocol):
 class LocalEmbedder:
     """Local embedding model via llama-server."""
 
-    def __init__(self, base_url: str, ctx_size: int, query_prefix: str = "", passage_prefix: str = ""):
+    def __init__(self, base_url: str, ctx_size: int, query_prefix: str = "", passage_prefix: str = "", model_name: str = ""):
         self._endpoint = base_url.rstrip("/") + "/v1/embeddings"
         self.ctx_size = ctx_size
         self._query_prefix = query_prefix
         self._passage_prefix = passage_prefix
-        logger.info("Local embedder configured: %s", self._endpoint)
+        logger.info("Local embedder configured: %s → %s", model_name or "unknown", self._endpoint)
 
     def embed(self, texts: list[str], task: str = "document") -> list[list[float]]:
         if task == "query":
