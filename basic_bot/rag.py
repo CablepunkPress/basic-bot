@@ -20,11 +20,11 @@ logger = logging.getLogger(__name__)
 def _truncate_for_embedding(text: str, ctx_size: int) -> str:
     """Truncate text to fit within the embedding model's context window.
 
-    Uses a conservative estimate of 3 chars per token with 10% headroom.
+    Uses a conservative estimate of 2 chars per token with 10% headroom.
     Oversized turns get a truncated vector rather than failing the entire
     fold — a partial vector is better than stalling the memory system.
     """
-    max_chars = ctx_size * 3 * 9 // 10
+    max_chars = ctx_size * 2 * 9 // 10
     if len(text) <= max_chars:
         return text
     logger.warning(
