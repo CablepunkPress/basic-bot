@@ -61,6 +61,7 @@ def _build_embedder(chat_registry):
         ctx_size=embedding_config["ctx_size"],
         query_prefix=embedding_config.get("query_prefix", ""),
         passage_prefix=embedding_config.get("passage_prefix", ""),
+        model_name=embedding_config.get("alias", ""),
     )
     return ManagedEmbedder(
         embedder,
