@@ -65,6 +65,8 @@ def _build_launch_args(config: dict) -> list[str]:
         args += ["--flash-attn", config["flash_attn"]]
     if "ctx_size" in config:
         args += ["--ctx-size", str(config["ctx_size"])]
+    if "batch_size" in config:
+        args += ["--batch-size", str(config["batch_size"])]
     if "ubatch_size" in config:
         args += ["--ubatch-size", str(config["ubatch_size"])]
     if "n_cpu_moe" in config:
