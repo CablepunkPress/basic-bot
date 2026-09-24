@@ -20,9 +20,9 @@ alias = "nemotron-3-embed-8b-q8_0"
 query_prefix = "query: "
 passage_prefix = "passage: "
 gpu_layers = -1
-ctx_size = 32768
-batch_size = 32768
-ubatch_size = 32768
+ctx_size = 8192
+batch_size = 8192
+ubatch_size = 8192
 
 
 # --- Summary ---
