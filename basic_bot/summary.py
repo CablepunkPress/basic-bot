@@ -19,6 +19,20 @@ from basic_bot.providers.protocol import InferenceProvider
 logger = logging.getLogger(__name__)
 
 
+def _extract_summary(text: str) -> str:
+    """Extract summary from model output.
+
+    Some models echo the prompt structure back, wrapping their output
+    in XML tags. If <updated_summary> tags are present, extract just
+    that content. Otherwise return the text as-is.
+    """
+    if "<updated_summary>" in text:
+        start = text.index("<updated_summary>") + len("<updated_summary>")
+        end = text.index("</updated_summary>") if "</updated_summary>" in text else len(text)
+        return text[start:end].strip()
+    return text.strip()
+
+
 def summarize_batch(
     provider: InferenceProvider,
     existing_summary: str,
@@ -50,7 +64,9 @@ def summarize_batch(
         "Preserve durable facts: names, preferences, decisions, and ongoing topics. "
         "Compress older detail rather than dropping it entirely. "
         "When new information supersedes old information, replace the old with the new — "
-        "do not preserve both versions of a changed fact."
+        "do not preserve both versions of a changed fact. "
+        "Output only the summary as plain prose. Do not use XML tags, headers, or "
+        "section labels."
     )
 
     parts = []
@@ -58,7 +74,10 @@ def summarize_batch(
         parts.append(f"<existing_summary>\n{existing_summary}\n</existing_summary>")
     parts.append(f"<transcript>\n{transcript}\n</transcript>")
     parts.append(
-        "Write the updated summary that folds <transcript> into <existing_summary>."
+        "Write a complete, standalone summary incorporating both <existing_summary> "
+        "and <transcript>. Start with the current operational state — models in use, "
+        "tools available, active configuration. Do not copy the opening of the existing "
+        "summary if it is no longer accurate."
         if existing_summary
         else "Write a summary of <transcript>."
     )
@@ -79,7 +98,7 @@ def summarize_batch(
         response.thinking, len(response.text), response.model_used,
     )
 
-    result = response.text.strip()
+    result = _extract_summary(response.text)
 
     if len(result) < config.SUMMARY_MIN_CHARS:
         logger.warning(
