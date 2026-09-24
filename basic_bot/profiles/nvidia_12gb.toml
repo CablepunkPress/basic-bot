@@ -21,6 +21,7 @@ query_prefix = "query: "
 passage_prefix = "passage: "
 gpu_layers = -1
 ctx_size = 32768
+batch_size = 32768
 ubatch_size = 32768
 
 
