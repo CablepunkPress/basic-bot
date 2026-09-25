@@ -21,6 +21,9 @@ dev = [
     "basic-bot[local,api]",
 ]
 
+[tool.pyright]
+pythonVersion = "3.14"
+
 [tool.setuptools.dynamic]
 version = {attr = "basic_bot.__version__"}
 
