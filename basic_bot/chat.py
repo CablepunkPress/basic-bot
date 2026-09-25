@@ -1,8 +1,14 @@
 """Chat orchestration.
 
-Provider-agnostic conversation loop: loads memory, builds the system
-prompt, calls the provider, handles tool execution, and returns the
-result. The provider handles all API translation internally.
+Provider-agnostic conversation loop: loads memory, builds the prompt,
+calls the provider, handles tool execution, and returns the result.
+The provider handles all API translation internally.
+
+The prompt is ordered from most stable to most volatile so the
+inference server's prompt cache can reuse as much as possible. The
+system prompt (persona, instructions, context, tools, summary)
+changes only at startup or at a fold. The transcript only grows.
+Per-turn state rides in a note at the end of the newest message.
 """
 
 import json
@@ -31,88 +37,91 @@ def _execute_tool(
 
 
 # ---------------------------------------------------------------------------
-# System prompt
+# System prompt — stable between startup and fold
 # ---------------------------------------------------------------------------
 
-def _build_memory_section(
-    summary: str, position: dict | None, tool_registry: dict,
-) -> str:
-    """Describe the conversation's memory state for the model."""
-    if not position or not position.get("total"):
+def _build_tools_section(tool_registry: dict) -> str:
+    """List the available tools by name. Fixed for the session."""
+    if not tool_registry:
         return ""
+    names = ", ".join(sorted(tool_registry.keys()))
+    return f"# TOOLS\n\nYou have {len(tool_registry)} tools: {names}."
 
-    total = position["total"]
-    through = position["summarized_through"]
-    w_start = position["window_start"]
-    w_end = position["window_end"]
 
-    parts = ["# MEMORY"]
-    parts.append(
-        "Messages below contain <!-- seq:N --> annotations for internal tracking. "
-        "Your reply is plain prose beginning with your first content word."
-    )
-    if summary and through:
-        parts.append(
-            f"Here is a running summary of earlier messages (1 through {through}):\n"
-            f"{summary}\n\n"
-            f"You can see messages {w_start} through {w_end} verbatim below. "
-            f"This conversation has {total} messages so far, not counting the "
-            "user's current message."
+def _build_memory_section(summary: str, summarized_through: int) -> str:
+    """Present the rolling summary. Changes only at a fold."""
+    if summary and summarized_through:
+        return (
+            "# MEMORY\n\n"
+            f"Running summary of messages 1 through {summarized_through}:\n\n"
+            f"{summary}"
         )
-    else:
-        parts.append(
-            f"You can see all {total} messages of this conversation verbatim "
-            f"(messages {w_start} through {w_end}), not counting the user's "
-            "current message."
-        )
-
-    if through and tool_registry:
-        parts.append(
-            "If you need to recall exact words or specific details from before "
-            "the summary, use your search_archive tool."
-        )
-
-    return "\n\n".join(parts)
+    return "# MEMORY\n\nNo earlier messages have been summarized yet."
 
 
 def build_system_prompt(
     runtime: BotRuntime,
-    model_info: ModelInfo,
-    effort: str | None = None,
-    thinking: bool = False,
     summary: str = "",
-    position: dict | None = None,
+    summarized_through: int = 0,
 ) -> str:
-    """Build the system prompt with persona, model awareness, and memory state."""
-    config_lines = [
-        f"You are currently running on {model_info.family} {model_info.display_name}."
-    ]
+    """Build the system prompt: stable prefix, tools, and memory."""
+    parts = [runtime.persona]
+
+    tools_section = _build_tools_section(runtime.tool_registry)
+    if tools_section:
+        parts.append(tools_section)
+
+    parts.append(_build_memory_section(summary, summarized_through))
+
+    return "\n\n".join(parts)
+
+
+# ---------------------------------------------------------------------------
+# Turn note — per-turn state, appended to the newest user message
+# ---------------------------------------------------------------------------
+
+def _model_name(model_info: ModelInfo) -> str:
+    """Full model name without repeating the family.
+
+    Claude display names omit the family ("Haiku 4.5"), local display
+    names include it ("Qwen3.5 9B Q5_K_M"). Prepend only when missing.
+    """
+    if model_info.display_name.startswith(model_info.family):
+        return model_info.display_name
+    return f"{model_info.family} {model_info.display_name}"
+
+
+def _build_turn_note(
+    model_info: ModelInfo, effort: str | None, thinking: bool,
+) -> str:
+    """State the current model and settings for this turn only."""
+    lines = [f"You are running on {_model_name(model_info)}."]
 
     if model_info.effort_levels and effort:
-        config_lines.append(f"Effort level is set to {effort}.")
+        lines.append(f"Effort is set to {effort}.")
     elif not model_info.effort_levels:
-        config_lines.append("This model does not use effort levels.")
+        lines.append("This model does not use effort levels.")
 
-    config_lines.append(
+    lines.append(
         "Deep Reasoning is enabled." if thinking else "Deep Reasoning is disabled."
     )
 
-    if runtime.tool_registry:
-        tool_names = ", ".join(sorted(runtime.tool_registry.keys()))
-        config_lines.append(
-            f"You have {len(runtime.tool_registry)} tools: {tool_names}."
-        )
+    return "<!-- turn note, written by the system: " + " ".join(lines) + " -->"
 
-    parts = [
-        runtime.persona,
-        "# MODEL\n\n" + "\n".join(config_lines),
+
+def _prepare_messages(window: list[dict], turn_note: str) -> list[dict]:
+    """Copy the window for the API and attach the turn note.
+
+    The note goes on the newest user message in the prompt only. The
+    store keeps the user's original words. A fresh copy is built per
+    attempt so a fallback never inherits a failed attempt's tool calls.
+    """
+    messages = [
+        {"role": m["role"], "content": m["content"]}
+        for m in window
     ]
-
-    memory_section = _build_memory_section(summary, position, runtime.tool_registry)
-    if memory_section:
-        parts.append(memory_section)
-
-    return "\n\n".join(parts)
+    messages[-1]["content"] += "\n\n" + turn_note
+    return messages
 
 
 # ---------------------------------------------------------------------------
@@ -151,24 +160,23 @@ async def chat_with_model(
     window, summary, position = load_window(
         runtime.store, user_id, user_message,
     )
+    summarized_through = position["summarized_through"]
     logger.info(
         "Context: %d prior messages, summary=%s, boundary=seq %s",
-        len(window) - 1, bool(summary), position["summarized_through"],
+        len(window) - 1, bool(summary), summarized_through,
     )
 
-    messages = [
-        {"role": m["role"], "content": m["content"]}
-        for m in window
-    ]
-
-    system_prompt = build_system_prompt(
-        runtime, model_info, effort, thinking, summary, position,
-    )
+    # One system prompt for every attempt — it does not depend on the model
+    system_prompt = build_system_prompt(runtime, summary, summarized_through)
 
     tool_schemas = [
         entry["schema"] for entry in runtime.tool_registry.values()
     ]
     context = {"user_id": user_id, "store": runtime.store, "embedder": runtime.embedder}
+
+    messages = _prepare_messages(
+        window, _build_turn_note(model_info, effort, thinking),
+    )
 
     logger.info(
         "Sending to %s (effort=%s, thinking=%s) — %d messages, %d tools",
@@ -216,12 +224,12 @@ async def chat_with_model(
             raise
 
         try:
-            fallback_prompt = build_system_prompt(
-                runtime, fallback_info, summary=summary, position=position,
+            fallback_messages = _prepare_messages(
+                window, _build_turn_note(fallback_info, None, False),
             )
 
             response = _chat_loop(
-                provider, messages, fallback_prompt,
+                provider, fallback_messages, system_prompt,
                 tool_schemas, context, runtime.tool_registry,
                 fallback_id, None, False,
             )
