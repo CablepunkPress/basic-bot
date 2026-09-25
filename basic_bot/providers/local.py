@@ -172,7 +172,22 @@ class LocalProvider:
             )
 
         model_used = data.get("model", self._model_id)
-        thinking = bool(message.get("reasoning_content"))
+
+        reasoning = message.get("reasoning_content")
+        thinking = bool(reasoning)
+
+        if reasoning and config.LOG_REASONING:
+            logger.info("Reasoning: %s", reasoning)
+
+        # Token usage
+        usage = data.get("usage", {})
+        if usage:
+            logger.info(
+                "Tokens — prompt: %d, completion: %d, total: %d",
+                usage.get("prompt_tokens", 0),
+                usage.get("completion_tokens", 0),
+                usage.get("total_tokens", 0),
+            )
 
         finish_reason = choice.get("finish_reason")
         if finish_reason == "length":
