@@ -65,6 +65,11 @@ def summarize_batch(
         "Compress older detail rather than dropping it entirely. "
         "When new information supersedes old information, replace the old with the new — "
         "do not preserve both versions of a changed fact. "
+        "Leave out the assistant's live configuration: its current model, reasoning "
+        "setting, tool count, and similar settings. The assistant receives that "
+        "information separately every turn, and it changes often. When the conversation "
+        "changes the configuration, record the change as an event in the history, not "
+        "as a description of the current state. "
         "Output only the summary as plain prose. Do not use XML tags, headers, or "
         "section labels."
     )
@@ -75,9 +80,9 @@ def summarize_batch(
     parts.append(f"<transcript>\n{transcript}\n</transcript>")
     parts.append(
         "Write a complete, standalone summary incorporating both <existing_summary> "
-        "and <transcript>. Start with the current operational state — models in use, "
-        "tools available, active configuration. Do not copy the opening of the existing "
-        "summary if it is no longer accurate."
+        "and <transcript>. Organize it around the subjects the conversation has "
+        "covered, giving the most weight to what is ongoing and unresolved. Rewrite "
+        "freely rather than preserving the wording or order of the existing summary."
         if existing_summary
         else "Write a summary of <transcript>."
     )
