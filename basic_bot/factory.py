@@ -29,6 +29,22 @@ def _read_config(agent_path: Path) -> dict:
     return {}
 
 
+def _read_markdown_dir(directory: Path) -> list[str]:
+    """Read every .md file in a directory, alphabetically.
+
+    Files starting with an underscore are skipped, so a directory
+    can carry a README or notes that never reach the model.
+    Returns an empty list if the directory does not exist.
+    """
+    if not directory.is_dir():
+        return []
+    return [
+        md_file.read_text().strip()
+        for md_file in sorted(directory.glob("*.md"))
+        if not md_file.name.startswith("_")
+    ]
+
+
 def _build_embedder(chat_registry):
     """Build a ManagedEmbedder with lifecycle callbacks.
 
@@ -213,26 +229,26 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     # Config — agent settings
     config = _read_config(agent_path)
 
+    # Stable prompt prefix, assembled once at startup. Order runs from
+    # the user's own words to engine instructions to optional domain
+    # knowledge. chat.py appends the TOOLS and MEMORY sections.
+
     # Persona — user-authored, in the agent directory
     persona_text = (agent_path / "persona.md").read_text().strip()
     persona_text = persona_text.replace("{{ name }}", dashboard.get("name", agent_id))
+    sections = [persona_text]
 
-    # Context — user-added domain knowledge files (optional)
-    context_dir = agent_path / "context"
-    if context_dir.is_dir():
-        context_parts = []
-        for md_file in sorted(context_dir.glob("*.md")):
-            if md_file.name.startswith("_"):
-                continue
-            context_parts.append(md_file.read_text().strip())
-        if context_parts:
-            persona_text += "\n\n" + "\n\n".join(context_parts)
+    # Instructions — engine-owned, every .md file in instructions/
+    instructions_dir = Path(__file__).parent / "instructions"
+    sections.extend(_read_markdown_dir(instructions_dir))
 
-    # Capabilities — engine-owned
-    capabilities_path = Path(__file__).parent / "instructions" / "capabilities.md"
-    capabilities_text = capabilities_path.read_text().strip()
+    # Context — user-added domain knowledge, only if files exist
+    context_parts = _read_markdown_dir(agent_path / "context")
+    if context_parts:
+        sections.append("# CONTEXT\n\n" + "\n\n".join(context_parts))
 
-    persona = persona_text + "\n\n" + capabilities_text
+    # Promp Prefix: persona + instructions + context
+    persona = "\n\n".join(sections)
 
     # Storage
     store = _build_store(agent_id)
