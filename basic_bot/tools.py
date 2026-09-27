@@ -4,10 +4,11 @@ Belt tools ship with the engine (basic_bot.tool_belt) and are always
 loaded via package discovery.
 
 Box tools load from the agent's tools/ directory on the filesystem.
-Each subdirectory of tools/ is a tool group. Files starting with _
-are shared modules (e.g., _auth.py) importable by sibling tools in
-the same group via plain imports: `from _auth import auth_headers`.
-Loose .py files directly in tools/ are also loaded.
+Each tool group is a subdirectory of tools/ containing a tool.json
+manifest. The manifest is what makes a directory a group, the same
+rule add_tools.py uses. Files starting with _ are shared modules
+(e.g., _auth.py) importable by sibling tools in the same group via
+plain imports: `from _auth import auth_headers`.
 
 The factory calls build_registry() once at startup.
 """
@@ -24,6 +25,7 @@ import basic_bot.config as config
 logger = logging.getLogger(__name__)
 
 BELT_PACKAGE = "basic_bot.tool_belt"
+MANIFEST = "tool.json"
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +79,7 @@ def _load_module_from_file(module_name: str, file_path: Path):
 
 
 def _load_group(group_dir: Path) -> dict:
-    """Load all tools from one directory.
+    """Load all tools from one group directory.
 
     The directory is temporarily added to sys.path so tool files can
     import sibling _ modules directly (`from _auth import ...`). Shared
@@ -114,8 +116,10 @@ def _load_group(group_dir: Path) -> dict:
 def load_box(tools_dir: Path) -> dict:
     """Load box tools from an agent's tools/ directory.
 
-    Loose .py files in tools/ load first, then each subdirectory as a
-    group. Returns an empty dict if disabled or the directory is absent.
+    Only subdirectories containing a tool.json manifest are loaded.
+    Python files placed directly in tools/ are ignored, and a directory
+    without a manifest is skipped with a warning. Returns an empty dict
+    if the tool box is disabled or the directory is absent.
     """
     if not config.TOOL_BOX_ENABLED:
         logger.info("Tool box disabled")
@@ -126,12 +130,16 @@ def load_box(tools_dir: Path) -> dict:
         return {}
 
     registry: dict = {}
-    registry.update(_load_group(tools_dir))
 
     for entry in sorted(tools_dir.iterdir()):
-        if entry.is_dir() and not entry.name.startswith(("_", ".")) \
-                and entry.name != "__pycache__":
-            registry.update(_load_group(entry))
+        if not entry.is_dir() or entry.name.startswith(("_", ".")):
+            continue
+        if not (entry / MANIFEST).exists():
+            logger.warning(
+                "Skipping tools/%s/ — no %s manifest", entry.name, MANIFEST,
+            )
+            continue
+        registry.update(_load_group(entry))
 
     logger.info("Box tools loaded: %s", list(registry.keys()) or "none")
     return registry
