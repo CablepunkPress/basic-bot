@@ -149,12 +149,17 @@ def _build_local_chat_providers() -> dict:
 
 
 def _build_api_chat_provider():
+    """Build ClaudeProvider if an Anthropic API key is stored. None otherwise."""
     import os
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return None
     try:
         from basic_bot.providers.claude import ClaudeProvider
     except ImportError:
+        logger.warning(
+            "An Anthropic API key is stored, but the anthropic package is not "
+            "installed. Run 'python add_secrets.py' to restore Claude access."
+        )
         return None
     return ClaudeProvider()
 
