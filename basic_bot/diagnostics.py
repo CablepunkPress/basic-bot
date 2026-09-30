@@ -3,13 +3,20 @@
 Provides snapshot_memory() for logging memory usage at key lifecycle
 events: server startup, pre-fold, post-fold, and transitions between
 sequential server modes.
+
+psutil is optional. Without it, snapshots are skipped and the fold
+runs unchanged. It is included in the dev extra for development
+environments.
 """
 
 import logging
 
-import psutil
-
 import basic_bot.config as config
+
+try:
+    import psutil
+except ImportError:
+    psutil = None  # type: ignore[assignment]
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +33,9 @@ def _find_llama_servers() -> dict[str, dict]:
     Returns a dict keyed by role with pid and rss_mb.
     Identifies role by parsing --port from the process command line.
     """
+    if psutil is None:
+        return {}
+
     servers = {}
     for proc in psutil.process_iter(["pid", "name", "cmdline", "memory_info"]):
         try:
@@ -65,8 +75,12 @@ def snapshot_memory(label: str) -> dict:
         snapshot_memory("summary-done")
         snapshot_memory("chat-resumed")
 
-    Returns a dict with the full snapshot for programmatic use.
+    Returns a dict with the full snapshot for programmatic use, or an
+    empty dict if psutil is not installed.
     """
+    if psutil is None:
+        return {}
+
     servers = _find_llama_servers()
 
     vm = psutil.virtual_memory()

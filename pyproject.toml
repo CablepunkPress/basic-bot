@@ -18,7 +18,7 @@ api = [
     "anthropic",
 ]
 dev = [
-    "basic-bot[local,api]",
+    "psutil",
 ]
 
 [tool.pyright]
