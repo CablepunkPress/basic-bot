@@ -10,16 +10,10 @@ requires-python = ">=3.14"
 dependencies = []
 
 [project.optional-dependencies]
-local = [
-    "keyring",
-    "psutil",
-]
-api = [
-    "anthropic",
-]
 dev = [
-    "psutil",
+    "anthropic",
     "keyring",
+    "psutil",  
 ]
 
 [tool.pyright]
