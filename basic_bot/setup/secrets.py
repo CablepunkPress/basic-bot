@@ -2,15 +2,20 @@
 
 Scans the agent's dashboard.json for identity and tools/*/tool.json
 for secret declarations. Shows what's set, prompts for what's missing.
+
+Nothing here is part of the base install. The keyring library is
+installed the first time this runs, and the anthropic package is
+installed when an Anthropic API key is stored. Both return here
+after a rebuild if they're needed again.
 """
 
 import getpass
+import importlib
+import importlib.util
 import json
+import subprocess
 import sys
 from pathlib import Path
-
-import keyring
-import keyring.errors
 
 
 def _discover_tool_secrets(agent_path: Path) -> list[tuple[str, str, str]]:
@@ -32,6 +37,18 @@ def _discover_tool_secrets(agent_path: Path) -> list[tuple[str, str, str]]:
     return secrets
 
 
+def _ensure_package(name: str, reason: str) -> None:
+    """Install a package into this environment if it is missing."""
+    if importlib.util.find_spec(name) is not None:
+        return
+
+    print(f"  Installing {name} {reason}")
+    result = subprocess.run([sys.executable, "-m", "pip", "install", name])
+    if result.returncode != 0:
+        sys.exit(f"  {name} install failed — see output above")
+    importlib.invalidate_caches()
+
+
 def run(agent_path: Path) -> None:
     """Interactive secret setup for the agent at agent_path."""
     agent_path = Path(agent_path)
@@ -39,6 +56,10 @@ def run(agent_path: Path) -> None:
     agent_id = dashboard["id"]
 
     print(f"{agent_id} — API key setup\n")
+
+    _ensure_package("keyring", "to store keys in your system keyring")
+    import keyring
+    import keyring.errors
 
     try:
         keyring.get_password(agent_id, "probe")
@@ -72,5 +93,8 @@ def run(agent_path: Path) -> None:
         if keyring.get_password(service, key_name) != value:
             sys.exit("    stored but could not be read back — keyring problem")
         print("    stored")
+
+    if keyring.get_password(agent_id, "anthropic_api_key"):
+        _ensure_package("anthropic", "for Claude access")
 
     print("\nDone. Start the agent with:\n\n    python run.py\n")
