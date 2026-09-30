@@ -1,7 +1,13 @@
 """Build llama.cpp from source.
 
-Clones the repo into ~/.bountiful/llama.cpp and compiles llama-server
-with cmake. Checks for required build tools before starting.
+Clones a pinned release of llama.cpp into ~/.bountiful/llama.cpp and
+compiles llama-server with cmake. Checks for required build tools
+before starting.
+
+The release is pinned by LLAMA_VERSION. After a successful build, the
+version is recorded beside the source, and a later run rebuilds only
+if the recorded version differs from the pin. Changing the pin is how
+llama.cpp is upgraded on purpose.
 
 Build flags (e.g. -DGGML_CUDA=ON) are passed by __main__.py based
 on hardware detection.
@@ -13,14 +19,24 @@ import subprocess
 import sys
 from pathlib import Path
 
+LLAMA_VERSION = "v0.5.0"
+
 BOUNTIFUL_HOME = Path.home() / ".bountiful"
 LLAMA_DIR = BOUNTIFUL_HOME / "llama.cpp"
 LLAMA_REPO = "https://github.com/ggml-org/llama.cpp.git"
 SERVER_BIN = LLAMA_DIR / "build" / "bin" / "llama-server"
+VERSION_FILE = LLAMA_DIR / ".bountiful-version"
 
 
 def _fail(message: str) -> None:
     sys.exit(f"\nERROR: {message}")
+
+
+def _built_version() -> str | None:
+    """The llama.cpp version recorded by the last successful build."""
+    if not VERSION_FILE.exists():
+        return None
+    return VERSION_FILE.read_text().strip() or None
 
 
 def check_prerequisites() -> None:
@@ -44,28 +60,42 @@ def check_prerequisites() -> None:
 
 
 def build(flags: list[str] | None = None) -> None:
-    """Clone and compile llama-server if not already built.
+    """Clone and compile the pinned llama-server, if not already built.
 
     Args:
         flags: Additional cmake flags, e.g. ["-DGGML_CUDA=ON"].
                Determined by hardware detection in __main__.py.
     """
-    if SERVER_BIN.exists():
-        print(f"    already done — {SERVER_BIN} exists")
+    built = _built_version()
+    if SERVER_BIN.exists() and built == LLAMA_VERSION:
+        print(f"    already done — llama.cpp {LLAMA_VERSION}")
         return
+
+    if LLAMA_DIR.exists():
+        print(
+            f"    llama.cpp {built or 'unpinned build'} → {LLAMA_VERSION}, "
+            "rebuilding"
+        )
+        shutil.rmtree(LLAMA_DIR)
 
     BOUNTIFUL_HOME.mkdir(parents=True, exist_ok=True)
 
-    if not (LLAMA_DIR / "CMakeLists.txt").exists():
-        result = subprocess.run(
-            ["git", "clone", "--depth", "1", LLAMA_REPO, str(LLAMA_DIR)],
-        )
-        if result.returncode != 0:
-            _fail("git clone of llama.cpp failed — see output above")
+    result = subprocess.run(
+        [
+            "git", "clone", "--depth", "1",
+            "--branch", LLAMA_VERSION,
+            LLAMA_REPO, str(LLAMA_DIR),
+        ],
+    )
+    if result.returncode != 0:
+        _fail(f"git clone of llama.cpp {LLAMA_VERSION} failed — see output above")
 
     cmake_flags = flags or []
     flag_str = " ".join(cmake_flags) if cmake_flags else "CPU-only"
-    print(f"    compiling llama-server ({flag_str}) — this takes a few minutes...")
+    print(
+        f"    compiling llama-server {LLAMA_VERSION} ({flag_str}) "
+        "— this takes a few minutes..."
+    )
 
     configure = subprocess.run(
         ["cmake", "-B", "build"] + cmake_flags,
@@ -88,4 +118,6 @@ def build(flags: list[str] | None = None) -> None:
     )
     if result.returncode != 0 or not SERVER_BIN.exists():
         _fail("llama.cpp build failed — see output above")
-    print(f"    built {SERVER_BIN}")
+
+    VERSION_FILE.write_text(LLAMA_VERSION + "\n")
+    print(f"    built {SERVER_BIN} ({LLAMA_VERSION})")
