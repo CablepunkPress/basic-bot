@@ -1,0 +1,17 @@
+# Hardware Profile: Apple 32GB
+# Designed for: Apple M6 Mac Mini 32GB Unified Memory
+
+# --- Embedding ---
+[embedding]
+file = "Nemotron-3-Embed-8B-Q8_0.gguf"
+url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/main/Nemotron-3-Embed-8B-Q8_0.gguf"
+download = true
+alias = "nemotron-3-embed-8b-q8_0"
+query_prefix = "query: "
+passage_prefix = "passage: "
+gpu_layers = -1
+ctx_size = 8192
+batch_size = 8192
+ubatch_size = 8192
+
+# --- Summary ---
