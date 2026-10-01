@@ -1,11 +1,10 @@
-"""Build Orchestrator.
+"""Build orchestrator.
 
-Called by build.py in 'bountiful' repo.
+Called by build.py in the bountiful repo, as `python -m basic_bot`.
 
-Entry point for `python -m basic_bot`.
-
-Detects hardware, loads the matching profile, compiles llama.cpp
-with the right flags, and downloads the models the profile requires.
+Detects hardware, checks the build tools for it, compiles the pinned
+llama.cpp with the right backend, and downloads the models the
+hardware profile requires.
 """
 
 import sys
@@ -57,29 +56,28 @@ def _download_models() -> None:
             _download(label, model["url"], MODELS_DIR / model["file"])
 
 
-def _build_flags() -> list[str]:
-    """Determine cmake build flags from hardware detection."""
-    hw = detect_hardware()
+def _build_config(hardware: str) -> tuple[list[str], str]:
+    """cmake flags and backend name for the detected hardware.
 
-    if hw.startswith("nvidia"):
-        return ["-DGGML_CUDA=ON"]
-    if hw.startswith("apple"):
-        return []  # Metal auto-detected by cmake
-
-    return []  # CPU-only fallback
+    Metal is llama.cpp's default on macOS, so Apple Silicon needs no
+    flags. Detection has already stopped on unsupported hardware.
+    """
+    if hardware.startswith("apple"):
+        return [], "Metal"
+    return ["-DGGML_CUDA=ON"], "CUDA"
 
 
 def main() -> None:
-    print("  checking build tools")
-    check_prerequisites()
-
     print("  detecting hardware")
     hw = detect_hardware()
     print(f"    hardware: {hw}")
 
+    print("  checking build tools")
+    check_prerequisites(hw)
+
     print("  llama.cpp")
-    flags = _build_flags()
-    build(flags)
+    flags, backend = _build_config(hw)
+    build(flags, backend)
 
     print("  models")
     _download_models()
