@@ -2,6 +2,10 @@
 # Designed for: Apple M6 Mac Mini 32GB Unified Memory
 
 # --- Embedding ---
+# Base: https://huggingface.co/mistralai/Ministral-3-8B-Base-2512
+#   └─ Post-Training: https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512
+#      └─ Fine-Tuning: https://huggingface.co/nvidia/Nemotron-3-Embed-8B-BF16
+#          └─ Quantization: https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF
 [embedding]
 file = "Nemotron-3-Embed-8B-Q8_0.gguf"
 url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/main/Nemotron-3-Embed-8B-Q8_0.gguf"
