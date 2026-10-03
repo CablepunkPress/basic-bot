@@ -1,5 +1,9 @@
 # Hardware Profile: Apple 32GB
 # Designed for: Apple M6 Mac Mini 32GB Unified Memory
+# The only Apple configuration tested. Other memory sizes are untested.
+#
+# llama.cpp: Muse Glimmer needs build b10353 or newer. The pinned v0.5.0
+# (released 23 Sep 2026) includes it.
 
 
 # --- Embedding ---
@@ -8,6 +12,10 @@
 #      └─ Fine-Tuning: https://huggingface.co/nvidia/Nemotron-3-Embed-8B-BF16
 #          └─ Quantization: https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF
 # 8-bit = ~8.46 GB
+#
+# ctx_size 8192 was a limit of the 3060's 12GB. On 32GB it may fit at 32768
+# (untested). If raised, raise batch_size and ubatch_size to match: an
+# embedding input must fit in a single batch.
 [embedding]
 file = "Nemotron-3-Embed-8B-Q8_0.gguf"
 url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/main/Nemotron-3-Embed-8B-Q8_0.gguf"
@@ -51,15 +59,35 @@ presence_penalty = 0.0
 
 # --- Muse Glimmer 30B ---
 # Base: https://huggingface.co/meta-models/Muse-Glimmer-30B
-#   └─ Quantization: https://huggingface.co/bartowski/Muse-Glimmer-30B-GGUF
-# 6-bit: ~23.4 GB 
-[chat."muse-glimmer-30b-q6_k"]
-file = "Muse-Glimmer-30B-Q6_K.gguf"
-url = "https://huggingface.co/bartowski/Muse-Glimmer-30B-GGUF/resolve/main/Muse-Glimmer-30B-Q6_K.gguf"
+#   └─ Quantization: https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF
+# Meta's own 4-bit "K-Quant-Dynamic" build, which Meta targets at 32GB
+# (0.2% degradation vs. full precision).
+# 4-bit (Q4_K_XL): ~19.7 GB; ~20 GB with a working context, text only.
+#
+# Not used: the perception encoder (mmproj, needed only for image input)
+# and the DFlash drafter (optional speculative decoding).
+#
+# From the GGUF model card:
+# - llama-server must run with --jinja. The chat template is embedded in
+#   the GGUF and handles reasoning strength and output parsing.
+# - Reasoning cannot be switched off. --reasoning off and
+#   reasoning_effort "none" have no effect.
+# - Strength is set per request with
+#   chat_template_kwargs {"reasoning_strength": "<level>"}.
+#   Levels: low / medium / high / xhigh. Default: high.
+#   The template also accepts a "Reasoning strength: <level>" or
+#   "Reasoning effort: <level>" line in the system prompt.
+# - Thinking arrives separately in reasoning_content.
+# - llama-server divides -c across -np slots. A generation that runs out
+#   of context returns no answer and no error.
+# - Stop tokens are <|end_of_text|> and <|eot|>. Never stop on <|eom|>.
+[chat."muse-glimmer-30b-q4_k_xl"]
+file = "Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
+url = "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/resolve/main/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
 download = true
 default = true
-alias = "muse-glimmer-30b-q6_k"
-display_name = "Muse Glimmer 30B Q6_K"
+alias = "muse-glimmer-30b-q4_k_xl"
+display_name = "Muse Glimmer 30B Q4_K_XL"
 provider = "Meta"
 family = "Muse"
 rank = 1
@@ -69,35 +97,29 @@ flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
 
-# Glimmer: No thinking/non-thinking, rather effort levels instead and only?
-# From model card: 
-# Reasoning strength: <value>
-# Muse Glimmer supports the following levels: low / medium / high / xhigh
-[chat."muse-glimmer-30b-q6_k".sampling]
+# Always reasons, so a single sampling set.
+[chat."muse-glimmer-30b-q4_k_xl".sampling]
 temperature = 1.0
 top_p = 0.95
 top_k = 64
-
-#############
-[chat.sampling.thinking]
-temperature = 1.0
-top_p = 0.95
-top_k = 20
-min_p = 0.0
-presence_penalty = 1.5
-
-[chat.non_thinking]
-temperature = 0.7
-top_p = 0.8
-top_k = 20
-min_p = 0.0
-presence_penalty = 1.5
 
 
 # --- Qwen3.8 27B ---
 # Base: https://huggingface.co/Qwen/Qwen3.8-27B
 #   └─ Quantization: https://huggingface.co/bartowski/Qwen3.8-27B-GGUF
-# 6-bit: ~23.9 GB 
+# 6-bit: ~23.9 GB
+#
+# Architecture is qwen3_5 (hybrid Gated DeltaNet). Fine for chat;
+# never use this architecture as the summary model.
+#
+# From model card:
+# - Thinking is on by default and can be disabled per request:
+#   chat_template_kwargs {"enable_thinking": false}
+# - Effort uses reasoning_effort, an API parameter, not prompt text.
+#   Levels: xhigh (default) / medium / low. There is no "high".
+#   Whether llama-server passes it through is not yet verified.
+# - preserve_thinking is on by default: the template keeps thinking
+#   from all earlier turns in the conversation.
 [chat."qwen3.8-27b-q6_k"]
 file = "Qwen3.8-27B-Q6_K.gguf"
 url = "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q6_K.gguf"
@@ -114,19 +136,13 @@ flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
 
-# From model card:
-# uses reasoning_effort
-# xhigh (default): for complex tasks demanding thorough analysis
-# medium: balancing accuracy and speed
-# low: efficient reasoning optimizing for speed and cost
-
 [chat."qwen3.8-27b-q6_k".sampling.thinking]
 temperature = 1.0
 top_p = 0.95
 top_k = 20
 min_p = 0.0
-presence_penalty = 1.5
-repetition_penalty=1.0
+presence_penalty = 0.0
+repetition_penalty = 1.0
 
 [chat."qwen3.8-27b-q6_k".sampling.non_thinking]
 temperature = 0.7
@@ -134,4 +150,4 @@ top_p = 0.80
 top_k = 20
 min_p = 0.0
 presence_penalty = 1.5
-repetition_penalty=1.0
+repetition_penalty = 1.0
