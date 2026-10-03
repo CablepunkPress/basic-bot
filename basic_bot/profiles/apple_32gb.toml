@@ -1,11 +1,13 @@
 # Hardware Profile: Apple 32GB
 # Designed for: Apple M6 Mac Mini 32GB Unified Memory
 
+
 # --- Embedding ---
 # Base: https://huggingface.co/mistralai/Ministral-3-8B-Base-2512
 #   └─ Post-Training: https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512
 #      └─ Fine-Tuning: https://huggingface.co/nvidia/Nemotron-3-Embed-8B-BF16
 #          └─ Quantization: https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF
+# 8-bit = ~8.46 GB
 [embedding]
 file = "Nemotron-3-Embed-8B-Q8_0.gguf"
 url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/main/Nemotron-3-Embed-8B-Q8_0.gguf"
@@ -18,4 +20,118 @@ ctx_size = 8192
 batch_size = 8192
 ubatch_size = 8192
 
+
 # --- Summary ---
+# Base: https://huggingface.co/google/gemma-4-12B
+#   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-12B-it
+#       └─ Quantization: https://huggingface.co/bartowski/gemma-4-12B-it-GGUF
+# 8-bit = ~12.7 GB
+[summary]
+file = "gemma-4-12B-it-Q8_0.gguf"
+url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/main/gemma-4-12B-it-Q8_0.gguf"
+download = true
+alias = "gemma-4-12b-it-q8_0"
+provider = "Google"
+family = "Gemma"
+thinking_type = "gemma"
+gpu_layers = -1
+flash_attn = "on"
+ctx_size = 16384
+max_tokens = 8192
+thinking = false
+
+[summary.sampling]
+temperature = 1.0
+top_p = 0.95
+top_k = 64
+presence_penalty = 0.0
+
+
+# --- Chat Models ---
+
+# --- Muse Glimmer 30B ---
+# Base: https://huggingface.co/meta-models/Muse-Glimmer-30B
+#   └─ Quantization: https://huggingface.co/bartowski/Muse-Glimmer-30B-GGUF
+# 6-bit: ~23.4 GB 
+[chat."muse-glimmer-30b-q6_k"]
+file = "Muse-Glimmer-30B-Q6_K.gguf"
+url = "https://huggingface.co/bartowski/Muse-Glimmer-30B-GGUF/resolve/main/Muse-Glimmer-30B-Q6_K.gguf"
+download = true
+default = true
+alias = "muse-glimmer-30b-q6_k"
+display_name = "Muse Glimmer 30B Q6_K"
+provider = "Meta"
+family = "Muse"
+rank = 1
+thinking_type = "muse"
+gpu_layers = -1
+flash_attn = "on"
+ctx_size = 32768
+max_tokens = 16384
+
+# Glimmer: No thinking/non-thinking, rather effort levels instead and only?
+# From model card: 
+# Reasoning strength: <value>
+# Muse Glimmer supports the following levels: low / medium / high / xhigh
+[chat."muse-glimmer-30b-q6_k".sampling]
+temperature = 1.0
+top_p = 0.95
+top_k = 64
+
+#############
+[chat.sampling.thinking]
+temperature = 1.0
+top_p = 0.95
+top_k = 20
+min_p = 0.0
+presence_penalty = 1.5
+
+[chat.non_thinking]
+temperature = 0.7
+top_p = 0.8
+top_k = 20
+min_p = 0.0
+presence_penalty = 1.5
+
+
+# --- Qwen3.8 27B ---
+# Base: https://huggingface.co/Qwen/Qwen3.8-27B
+#   └─ Quantization: https://huggingface.co/bartowski/Qwen3.8-27B-GGUF
+# 6-bit: ~23.9 GB 
+[chat."qwen3.8-27b-q6_k"]
+file = "Qwen3.8-27B-Q6_K.gguf"
+url = "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q6_K.gguf"
+download = true
+default = false
+alias = "qwen3.8-27b-q6_k"
+display_name = "Qwen3.8 27B Q6_K"
+provider = "Alibaba"
+family = "Qwen"
+rank = 2
+thinking_type = "qwen"
+gpu_layers = -1
+flash_attn = "on"
+ctx_size = 32768
+max_tokens = 16384
+
+# From model card:
+# uses reasoning_effort
+# xhigh (default): for complex tasks demanding thorough analysis
+# medium: balancing accuracy and speed
+# low: efficient reasoning optimizing for speed and cost
+
+[chat."qwen3.8-27b-q6_k".sampling.thinking]
+temperature = 1.0
+top_p = 0.95
+top_k = 20
+min_p = 0.0
+presence_penalty = 1.5
+repetition_penalty=1.0
+
+[chat."qwen3.8-27b-q6_k".sampling.non_thinking]
+temperature = 0.7
+top_p = 0.80
+top_k = 20
+min_p = 0.0
+presence_penalty = 1.5
+repetition_penalty=1.0
