@@ -8,12 +8,15 @@ During fold: chat stops → embedding runs → summary runs → chat restarts.
 
 All model paths, launch args, and port assignments come from the
 hardware profile loaded by basic_bot.profile.
+
+Failures raise ServerError with a message meant for the user. A
+server can start because of a click, not only at launch, so a failed
+start must be reportable instead of ending the process.
 """
 
 import logging
 import socket
 import subprocess
-import sys
 import time
 import urllib.error
 import urllib.request
@@ -45,7 +48,14 @@ LOG_FILES = {
     CHAT: BOUNTIFUL_HOME / "llama-chat.log",
 }
 
-HEALTH_TIMEOUT = 60
+# Generous on purpose: start() returns as soon as the server is healthy,
+# so this only limits how long a broken start takes to fail. The first
+# Metal launch of a large model can be slow.
+HEALTH_TIMEOUT = 180
+
+
+class ServerError(RuntimeError):
+    """A llama-server could not be started. The message is user-facing."""
 
 
 # --- Active process tracking ---
@@ -78,6 +88,12 @@ def _build_launch_args(config: dict) -> list[str]:
     if config.get("embeddings", False):
         args += ["--embeddings"]
 
+    # Use the chat template embedded in each GGUF. Muse Glimmer
+    # requires this; it is harmless for the other models.
+    args += ["--jinja"]
+
+    # One slot, so a single conversation gets the full ctx_size.
+    # llama-server divides --ctx-size across slots.
     args += ["--parallel", "1"]
 
     return args
@@ -97,7 +113,7 @@ def _config_for_role(role: str, model_id: str | None = None) -> dict:
     )
 
     if role == EMBEDDING:
-        config = get_embedding_config()
+        config = dict(get_embedding_config())
         config["embeddings"] = True
         return config
 
@@ -108,12 +124,12 @@ def _config_for_role(role: str, model_id: str | None = None) -> dict:
         if model_id:
             models = get_chat_models()
             if model_id not in models:
-                sys.exit(f"Unknown chat model: {model_id}")
+                raise ServerError(f"Unknown chat model: {model_id}")
             return models[model_id]
         _, config = get_default_chat_model()
         return config
 
-    sys.exit(f"Unknown server role: {role}")
+    raise ServerError(f"Unknown server role: {role}")
 
 
 # --- Port and health utilities ---
@@ -143,6 +159,7 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
 
     Stops any existing server on this role first.
     Returns the process, or None if reusing an existing server.
+    Raises ServerError if the server can't be started.
     """
     if role in _active:
         stop(role)
@@ -157,14 +174,20 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
         if _healthy(port):
             print(f"{label} already running on port {port}")
             return None
-        sys.exit(
-            f"Port {port} in use but not responding as llama-server."
+        raise ServerError(
+            f"Port {port} is in use by something other than llama-server."
         )
 
     if not SERVER_BIN.exists():
-        sys.exit("llama-server missing from ~/.bountiful/. Run 'python build.py'.")
+        raise ServerError(
+            "llama-server is missing from ~/.bountiful/. "
+            "Run 'python3 build.py'."
+        )
     if not model_path.exists():
-        sys.exit(f"Model file not found: {model_path}")
+        raise ServerError(
+            f"Model file not found: {model_path}. "
+            f"Run 'python3 build.py' to download it."
+        )
 
     # Build command from profile
     launch_args = _build_launch_args(config)
@@ -174,27 +197,40 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
         "--port", str(port),
     ] + launch_args
 
-    # Start and wait for health
+    # Start and wait for health. The child keeps its own handle to
+    # the log, so ours can close once it starts.
     log_path = LOG_FILES[role]
-    log_file = open(log_path, "w")
-
-    process = subprocess.Popen(
-        cmd, stdout=log_file, stderr=subprocess.STDOUT,
-    )
+    with open(log_path, "w") as log_file:
+        process = subprocess.Popen(
+            cmd, stdout=log_file, stderr=subprocess.STDOUT,
+        )
     print(f"{label} starting on port {port} (log: {log_path})")
 
     deadline = time.monotonic() + HEALTH_TIMEOUT
     while time.monotonic() < deadline:
         if process.poll() is not None:
-            sys.exit(f"{label} exited during startup — check {log_path}")
+            raise ServerError(
+                f"{label} exited during startup — check {log_path}"
+            )
         if _healthy(port):
             print(f"{label} ready")
             _active[role] = process
             return process
         time.sleep(0.5)
 
+    _terminate(process)
+    raise ServerError(
+        f"{label} not ready in {HEALTH_TIMEOUT}s — check {log_path}"
+    )
+
+
+def _terminate(process: subprocess.Popen) -> None:
+    """Stop a process, forcefully if it doesn't exit in time."""
     process.terminate()
-    sys.exit(f"{label} not ready in {HEALTH_TIMEOUT}s — check {log_path}")
+    try:
+        process.wait(timeout=10)
+    except subprocess.TimeoutExpired:
+        process.kill()
 
 
 def stop(role: str) -> None:
@@ -202,11 +238,7 @@ def stop(role: str) -> None:
     process = _active.pop(role, None)
     if process is None:
         return
-    process.terminate()
-    try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        process.kill()
+    _terminate(process)
     logger.info("%s server stopped", role.capitalize())
 
 
