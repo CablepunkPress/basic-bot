@@ -14,7 +14,13 @@ Per-turn state rides in a note at the end of the newest message.
 import json
 import logging
 
-from basic_bot.providers.protocol import ChatResponse, InferenceProvider, ModelInfo
+from basic_bot.providers.protocol import (
+    REASONING_ALWAYS,
+    REASONING_OPTIONAL,
+    ChatResponse,
+    InferenceProvider,
+    ModelInfo,
+)
 from basic_bot.memory import load_window
 from basic_bot.runtime import BotRuntime
 
@@ -92,19 +98,29 @@ def _model_name(model_info: ModelInfo) -> str:
 
 
 def _build_turn_note(
-    model_info: ModelInfo, effort: str | None, thinking: bool,
+    model_info: ModelInfo, reasoning_on: bool, effort: str | None,
 ) -> str:
-    """State the current model and settings for this turn only."""
+    """State the current model and its settings for this turn only.
+
+    The settings are the ones actually used, after defaults and
+    corrections, not the ones requested.
+    """
     lines = [f"You are running on {_model_name(model_info)}."]
 
-    if model_info.effort_levels and effort:
+    if effort:
         lines.append(f"Effort is set to {effort}.")
     elif not model_info.effort_levels:
         lines.append("This model does not use effort levels.")
 
-    lines.append(
-        "Deep Reasoning is enabled." if thinking else "Deep Reasoning is disabled."
-    )
+    if model_info.reasoning == REASONING_ALWAYS:
+        lines.append("Deep Reasoning is always on for this model.")
+    elif model_info.reasoning == REASONING_OPTIONAL:
+        lines.append(
+            "Deep Reasoning is enabled." if reasoning_on
+            else "Deep Reasoning is disabled."
+        )
+    else:
+        lines.append("This model does not use Deep Reasoning.")
 
     return "<!-- turn note, written by the system: " + " ".join(lines) + " -->"
 
@@ -124,6 +140,12 @@ def _prepare_messages(window: list[dict], turn_note: str) -> list[dict]:
     return messages
 
 
+def _lightest_settings(model_info: ModelInfo) -> tuple[bool, str | None]:
+    """Reasoning off and the lowest effort level, as far as the model allows."""
+    lowest = model_info.effort_levels[0] if model_info.effort_levels else None
+    return model_info.resolve(False, lowest)
+
+
 # ---------------------------------------------------------------------------
 # Chat orchestration
 # ---------------------------------------------------------------------------
@@ -134,12 +156,14 @@ async def chat_with_model(
     user_message: str,
     model_id: str | None = None,
     effort: str | None = None,
-    thinking: bool = False,
+    thinking: bool | None = None,
 ) -> dict:
     """Chat using conversation memory and tools.
 
+    effort and thinking of None mean "use the model's default."
+
     Returns a result dict with the reply text and metadata reflecting
-    what the API actually used (not what was requested, where detectable).
+    what was actually used (not what was requested, where detectable).
     """
     provider: InferenceProvider = runtime.chat_provider
 
@@ -154,6 +178,8 @@ async def chat_with_model(
     model_info = models[model_id]
     fallback_id = provider.get_fallback_model()
     fallback_info = models[fallback_id]
+
+    reasoning_on, level = model_info.resolve(thinking, effort)
 
     logger.info("Processing chat for user %s", user_id)
 
@@ -175,12 +201,12 @@ async def chat_with_model(
     context = {"user_id": user_id, "store": runtime.store, "embedder": runtime.embedder}
 
     messages = _prepare_messages(
-        window, _build_turn_note(model_info, effort, thinking),
+        window, _build_turn_note(model_info, reasoning_on, level),
     )
 
     logger.info(
-        "Sending to %s (effort=%s, thinking=%s) — %d messages, %d tools",
-        model_info.display_name, effort, thinking,
+        "Sending to %s (effort=%s, reasoning=%s) — %d messages, %d tools",
+        model_info.display_name, level, reasoning_on,
         len(messages), len(tool_schemas),
     )
 
@@ -188,7 +214,7 @@ async def chat_with_model(
         response = _chat_loop(
             provider, messages, system_prompt,
             tool_schemas, context, runtime.tool_registry,
-            model_id, effort, thinking,
+            model_id, level, reasoning_on,
         )
 
         if response.model_used != model_id:
@@ -208,7 +234,7 @@ async def chat_with_model(
             "reply": response.text,
             "model_used": response.model_used,
             "display_name": used_info.display_name,
-            "effort": effort,
+            "effort": level,
             "thinking": response.thinking,
             "fallback": False,
             "model_mismatch": response.model_used != model_id,
@@ -220,18 +246,21 @@ async def chat_with_model(
             model_info.display_name, fallback_info.display_name,
         )
 
-        if model_id == fallback_id and not effort and not thinking:
+        # Retry on the fallback model at its lightest settings. If that
+        # is exactly what just failed, retrying would change nothing.
+        fb_reasoning, fb_level = _lightest_settings(fallback_info)
+        if model_id == fallback_id and (fb_reasoning, fb_level) == (reasoning_on, level):
             raise
 
         try:
             fallback_messages = _prepare_messages(
-                window, _build_turn_note(fallback_info, None, False),
+                window, _build_turn_note(fallback_info, fb_reasoning, fb_level),
             )
 
             response = _chat_loop(
                 provider, fallback_messages, system_prompt,
                 tool_schemas, context, runtime.tool_registry,
-                fallback_id, None, False,
+                fallback_id, fb_level, fb_reasoning,
             )
 
             used_info = models.get(response.model_used, fallback_info)
@@ -245,7 +274,7 @@ async def chat_with_model(
                 "reply": response.text,
                 "model_used": response.model_used,
                 "display_name": used_info.display_name,
-                "effort": None,
+                "effort": fb_level,
                 "thinking": response.thinking,
                 "fallback": True,
                 "model_mismatch": response.model_used != fallback_id,
