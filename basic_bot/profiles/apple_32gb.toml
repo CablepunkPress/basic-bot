@@ -1,9 +1,5 @@
 # Hardware Profile: Apple 32GB
 # Designed for: Apple M6 Mac Mini 32GB Unified Memory
-# The only Apple configuration tested. Other memory sizes are untested.
-#
-# llama.cpp: Muse Glimmer needs build b10353 or newer. The pinned v0.5.0
-# (released 23 Sep 2026) includes it.
 
 
 # --- Embedding ---
@@ -12,10 +8,6 @@
 #      └─ Fine-Tuning: https://huggingface.co/nvidia/Nemotron-3-Embed-8B-BF16
 #          └─ Quantization: https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF
 # 8-bit = ~8.46 GB
-#
-# ctx_size 8192 was a limit of the 3060's 12GB. On 32GB it may fit at 32768
-# (untested). If raised, raise batch_size and ubatch_size to match: an
-# embedding input must fit in a single batch.
 [embedding]
 file = "Nemotron-3-Embed-8B-Q8_0.gguf"
 url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/main/Nemotron-3-Embed-8B-Q8_0.gguf"
@@ -24,9 +16,9 @@ alias = "nemotron-3-embed-8b-q8_0"
 query_prefix = "query: "
 passage_prefix = "passage: "
 gpu_layers = -1
-ctx_size = 8192
-batch_size = 8192
-ubatch_size = 8192
+ctx_size = 16384
+batch_size = 16384
+ubatch_size = 16384
 
 
 # --- Summary ---
@@ -60,13 +52,8 @@ presence_penalty = 0.0
 # --- Muse Glimmer 30B ---
 # Base: https://huggingface.co/meta-models/Muse-Glimmer-30B
 #   └─ Quantization: https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF
-# Meta's own 4-bit "K-Quant-Dynamic" build, which Meta targets at 32GB
-# (0.2% degradation vs. full precision).
-# 4-bit (Q4_K_XL): ~19.7 GB; ~20 GB with a working context, text only.
-#
-# Not used: the perception encoder (mmproj, needed only for image input)
-# and the DFlash drafter (optional speculative decoding).
-#
+# 4-bit: ~19.7 GB
+
 # From the GGUF model card:
 # - llama-server must run with --jinja. The chat template is embedded in
 #   the GGUF and handles reasoning strength and output parsing.
@@ -81,6 +68,7 @@ presence_penalty = 0.0
 # - llama-server divides -c across -np slots. A generation that runs out
 #   of context returns no answer and no error.
 # - Stop tokens are <|end_of_text|> and <|eot|>. Never stop on <|eom|>.
+
 [chat."muse-glimmer-30b-q4_k_xl"]
 file = "Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
 url = "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/resolve/main/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
@@ -97,7 +85,6 @@ flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
 
-# Always reasons, so a single sampling set.
 [chat."muse-glimmer-30b-q4_k_xl".sampling]
 temperature = 1.0
 top_p = 0.95
@@ -107,11 +94,8 @@ top_k = 64
 # --- Qwen3.8 27B ---
 # Base: https://huggingface.co/Qwen/Qwen3.8-27B
 #   └─ Quantization: https://huggingface.co/bartowski/Qwen3.8-27B-GGUF
-# 6-bit: ~23.9 GB
-#
-# Architecture is qwen3_5 (hybrid Gated DeltaNet). Fine for chat;
-# never use this architecture as the summary model.
-#
+# 5-bit: ~20.9 GB
+
 # From model card:
 # - Thinking is on by default and can be disabled per request:
 #   chat_template_kwargs {"enable_thinking": false}
@@ -120,13 +104,14 @@ top_k = 64
 #   Whether llama-server passes it through is not yet verified.
 # - preserve_thinking is on by default: the template keeps thinking
 #   from all earlier turns in the conversation.
-[chat."qwen3.8-27b-q6_k"]
-file = "Qwen3.8-27B-Q6_K.gguf"
-url = "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q6_K.gguf"
+
+[chat."qwen3.8-27b-q5_k_m"]
+file = "Qwen3.8-27B-Q5_K_M.gguf"
+url = "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q5_K_M.gguf"
 download = true
 default = false
-alias = "qwen3.8-27b-q6_k"
-display_name = "Qwen3.8 27B Q6_K"
+alias = "qwen3.8-27b-q5_k_m"
+display_name = "Qwen3.8 27B Q5_K_M"
 provider = "Alibaba"
 family = "Qwen"
 rank = 2
