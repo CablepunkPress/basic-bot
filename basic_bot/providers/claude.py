@@ -3,6 +3,10 @@
 Translates between the engine's internal message format and the
 Anthropic Messages API. Handles model capabilities, thinking modes,
 effort levels, and response parsing.
+
+The engine and UI see each model's reasoning and effort controls
+through ModelInfo. How thinking is requested from the API, adaptive
+or extended, is private to this connector.
 """
 
 import logging
@@ -11,7 +15,12 @@ import re
 import anthropic
 from anthropic.types import TextBlock, ThinkingBlock, ToolUseBlock
 
-from basic_bot.providers.protocol import ChatResponse, ModelInfo, ToolCall
+from basic_bot.providers.protocol import (
+    REASONING_OPTIONAL,
+    ChatResponse,
+    ModelInfo,
+    ToolCall,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -22,7 +31,18 @@ DEFAULT_MAX_TOKENS = 8192
 THINKING_MAX_TOKENS = 16384
 EXTENDED_BUDGET_TOKENS = 10000
 
+# How each model's thinking is requested from the API.
+#   adaptive  the model decides how much to think
+#   extended  a fixed thinking budget
+_THINKING_MODE = {
+    "claude-haiku-4-5-20251001": "extended",
+    "claude-sonnet-4-6": "adaptive",
+    "claude-opus-4-6": "adaptive",
+    "claude-opus-4-7": "adaptive",
+    "claude-opus-4-8": "adaptive",
+}
 
+# Effort defaults to "high", the API's own default when none is sent.
 MODELS: dict[str, ModelInfo] = {
     "claude-haiku-4-5-20251001": ModelInfo(
         id="claude-haiku-4-5-20251001",
@@ -30,9 +50,9 @@ MODELS: dict[str, ModelInfo] = {
         provider="Anthropic",
         family="Claude",
         host="api",
-        effort_levels=None,
-        thinking_type="extended",
         rank=1,
+        reasoning=REASONING_OPTIONAL,
+        reasoning_default=False,
     ),
     "claude-sonnet-4-6": ModelInfo(
         id="claude-sonnet-4-6",
@@ -40,9 +60,11 @@ MODELS: dict[str, ModelInfo] = {
         provider="Anthropic",
         family="Claude",
         host="api",
-        effort_levels=["low", "medium", "high", "max"],
-        thinking_type="adaptive",
         rank=2,
+        reasoning=REASONING_OPTIONAL,
+        reasoning_default=False,
+        effort_levels=["low", "medium", "high", "max"],
+        effort_default="high",
     ),
     "claude-opus-4-6": ModelInfo(
         id="claude-opus-4-6",
@@ -50,9 +72,11 @@ MODELS: dict[str, ModelInfo] = {
         provider="Anthropic",
         family="Claude",
         host="api",
-        effort_levels=["low", "medium", "high", "max"],
-        thinking_type="adaptive",
         rank=3,
+        reasoning=REASONING_OPTIONAL,
+        reasoning_default=False,
+        effort_levels=["low", "medium", "high", "max"],
+        effort_default="high",
     ),
     "claude-opus-4-7": ModelInfo(
         id="claude-opus-4-7",
@@ -60,9 +84,11 @@ MODELS: dict[str, ModelInfo] = {
         provider="Anthropic",
         family="Claude",
         host="api",
-        effort_levels=["low", "medium", "high", "xhigh", "max"],
-        thinking_type="adaptive",
         rank=4,
+        reasoning=REASONING_OPTIONAL,
+        reasoning_default=False,
+        effort_levels=["low", "medium", "high", "xhigh", "max"],
+        effort_default="high",
     ),
     "claude-opus-4-8": ModelInfo(
         id="claude-opus-4-8",
@@ -70,9 +96,11 @@ MODELS: dict[str, ModelInfo] = {
         provider="Anthropic",
         family="Claude",
         host="api",
-        effort_levels=["low", "medium", "high", "xhigh", "max"],
-        thinking_type="adaptive",
         rank=5,
+        reasoning=REASONING_OPTIONAL,
+        reasoning_default=False,
+        effort_levels=["low", "medium", "high", "xhigh", "max"],
+        effort_default="high",
     ),
 }
 
@@ -106,7 +134,7 @@ class ClaudeProvider:
         tools: list[dict] | None = None,
         model_id: str,
         effort: str | None = None,
-        thinking: bool = False,
+        thinking: bool | None = None,
         sampling: dict | None = None,
     ) -> ChatResponse:
         """Send messages to Claude and return a ChatResponse."""
@@ -168,28 +196,25 @@ class ClaudeProvider:
         system: str,
         messages: list[dict],
         effort: str | None,
-        thinking: bool,
+        thinking: bool | None,
     ) -> dict:
         """Build kwargs for client.messages.create."""
+        reasoning_on, level = model_info.resolve(thinking, effort)
+
         kwargs: dict = {
             "model": model_id,
             "system": system,
             "messages": messages,
         }
 
-        if effort and model_info.effort_levels:
-            if effort in model_info.effort_levels:
-                kwargs["output_config"] = {"effort": effort}
-            else:
-                logger.warning(
-                    "Effort '%s' not supported by %s, ignoring",
-                    effort, model_info.display_name,
-                )
+        if level:
+            kwargs["output_config"] = {"effort": level}
 
-        if thinking and model_info.thinking_type == "adaptive":
+        mode = _THINKING_MODE.get(model_id)
+        if reasoning_on and mode == "adaptive":
             kwargs["thinking"] = {"type": "adaptive"}
             kwargs["max_tokens"] = THINKING_MAX_TOKENS
-        elif thinking and model_info.thinking_type == "extended":
+        elif reasoning_on and mode == "extended":
             kwargs["thinking"] = {
                 "type": "enabled",
                 "budget_tokens": EXTENDED_BUDGET_TOKENS,
