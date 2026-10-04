@@ -4,9 +4,14 @@ Talks to llama-server's OpenAI-compatible /v1/chat/completions endpoint.
 Each instance wraps a single model on a single endpoint. The factory
 builds one per available model; the registry or runtime holds them.
 
-Model metadata and sampling parameters come from the hardware profile,
-injected at construction by the factory. This module never imports
-from profile.py for model-specific values.
+Model metadata, reasoning controls, and sampling parameters come from
+the hardware profile, injected at construction by the factory. This
+module never imports from profile.py for model-specific values.
+
+Reasoning and effort reach the model through chat_template_kwargs.
+The profile's [reasoning] table names the keys each model's template
+expects, so a new model with a new dialect needs a profile entry,
+not code.
 
 stdlib urllib only — no SDK for localhost HTTP.
 """
@@ -18,7 +23,12 @@ import urllib.error
 import urllib.request
 
 import basic_bot.config as config
-from basic_bot.providers.protocol import ChatResponse, ModelInfo, ToolCall
+from basic_bot.providers.protocol import (
+    REASONING_OPTIONAL,
+    ChatResponse,
+    ModelInfo,
+    ToolCall,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +43,8 @@ class LocalProvider:
         model_id: str,
         base_url: str,
         max_tokens: int,
-        model_info: ModelInfo | None = None,
+        model_info: ModelInfo,
+        reasoning: dict | None = None,
         sampling: dict | None = None,
     ):
         self._model_id = model_id
@@ -41,6 +52,12 @@ class LocalProvider:
         self._max_tokens = max_tokens
         self._model_info = model_info
         self._sampling = sampling or {}
+
+        # Template keys from the profile's [reasoning] table
+        reasoning = reasoning or {}
+        self._switch_key = reasoning.get("switch_key")
+        self._effort_key = reasoning.get("effort_key")
+
         logger.info(
             "Local provider configured: %s → %s", model_id, self._endpoint,
         )
@@ -48,9 +65,7 @@ class LocalProvider:
     # --- Protocol: model catalog ---
 
     def get_models(self) -> dict[str, ModelInfo]:
-        if self._model_info:
-            return {self._model_id: self._model_info}
-        return {}
+        return {self._model_id: self._model_info}
 
     def get_default_model(self) -> str:
         return self._model_id
@@ -69,9 +84,11 @@ class LocalProvider:
         tools: list[dict] | None = None,
         model_id: str | None = None,
         effort: str | None = None,
-        thinking: bool = False,
+        thinking: bool | None = None,
         sampling: dict | None = None,
     ) -> ChatResponse:
+        reasoning_on, level = self._model_info.resolve(thinking, effort)
+
         payload: dict = {
             "model": self._model_id,
             "messages": self._build_messages(system, messages),
@@ -81,19 +98,35 @@ class LocalProvider:
         if tools:
             payload["tools"] = [self._translate_tool(t) for t in tools]
 
-        # Thinking: Pass thinking preference to llama-server
-        if self._model_info and self._model_info.thinking_type:
-            payload["chat_template_kwargs"] = {"enable_thinking": thinking}
+        # Reasoning and effort, in this model's template vocabulary
+        template_kwargs: dict = {}
+        if self._model_info.reasoning == REASONING_OPTIONAL and self._switch_key:
+            template_kwargs[self._switch_key] = reasoning_on
+        if level and self._effort_key:
+            template_kwargs[self._effort_key] = level
+        if template_kwargs:
+            payload["chat_template_kwargs"] = template_kwargs
 
-        # Sampling — caller override (summary) or injected defaults (chat)
+        # Sampling — caller override (summary) or profile defaults (chat)
         if sampling:
             payload.update(sampling)
-        elif self._sampling:
-            mode = "thinking" if thinking else "non_thinking"
-            payload.update(self._sampling.get(mode, {}))
+        else:
+            payload.update(self._sampling_for(reasoning_on))
 
         data = self._post(payload)
         return self._parse_response(data)
+
+    def _sampling_for(self, reasoning_on: bool) -> dict:
+        """Profile sampling for the current reasoning state.
+
+        A model with separate settings per mode has thinking and
+        non_thinking subtables. A model with one set of settings has
+        a flat table, used as it is.
+        """
+        if "thinking" in self._sampling or "non_thinking" in self._sampling:
+            mode = "thinking" if reasoning_on else "non_thinking"
+            return self._sampling.get(mode, {})
+        return self._sampling
 
     # --- Outbound translation ---
 
