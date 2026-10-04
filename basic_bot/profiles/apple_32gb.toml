@@ -1,5 +1,18 @@
 # Hardware Profile: Apple 32GB
 # Designed for: Apple M6 Mac Mini 32GB Unified Memory
+#
+# Reasoning tables
+# A [reasoning] table describes how a model reasons, in the engine's
+# terms, and how those terms translate for this model's chat template.
+# No table: the model does not reason.
+#   mode                    "optional" (can be switched off) or "always"
+#   default                 optional only: on or off when nothing is chosen
+#   switch_key              optional only: chat_template_kwargs key for on/off
+#   effort_levels           levels the model accepts, lowest to highest
+#   effort_default          level used when nothing is chosen
+#   effort_key              chat_template_kwargs key for the level
+#   effort_needs_reasoning  optional only: true if effort does nothing
+#                           while reasoning is off
 
 
 # --- Embedding ---
@@ -33,12 +46,15 @@ download = true
 alias = "gemma-4-12b-it-q8_0"
 provider = "Google"
 family = "Gemma"
-thinking_type = "gemma"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 16384
 max_tokens = 8192
-thinking = false
+
+[summary.reasoning]
+mode = "optional"
+default = false
+switch_key = "enable_thinking"
 
 [summary.sampling]
 temperature = 1.0
@@ -79,11 +95,16 @@ display_name = "Muse Glimmer 30B Q4_K_XL"
 provider = "Meta"
 family = "Muse"
 rank = 1
-thinking_type = "muse"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
+
+[chat."muse-glimmer-30b-q4_k_xl".reasoning]
+mode = "always"
+effort_levels = ["low", "medium", "high", "xhigh"]
+effort_default = "high"
+effort_key = "reasoning_strength"
 
 [chat."muse-glimmer-30b-q4_k_xl".sampling]
 temperature = 1.0
@@ -95,6 +116,7 @@ top_k = 64
 # Base: https://huggingface.co/Qwen/Qwen3.8-27B
 #   └─ Quantization: https://huggingface.co/bartowski/Qwen3.8-27B-GGUF
 # 5-bit: ~20.9 GB
+# Hybrid architecture (qwen3_5). Never use it as the summary model.
 
 # From model card:
 # - Thinking is on by default and can be disabled per request:
@@ -115,11 +137,19 @@ display_name = "Qwen3.8 27B Q5_K_M"
 provider = "Alibaba"
 family = "Qwen"
 rank = 2
-thinking_type = "qwen"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
+
+[chat."qwen3.8-27b-q5_k_m".reasoning]
+mode = "optional"
+default = false
+switch_key = "enable_thinking"
+effort_levels = ["low", "medium", "xhigh"]
+effort_default = "xhigh"
+effort_key = "reasoning_effort"   # not yet verified
+effort_needs_reasoning = true
 
 [chat."qwen3.8-27b-q5_k_m".sampling.thinking]
 temperature = 1.0
@@ -127,7 +157,6 @@ top_p = 0.95
 top_k = 20
 min_p = 0.0
 presence_penalty = 0.0
-repetition_penalty = 1.0
 
 [chat."qwen3.8-27b-q5_k_m".sampling.non_thinking]
 temperature = 0.7
@@ -135,4 +164,3 @@ top_p = 0.80
 top_k = 20
 min_p = 0.0
 presence_penalty = 1.5
-repetition_penalty = 1.0
