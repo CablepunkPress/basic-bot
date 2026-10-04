@@ -45,6 +45,38 @@ def _read_markdown_dir(directory: Path) -> list[str]:
     ]
 
 
+def _local_model_info(model_id: str, entry: dict, display_name: str):
+    """Describe a local model for the UI from its profile entry.
+
+    The [reasoning] table's mode and defaults become ModelInfo fields.
+    Its template keys stay with the provider.
+    """
+    from basic_bot.providers.protocol import (
+        REASONING_ALWAYS,
+        REASONING_NONE,
+        ModelInfo,
+    )
+
+    reasoning = entry.get("reasoning") or {}
+    mode = reasoning.get("mode", REASONING_NONE)
+
+    return ModelInfo(
+        id=model_id,
+        display_name=display_name,
+        provider=entry["provider"],
+        family=entry["family"],
+        host="local",
+        rank=entry.get("rank", 0),
+        reasoning=mode,
+        reasoning_default=(
+            mode == REASONING_ALWAYS or reasoning.get("default", False)
+        ),
+        effort_levels=reasoning.get("effort_levels"),
+        effort_default=reasoning.get("effort_default"),
+        effort_needs_reasoning=reasoning.get("effort_needs_reasoning", False),
+    )
+
+
 def _build_embedder(chat_registry):
     """Build a ManagedEmbedder with lifecycle callbacks.
 
@@ -64,13 +96,21 @@ def _build_embedder(chat_registry):
         _chat_was_running = is_running(CHAT)
         if _chat_was_running:
             stop(CHAT)
-        start(EMBEDDING)
+        try:
+            start(EMBEDDING)
+        except Exception:
+            # Don't leave the user without a chat model
+            if _chat_was_running:
+                start(CHAT, chat_registry.active_local_model)
+                _chat_was_running = False
+            raise
 
     def stop_embedding():
+        nonlocal _chat_was_running
         stop(EMBEDDING)
         if _chat_was_running:
-            model_id = chat_registry.active_local_model
-            start(CHAT, model_id)
+            start(CHAT, chat_registry.active_local_model)
+            _chat_was_running = False
 
     embedder = LocalEmbedder(
         config.EMBEDDING_URL,
@@ -91,26 +131,16 @@ def _build_summary_provider():
     import basic_bot.config as config
     from basic_bot.profile import get_summary_config
     from basic_bot.providers.local import LocalProvider
-    from basic_bot.providers.protocol import ModelInfo
 
     summary_config = get_summary_config()
     model_id = summary_config["alias"]
-    max_tokens = summary_config["max_tokens"]
-
-    model_info = ModelInfo(
-        id=model_id,
-        display_name=summary_config.get("alias", model_id),
-        provider=summary_config["provider"],
-        family=summary_config["family"],
-        host="local",
-        thinking_type=summary_config.get("thinking_type"),
-    )
 
     return LocalProvider(
         model_id,
         base_url=config.SUMMARY_URL,
-        max_tokens=max_tokens,
-        model_info=model_info,
+        max_tokens=summary_config["max_tokens"],
+        model_info=_local_model_info(model_id, summary_config, model_id),
+        reasoning=summary_config.get("reasoning"),
     )
 
 
@@ -125,24 +155,17 @@ def _build_local_chat_providers() -> dict:
     import basic_bot.config as config
     from basic_bot.profile import get_available_chat_models
     from basic_bot.providers.local import LocalProvider
-    from basic_bot.providers.protocol import ModelInfo
 
     providers = {}
     for model_id, model_config in get_available_chat_models().items():
-        model_info = ModelInfo(
-            id=model_id,
-            display_name=model_config["display_name"],
-            provider=model_config["provider"],
-            family=model_config["family"],
-            host="local",
-            rank=model_config.get("rank", 0),
-            thinking_type=model_config.get("thinking_type"),
-        )
         providers[model_id] = LocalProvider(
             model_id,
             base_url=config.CHAT_URL,
             max_tokens=model_config["max_tokens"],
-            model_info=model_info,
+            model_info=_local_model_info(
+                model_id, model_config, model_config["display_name"],
+            ),
+            reasoning=model_config.get("reasoning"),
             sampling=model_config.get("sampling", {}),
         )
     return providers
@@ -158,7 +181,7 @@ def _build_api_chat_provider():
     except ImportError:
         logger.warning(
             "An Anthropic API key is stored, but the anthropic package is not "
-            "installed. Run 'python add_secrets.py' to restore Claude access."
+            "installed. Run 'python3 add_secrets.py' to restore Claude access."
         )
         return None
     return ClaudeProvider()
@@ -170,6 +193,8 @@ def _build_chat_registry(agent_config: dict):
     Merges local and API models into one catalog. Lifecycle closures
     follow the same pattern as _build_embedder — factory captures
     infrastructure imports, registry calls through closures.
+
+    Nothing starts here. The launcher selects the default model.
     """
     from basic_bot.infrastructure.server import start, stop, CHAT
     from basic_bot.profile import get_default_chat_model
@@ -183,12 +208,8 @@ def _build_chat_registry(agent_config: dict):
 
     if provider_name == "claude" and api_provider:
         default_model = api_provider.get_default_model()
-        initial_active = "api"
-        initial_local_model = None
     else:
         default_model = local_default_id
-        initial_active = "local"
-        initial_local_model = local_default_id
 
     def start_local(model_id):
         start(CHAT, model_id)
@@ -202,8 +223,6 @@ def _build_chat_registry(agent_config: dict):
         default_model=default_model,
         start_local=start_local,
         stop_local=stop_local,
-        initial_active=initial_active,
-        initial_local_model=initial_local_model,
     )
 
 
@@ -252,7 +271,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     if context_parts:
         sections.append("# CONTEXT\n\n" + "\n\n".join(context_parts))
 
-    # Promp Prefix: persona + instructions + context
+    # Prompt prefix: persona + instructions + context
     persona = "\n\n".join(sections)
 
     # Storage
