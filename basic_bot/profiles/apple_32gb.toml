@@ -130,7 +130,7 @@ top_k = 64
 [chat."qwen3.8-27b-q5_k_m"]
 file = "Qwen3.8-27B-Q5_K_M.gguf"
 url = "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/main/Qwen3.8-27B-Q5_K_M.gguf"
-download = true
+download = false
 default = false
 alias = "qwen3.8-27b-q5_k_m"
 display_name = "Qwen3.8 27B Q5_K_M"
