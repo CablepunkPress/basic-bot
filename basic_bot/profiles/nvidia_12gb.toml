@@ -1,11 +1,25 @@
 # Hardware Profile: NVIDIA 12GB+ VRAM
 # Tested on: RTX 3060 12GB + 32GB DDR4
+# Prototype hardware. The supported platform is apple_32gb.
 
 # Sequential server mode — one llama-server process at a time.
 # All models fit in 12GB VRAM individually. No CPU offloading
 # needed for the default chat model.
 
 # Build: llama.cpp compiled with -DGGML_CUDA=ON
+#
+# Reasoning tables
+# A [reasoning] table describes how a model reasons, in the engine's
+# terms, and how those terms translate for this model's chat template.
+# No table: the model does not reason.
+#   mode                    "optional" (can be switched off) or "always"
+#   default                 optional only: on or off when nothing is chosen
+#   switch_key              optional only: chat_template_kwargs key for on/off
+#   effort_levels           levels the model accepts, lowest to highest
+#   effort_default          level used when nothing is chosen
+#   effort_key              chat_template_kwargs key for the level
+#   effort_needs_reasoning  optional only: true if effort does nothing
+#                           while reasoning is off
 
 
 # --- Embedding ---
@@ -39,12 +53,15 @@ download = true
 alias = "gemma-4-12b-it-q5_k_m"
 provider = "Google"
 family = "Gemma"
-thinking_type = "gemma"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 16384
 max_tokens = 8192
-thinking = false
+
+[summary.reasoning]
+mode = "optional"
+default = false
+switch_key = "enable_thinking"
 
 [summary.sampling]
 temperature = 1.0
@@ -76,11 +93,15 @@ display_name = "Qwen3 8B Q8_0"
 provider = "Alibaba"
 family = "Qwen"
 rank = 1
-thinking_type = "qwen"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
+
+[chat.qwen3-8b-q8_0.reasoning]
+mode = "optional"
+default = false
+switch_key = "enable_thinking"
 
 [chat.qwen3-8b-q8_0.sampling.thinking]
 temperature = 0.6
@@ -101,6 +122,7 @@ presence_penalty = 1.5
 # 9B parameters, all active per token. ~6.1 GiB on disk.
 # Unsloth quantization. Do NOT use for summary (destroys existing summaries).
 # Sampling per Qwen3.5-9B card recommendations for general tasks.
+# Thinking can be switched; no effort levels.
 
 [chat."qwen3.5-9b-q5_k_m"]
 file = "Qwen3.5-9B-Q5_K_M.gguf"
@@ -112,11 +134,15 @@ display_name = "Qwen3.5 9B Q5_K_M"
 provider = "Alibaba"
 family = "Qwen"
 rank = 2
-thinking_type = "qwen"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
+
+[chat."qwen3.5-9b-q5_k_m".reasoning]
+mode = "optional"
+default = false
+switch_key = "enable_thinking"
 
 [chat."qwen3.5-9b-q5_k_m".sampling.thinking]
 temperature = 1.0
