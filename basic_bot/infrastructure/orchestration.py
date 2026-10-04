@@ -20,12 +20,23 @@ def fold_sequential(
     user_id: str,
     state: dict,
 ) -> None:
-    """Full fold with sequential server lifecycle."""
+    """Full fold with sequential server lifecycle.
+
+    Chat always restarts if it was running, even if the summary
+    server fails to start. The failure still propagates after chat
+    is back.
+    """
     from basic_bot.diagnostics import snapshot_memory
     from basic_bot.infrastructure.server import start, stop, is_running, CHAT, SUMMARY
 
     existing_summary = state["summary"]
     chat_was_running = is_running(CHAT)
+
+    def resume_chat():
+        if chat_was_running:
+            model_id = getattr(runtime.chat_provider, "active_local_model", None)
+            start(CHAT, model_id)
+            snapshot_memory("chat-resumed")
 
     snapshot_memory("pre-fold")
 
@@ -40,27 +51,23 @@ def fold_sequential(
 
     if chunk is None:
         logger.warning("RAG failed — skipping summary")
-        if chat_was_running:
-            model_id = getattr(runtime.chat_provider, "active_local_model", None)
-            start(CHAT, model_id)
-            snapshot_memory("chat-resumed")
+        resume_chat()
         return
 
     # --- Summary phase ---
-    start(SUMMARY)
-    fold_summary(
-        runtime.summary_provider,
-        store,
-        user_id,
-        existing_summary,
-        chunk,
-        runtime.summary_sampling,
-    )
-    stop(SUMMARY)
-    snapshot_memory("summary-done")
-
-    # --- Resume chat ---
-    if chat_was_running:
-        model_id = getattr(runtime.chat_provider, "active_local_model", None)
-        start(CHAT, model_id)
-        snapshot_memory("chat-resumed")
+    # fold_summary handles its own failures. The try covers the server:
+    # if it fails to start, the boundary stays put and chat comes back.
+    try:
+        start(SUMMARY)
+        fold_summary(
+            runtime.summary_provider,
+            store,
+            user_id,
+            existing_summary,
+            chunk,
+            runtime.summary_sampling,
+        )
+    finally:
+        stop(SUMMARY)
+        snapshot_memory("summary-done")
+        resume_chat()
