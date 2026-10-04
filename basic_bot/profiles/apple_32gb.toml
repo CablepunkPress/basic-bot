@@ -121,7 +121,7 @@ flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
 
-[chat."qwen3.8-27b-q6_k".sampling.thinking]
+[chat."qwen3.8-27b-q5_k_m".sampling.thinking]
 temperature = 1.0
 top_p = 0.95
 top_k = 20
@@ -129,7 +129,7 @@ min_p = 0.0
 presence_penalty = 0.0
 repetition_penalty = 1.0
 
-[chat."qwen3.8-27b-q6_k".sampling.non_thinking]
+[chat."qwen3.8-27b-q5_k_m".sampling.non_thinking]
 temperature = 0.7
 top_p = 0.80
 top_k = 20
