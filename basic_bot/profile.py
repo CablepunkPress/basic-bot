@@ -197,9 +197,29 @@ def _check_reasoning(name: str, table: dict) -> list[str]:
     return problems
 
 
+def _check_pin(name: str, entry: dict) -> list[str]:
+    """Check a pinned download: sha256, size, and a commit url, together."""
+    sha256 = entry.get("sha256")
+    size = entry.get("size")
+    if sha256 is None and size is None:
+        return []
+
+    problems = []
+    hex_digits = set("0123456789abcdef")
+    if not (isinstance(sha256, str) and len(sha256) == 64
+            and set(sha256) <= hex_digits):
+        problems.append(f"{name}: sha256 must be 64 lowercase hex characters")
+    if not (isinstance(size, int) and not isinstance(size, bool) and size > 0):
+        problems.append(f"{name}: size must be a positive number of bytes")
+    if "/resolve/main/" in entry.get("url", ""):
+        problems.append(f"{name}: a pinned url must name a commit, not main")
+    return problems
+
+
 def _check_entry(name: str, entry: dict, required: tuple) -> list[str]:
-    """Check one model entry for required keys and a valid reasoning table."""
+    """Check one model entry: required keys, pin, and reasoning table."""
     problems = [f"{name}: missing {key}" for key in required if key not in entry]
+    problems += _check_pin(name, entry)
     reasoning = entry.get("reasoning")
     if reasoning is not None:
         problems += _check_reasoning(name, reasoning)

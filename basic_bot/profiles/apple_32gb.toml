@@ -13,6 +13,12 @@
 #   effort_key              chat_template_kwargs key for the level
 #   effort_needs_reasoning  optional only: true if effort does nothing
 #                           while reasoning is off
+#
+# Pinned downloads
+# Each url names a specific commit, not main, so a publisher's later
+# re-upload can't change what gets downloaded. sha256 and size come
+# from Hugging Face's API for that commit and are checked after
+# download. To move to a newer file, update all three together.
 
 
 # --- Embedding ---
@@ -23,7 +29,9 @@
 # 8-bit = ~8.46 GB
 [embedding]
 file = "Nemotron-3-Embed-8B-Q8_0.gguf"
-url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/main/Nemotron-3-Embed-8B-Q8_0.gguf"
+url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/1ffb81e403311c4dc6879b9c3cbb6ebfa18b86df/Nemotron-3-Embed-8B-Q8_0.gguf"
+sha256 = "0d0e0d9f291fc116a830bf5cd0f0e18d756c6b6f0f24f9d2ba64f4d188bc78fd"
+size = 8458435477
 download = true
 alias = "nemotron-3-embed-8b-q8_0"
 query_prefix = "query: "
@@ -41,7 +49,9 @@ ubatch_size = 16384
 # 8-bit = ~12.7 GB
 [summary]
 file = "gemma-4-12B-it-Q8_0.gguf"
-url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/main/gemma-4-12B-it-Q8_0.gguf"
+url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/2ae7d41be21ca62de00a2d320ee9cec50daa3aa6/gemma-4-12B-it-Q8_0.gguf"
+sha256 = "929bd294cbdc59e41450488bea524a174f1c6ddc43f140fdb5905a5fd1e41969"
+size = 12669647328
 download = true
 alias = "gemma-4-12b-it-q8_0"
 provider = "Google"
@@ -87,7 +97,9 @@ presence_penalty = 0.0
 
 [chat."muse-glimmer-30b-q4_k_xl"]
 file = "Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
-url = "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/resolve/main/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
+url = "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/resolve/70bf1b61ac09f91b24d39038091b41c582bc5d7a/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
+sha256 = "ac7023d6a4c704eb9af54ab53e476a66b7f5b6c0ef2fc4a8dde5253c291a6c38"
+size = 19653960832
 download = true
 default = true
 alias = "muse-glimmer-30b-q4_k_xl"
