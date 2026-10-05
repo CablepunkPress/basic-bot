@@ -152,6 +152,7 @@ def _verify_commit() -> None:
             f"The tag may have been moved. Check the release before "
             f"changing the pin."
         )
+    print(f"    source verified: commit {LLAMA_COMMIT[:7]}")
 
 
 def build(flags: list[str], backend: str) -> None:
