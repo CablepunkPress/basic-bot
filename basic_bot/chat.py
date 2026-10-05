@@ -150,7 +150,7 @@ def _lightest_settings(model_info: ModelInfo) -> tuple[bool, str | None]:
 # Chat orchestration
 # ---------------------------------------------------------------------------
 
-async def chat_with_model(
+def chat_with_model(
     runtime: BotRuntime,
     user_id: str,
     user_message: str,
