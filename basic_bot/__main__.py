@@ -16,8 +16,10 @@ import hashlib
 import json
 import shutil
 import sys
+import time
 import urllib.request
 from pathlib import Path
+from urllib.parse import urlparse
 
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
 from basic_bot.profile import (
@@ -33,14 +35,48 @@ VERIFIED_FILE = MODELS_DIR / ".verified.json"
 CHUNK = 1024 * 1024
 TIMEOUT = 60          # seconds without data before a stalled download fails
 SPACE_MARGIN = 2 * 1024 ** 3
+PROGRESS_INTERVAL = 0.5
+
+ROLE_NAMES = {
+    "embedding": "embedding model",
+    "summary": "summary model",
+    "chat": "chat model",
+}
 
 
 def _fail(message: str) -> None:
     sys.exit(f"\nERROR: {message}")
 
 
+# --- Describing models and numbers ---
+
 def _gb(n: int) -> str:
     return f"{n / 1e9:.1f} GB"
+
+
+def _describe(model: dict) -> str:
+    """'chat model: Muse Glimmer 30B Q4_K_XL' — role, then name."""
+    name = model.get("display_name") or model["file"]
+    return f"{ROLE_NAMES[model['role']]}: {name}"
+
+
+def _source(url: str) -> str:
+    """Where a model comes from, e.g. 'Hugging Face, Abiray/Nemotron-...'."""
+    parts = urlparse(url)
+    if parts.netloc == "huggingface.co":
+        segments = parts.path.strip("/").split("/")
+        if len(segments) >= 2:
+            return f"Hugging Face, {segments[0]}/{segments[1]}"
+        return "Hugging Face"
+    return parts.netloc or url
+
+
+def _duration(seconds: float) -> str:
+    minutes = int(seconds // 60)
+    if minutes < 1:
+        return "under a minute"
+    hours, minutes = divmod(minutes, 60)
+    return f"{hours} h {minutes} min" if hours else f"{minutes} min"
 
 
 # --- Verification ---
@@ -56,8 +92,8 @@ def _save_verified(verified: dict) -> None:
     VERIFIED_FILE.write_text(json.dumps(verified, indent=2) + "\n")
 
 
-def _sha256(path: Path, label: str) -> str:
-    print(f"    {label}: verifying checksum...", end="", flush=True)
+def _sha256(path: Path) -> str:
+    print("      verifying checksum...", end="", flush=True)
     digest = hashlib.sha256()
     with open(path, "rb") as f:
         while block := f.read(CHUNK * 8):
@@ -66,7 +102,7 @@ def _sha256(path: Path, label: str) -> str:
     return digest.hexdigest()
 
 
-def _is_current(model: dict, label: str, verified: dict) -> bool:
+def _is_current(model: dict, verified: dict) -> bool:
     """True if the file on disk is the one the profile asks for."""
     dest = MODELS_DIR / model["file"]
     if not dest.exists():
@@ -82,7 +118,7 @@ def _is_current(model: dict, label: str, verified: dict) -> bool:
         return True
 
     # Present but never verified, e.g. downloaded before pinning
-    if _sha256(dest, label) == sha256:
+    if _sha256(dest) == sha256:
         verified[model["file"]] = sha256
         _save_verified(verified)
         return True
@@ -96,18 +132,7 @@ def _partial_path(model: dict) -> Path:
     return dest.with_name(dest.name + ".partial")
 
 
-def _progress(label: str, done: int, total: int | None) -> None:
-    if total:
-        percent = done * 100 // total
-        print(
-            f"\r    {label}: {percent}% ({_gb(done)} of {_gb(total)})",
-            end="", flush=True,
-        )
-    else:
-        print(f"\r    {label}: {_gb(done)}", end="", flush=True)
-
-
-def _fetch(label: str, url: str, partial: Path, size: int | None) -> None:
+def _fetch(url: str, partial: Path, size: int | None) -> None:
     """Download url into partial, resuming from any bytes already there."""
     have = partial.stat().st_size if partial.exists() else 0
     if size is not None and have > size:
@@ -118,12 +143,12 @@ def _fetch(label: str, url: str, partial: Path, size: int | None) -> None:
 
     request = urllib.request.Request(url)
     if have:
-        print(f"    {label}: resuming at {_gb(have)}")
+        print(f"      resuming at {_gb(have)}")
         request.add_header("Range", f"bytes={have}-")
 
     with urllib.request.urlopen(request, timeout=TIMEOUT) as response:
         if have and response.status != 206:
-            print(f"    {label}: server can't resume, starting over")
+            print("      the server can't resume, starting over")
             have = 0
 
         total = size
@@ -131,38 +156,70 @@ def _fetch(label: str, url: str, partial: Path, size: int | None) -> None:
             length = response.headers.get("Content-Length")
             total = have + int(length) if length else None
 
+        started = time.monotonic()
+        last_print = 0.0
         done = have
+
         with open(partial, "ab" if have else "wb") as f:
             while chunk := response.read(CHUNK):
                 f.write(chunk)
                 done += len(chunk)
-                _progress(label, done, total)
+
+                now = time.monotonic()
+                if now - last_print >= PROGRESS_INTERVAL:
+                    last_print = now
+                    _progress(done, total, done - have, now - started)
+
+        _progress(done, total, done - have, time.monotonic() - started)
     print()
 
 
-def _download(model: dict, label: str, verified: dict) -> None:
+def _progress(done: int, total: int | None, session: int, elapsed: float) -> None:
+    """One progress line, rewritten in place."""
+    if total:
+        line = f"      {done * 100 // total}% ({_gb(done)} of {_gb(total)})"
+    else:
+        line = f"      {_gb(done)}"
+
+    # Rate and time left, once there's enough to measure
+    if elapsed >= 5 and session > 0:
+        rate = session / elapsed
+        line += f" — {rate / 1e6:.1f} MB/s"
+        if total and done < total:
+            line += f", about {_duration((total - done) / rate)} left"
+
+    print("\r" + line.ljust(76), end="", flush=True)
+
+
+def _download(model: dict, number: int, count: int, verified: dict) -> None:
     dest = MODELS_DIR / model["file"]
     partial = _partial_path(model)
 
+    print()
+    print(f"    downloading {number} of {count}, {_describe(model)}")
+    print(f"      from {_source(model['url'])}")
+
     try:
-        _fetch(label, model["url"], partial, model["size"])
+        _fetch(model["url"], partial, model["size"])
     except Exception as e:
         _fail(
-            f"download of {label} stopped: {e}\n"
-            f"The partial file is kept. Run 'python3 build.py' again "
-            f"to resume.\nURL: {model['url']}"
+            f"the download of the {_describe(model)} stopped: {e}\n\n"
+            f"The partial file is kept.\n"
+            f"Run 'python3 build.py' again to resume."
         )
 
     if model["size"] is not None and partial.stat().st_size != model["size"]:
         _fail(
-            f"{label} is incomplete. Run 'python3 build.py' again to resume."
+            f"the {_describe(model)} is incomplete.\n\n"
+            f"Run 'python3 build.py' again to resume."
         )
 
     if model["sha256"] is not None:
-        if _sha256(partial, label) != model["sha256"]:
+        if _sha256(partial) != model["sha256"]:
             partial.unlink()
             _fail(
-                f"{label} failed its checksum and was deleted. "
+                f"the {_describe(model)} failed its checksum and was "
+                f"deleted.\n\n"
                 f"Run 'python3 build.py' again to download it fresh."
             )
 
@@ -170,69 +227,92 @@ def _download(model: dict, label: str, verified: dict) -> None:
     if model["sha256"] is not None:
         verified[model["file"]] = model["sha256"]
         _save_verified(verified)
-    print(f"    {label}: saved to {dest}")
+    print(f"      saved to {dest}")
 
 
-def _check_space(needed: list[dict]) -> None:
-    """Stop before downloading if the disk can't hold what's needed."""
+def _remaining_bytes(needed: list[dict]) -> int:
+    """Bytes still to download, counting any partial files already there."""
     remaining = 0
     for model in needed:
         partial = _partial_path(model)
         have = partial.stat().st_size if partial.exists() else 0
         remaining += max(model["size"] - have, 0)
-
-    free = shutil.disk_usage(MODELS_DIR).free
-    if remaining + SPACE_MARGIN > free:
-        _fail(
-            f"not enough disk space. The models need {_gb(remaining)} "
-            f"more, and {_gb(free)} is free."
-        )
-    if remaining:
-        print(f"    {_gb(remaining)} to download")
+    return remaining
 
 
 def _download_models() -> None:
-    """Download and verify every model the profile marks for download."""
+    """List every model's status, then download what's missing."""
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     verified = _load_verified()
 
     needed = []
     for model in get_downloadable_models():
-        if not model["download"]:
-            continue
-        label = model.get("model_id", model["role"])
+        description = _describe(model)
 
-        if _is_current(model, label, verified):
-            print(f"    {label}: already downloaded")
+        if not model["download"]:
+            print(f"    {description} — optional, not downloaded")
+            continue
+
+        if _is_current(model, verified):
+            status = "downloaded and verified" if model["sha256"] else "present"
+            print(f"    {description} — {status}")
             continue
 
         if model["sha256"] is None:
             _fail(
-                f"{label} is marked for download but isn't pinned.\n"
+                f"the {description} is marked for download but isn't "
+                f"pinned.\n\n"
                 f"Add its sha256 and size to the profile, with a url that "
-                f"names a commit, or set download = false."
+                f"names a commit, or set download = false.\n"
+                f"Then run 'python3 build.py' again."
             )
-        needed.append((model, label))
+
+        print(f"    {description} — needs download ({_gb(model['size'])})")
+        needed.append(model)
 
     if not needed:
+        print("    nothing to download")
         return
 
-    _check_space([model for model, _ in needed])
-    for model, label in needed:
-        _download(model, label, verified)
+    remaining = _remaining_bytes(needed)
+    free = shutil.disk_usage(MODELS_DIR).free
+    if remaining + SPACE_MARGIN > free:
+        _fail(
+            f"not enough disk space. The models need {_gb(remaining)} "
+            f"more, and {_gb(free)} is free.\n\n"
+            f"Free up space, then run 'python3 build.py' again."
+        )
+
+    hosts = {urlparse(m["url"]).netloc for m in needed}
+    source = " from Hugging Face" if hosts == {"huggingface.co"} else ""
+    noun = "model" if len(needed) == 1 else "models"
+    print()
+    print(f"    {len(needed)} {noun} to download, {_gb(remaining)},{source}")
+
+    for number, model in enumerate(needed, start=1):
+        _download(model, number, len(needed), verified)
 
 
 # --- Build ---
+
+# Flags for every backend. By default, llama.cpp's build downloads
+# llama-server's built-in web interface from Hugging Face, falling back
+# to a moving "latest". Bountiful talks to llama-server's API and has
+# its own interface, so the download is turned off. The build then
+# warns "no assets available - building without an embedded UI",
+# which is expected.
+COMMON_FLAGS = ["-DLLAMA_USE_PREBUILT_UI=OFF"]
+
 
 def _build_config(hardware: str) -> tuple[list[str], str]:
     """cmake flags and backend name for the detected hardware.
 
     Metal is llama.cpp's default on macOS, so Apple Silicon needs no
-    flags. Detection has already stopped on unsupported hardware.
+    backend flag. Detection has already stopped on unsupported hardware.
     """
     if hardware.startswith("apple"):
-        return [], "Metal"
-    return ["-DGGML_CUDA=ON"], "CUDA"
+        return COMMON_FLAGS, "Metal"
+    return ["-DGGML_CUDA=ON", *COMMON_FLAGS], "CUDA"
 
 
 def main() -> None:
@@ -243,11 +323,11 @@ def main() -> None:
     print("  checking build tools")
     check_prerequisites(hw)
 
-    print("  llama.cpp")
+    print("  llama.cpp, the inference server")
     flags, backend = _build_config(hw)
     build(flags, backend)
 
-    print("  models")
+    print("  AI models")
     _download_models()
 
 
