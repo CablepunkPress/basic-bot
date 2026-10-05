@@ -8,6 +8,9 @@ running on.
 Everything deployment-specific gets resolved here and injected into
 the runtime. Engine-core code reads from the runtime, never reaches
 outward.
+
+Logging is configured by whoever opens the runtime, normally
+basic_bot.session, so each front end decides where logs go.
 """
 
 import json
@@ -78,39 +81,32 @@ def _local_model_info(model_id: str, entry: dict, display_name: str):
 
 
 def _build_embedder(chat_registry):
-    """Build a ManagedEmbedder with lifecycle callbacks.
+    """Build a ManagedEmbedder that pauses chat while it runs.
 
-    The chat_registry reference lets the restart closure use the
-    correct local model — not just the profile default.
+    The embedding server needs the memory the chat server is using,
+    so chat is suspended through the registry, its single owner,
+    rather than stopped directly.
     """
     import basic_bot.config as config
     from basic_bot.embeddings import LocalEmbedder, ManagedEmbedder
     from basic_bot.profile import get_embedding_config
-    from basic_bot.infrastructure.server import start, stop, is_running, CHAT, EMBEDDING
+    from basic_bot.infrastructure.server import start, stop, EMBEDDING
 
     embedding_config = get_embedding_config()
-    _chat_was_running = False
 
     def start_embedding():
-        nonlocal _chat_was_running
-        _chat_was_running = is_running(CHAT)
-        if _chat_was_running:
-            stop(CHAT)
+        chat_registry.suspend()
         try:
             start(EMBEDDING)
         except Exception:
-            # Don't leave the user without a chat model
-            if _chat_was_running:
-                start(CHAT, chat_registry.active_local_model)
-                _chat_was_running = False
+            chat_registry.resume()
             raise
 
     def stop_embedding():
-        nonlocal _chat_was_running
-        stop(EMBEDDING)
-        if _chat_was_running:
-            start(CHAT, chat_registry.active_local_model)
-            _chat_was_running = False
+        try:
+            stop(EMBEDDING)
+        finally:
+            chat_registry.resume()
 
     embedder = LocalEmbedder(
         config.EMBEDDING_URL,
@@ -188,28 +184,21 @@ def _build_api_chat_provider():
 
 
 def _build_chat_registry(agent_config: dict):
-    """Build the composite chat provider with lifecycle management.
+    """Build the composite chat provider.
 
-    Merges local and API models into one catalog. Lifecycle closures
-    follow the same pattern as _build_embedder — factory captures
-    infrastructure imports, registry calls through closures.
-
-    Nothing starts here. The launcher selects the default model.
+    Nothing starts here. The session selects the starting model.
     """
     from basic_bot.infrastructure.server import start, stop, CHAT
     from basic_bot.profile import get_default_chat_model
-    from basic_bot.providers.registry import ChatProviderRegistry
+    from basic_bot.providers.registry import (
+        HOST_API,
+        HOST_LOCAL,
+        ChatProviderRegistry,
+    )
 
-    local_providers = _build_local_chat_providers()
-    api_provider = _build_api_chat_provider()
-
-    local_default_id, _ = get_default_chat_model()
+    local_default, _ = get_default_chat_model()
     provider_name = agent_config.get("inference_provider", "local")
-
-    if provider_name == "claude" and api_provider:
-        default_model = api_provider.get_default_model()
-    else:
-        default_model = local_default_id
+    starting_host = HOST_API if provider_name == "claude" else HOST_LOCAL
 
     def start_local(model_id):
         start(CHAT, model_id)
@@ -218,9 +207,10 @@ def _build_chat_registry(agent_config: dict):
         stop(CHAT)
 
     return ChatProviderRegistry(
-        local_providers=local_providers,
-        api_provider=api_provider,
-        default_model=default_model,
+        local_providers=_build_local_chat_providers(),
+        api_provider=_build_api_chat_provider(),
+        local_default=local_default,
+        starting_host=starting_host,
         start_local=start_local,
         stop_local=stop_local,
     )
@@ -240,15 +230,9 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
 
     agent_path = Path(agent_path).resolve()
 
-    # Dashboard — agent identity, loaded first so agent_id drives logging
+    # Dashboard — agent identity
     dashboard = json.loads((agent_path / "dashboard.json").read_text())
     agent_id = dashboard["id"]
-
-    logging.basicConfig(
-        format=f"%(asctime)s - [{agent_id}] %(name)s - %(levelname)s - %(message)s",
-        level=logging.INFO,
-        force=True,
-    )
 
     # Config — agent settings
     config = _read_config(agent_path)
@@ -284,7 +268,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     summary_provider = _build_summary_provider()
     chat_provider = _build_chat_registry(config)
 
-    # Embedder — captures registry for correct model restart
+    # Embedder — suspends chat through the registry
     embedder = _build_embedder(chat_provider)
 
     # Sampling — resolved from profile, carried on runtime
