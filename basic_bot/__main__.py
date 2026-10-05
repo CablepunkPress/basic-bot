@@ -332,4 +332,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except KeyboardInterrupt:
+        print(
+            "\n\nStopped. Partial downloads are kept.\n"
+            "Run 'python3 build.py' again to resume."
+        )
+        sys.exit(130)
