@@ -352,6 +352,7 @@ def get_downloadable_models() -> list[dict]:
         model = {
             "role": role,
             "file": entry["file"],
+            "display_name": entry.get("display_name"),
             "url": entry["url"],
             "sha256": entry.get("sha256"),
             "size": entry.get("size"),
