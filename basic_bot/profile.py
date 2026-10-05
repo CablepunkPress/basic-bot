@@ -330,42 +330,37 @@ def get_available_chat_models() -> dict:
 def get_downloadable_models() -> list[dict]:
     """All models across all roles, with download status.
 
-    Returns a list of dicts with role, model_id, file, url,
-    download flag, and whether the file exists on disk.
+    Returns a list of dicts with role, file, url, sha256, size,
+    download flag, and whether the file exists on disk. Chat models
+    also carry model_id and default. sha256 and size are None for
+    unpinned models.
     """
     profile = get_profile()
+
+    # (role, model_id, entry, download by default)
+    entries = [
+        ("embedding", None, profile["embedding"], True),
+        ("summary", None, profile["summary"], True),
+    ]
+    entries += [
+        ("chat", model_id, config, False)
+        for model_id, config in get_chat_models().items()
+    ]
+
     models = []
-
-    # Embedding
-    emb = profile["embedding"]
-    models.append({
-        "role": "embedding",
-        "file": emb["file"],
-        "url": emb["url"],
-        "download": emb.get("download", True),
-        "exists": (MODELS_DIR / emb["file"]).exists(),
-    })
-
-    # Summary
-    summ = profile["summary"]
-    models.append({
-        "role": "summary",
-        "file": summ["file"],
-        "url": summ["url"],
-        "download": summ.get("download", True),
-        "exists": (MODELS_DIR / summ["file"]).exists(),
-    })
-
-    # Chat models
-    for model_id, config in get_chat_models().items():
-        models.append({
-            "role": "chat",
-            "model_id": model_id,
-            "file": config["file"],
-            "url": config["url"],
-            "download": config.get("download", False),
-            "default": config.get("default", False),
-            "exists": (MODELS_DIR / config["file"]).exists(),
-        })
+    for role, model_id, entry, download_default in entries:
+        model = {
+            "role": role,
+            "file": entry["file"],
+            "url": entry["url"],
+            "sha256": entry.get("sha256"),
+            "size": entry.get("size"),
+            "download": entry.get("download", download_default),
+            "exists": (MODELS_DIR / entry["file"]).exists(),
+        }
+        if model_id is not None:
+            model["model_id"] = model_id
+            model["default"] = entry.get("default", False)
+        models.append(model)
 
     return models
