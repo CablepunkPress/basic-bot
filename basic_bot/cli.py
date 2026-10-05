@@ -8,7 +8,7 @@ Everything here goes through basic_bot.session. If this file ever
 needs something the session doesn't offer, that's engine work living
 in a front end, and it belongs in the session instead.
 
-Engine logs go to ~/.{agent}/{agent}.log, so they don't interrupt
+Engine logs go to ~/.{agent-id}/{agent-id}.log, so they don't interrupt
 the conversation.
 """
 
@@ -164,7 +164,7 @@ def main() -> None:
     from basic_bot.session import Session, SessionError
 
     try:
-        session = Session.open(agent_path, log_to_file=True)
+        session = Session.open(agent_path)
     except SessionError as e:
         sys.exit(f"ERROR: {e}")
 
