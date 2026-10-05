@@ -4,10 +4,14 @@ Clones a pinned release of llama.cpp into ~/.bountiful/llama.cpp and
 compiles llama-server with cmake. Checks for required build tools
 before starting.
 
-The release is pinned by LLAMA_VERSION. After a successful build, the
-version is recorded beside the source, and a later run rebuilds only
-if the recorded version differs from the pin. Changing the pin is how
-llama.cpp is upgraded on purpose.
+The release is pinned twice: by LLAMA_VERSION, the tag that is cloned,
+and by LLAMA_COMMIT, the commit that tag must point to. A tag is only
+a name and can be moved; a commit identifies the exact source. After
+cloning, the commit is checked before anything is compiled.
+
+After a successful build, the pin is recorded beside the source, and
+a later run rebuilds only if the recorded pin differs. Changing the
+pin is how llama.cpp is upgraded on purpose.
 
 Build flags and the backend name (Metal or CUDA) are passed by
 __main__.py based on hardware detection.
@@ -20,6 +24,11 @@ import sys
 from pathlib import Path
 
 LLAMA_VERSION = "v0.5.0"
+# The commit the tag points to. A tag can be moved; a commit can't.
+# Check with:
+#   git ls-remote https://github.com/ggml-org/llama.cpp.git 'refs/tags/v0.5.0*'
+# For an annotated tag, use the line ending in ^{}.
+LLAMA_COMMIT = "7fe450e19305b828c199d602c23a8337aaa1f03b"
 
 BOUNTIFUL_HOME = Path.home() / ".bountiful"
 LLAMA_DIR = BOUNTIFUL_HOME / "llama.cpp"
@@ -32,8 +41,13 @@ def _fail(message: str) -> None:
     sys.exit(f"\nERROR: {message}")
 
 
+def _pin() -> str:
+    """What the version file records: tag and commit together."""
+    return f"{LLAMA_VERSION} {LLAMA_COMMIT}"
+
+
 def _built_version() -> str | None:
-    """The llama.cpp version recorded by the last successful build."""
+    """The llama.cpp pin recorded by the last successful build."""
     if not VERSION_FILE.exists():
         return None
     return VERSION_FILE.read_text().strip() or None
@@ -116,6 +130,24 @@ def check_prerequisites(hardware: str) -> None:
 # Build
 # ---------------------------------------------------------------------------
 
+def _verify_commit() -> None:
+    """Stop if the cloned tag doesn't point to the pinned commit."""
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=LLAMA_DIR, capture_output=True, text=True,
+    )
+    actual = head.stdout.strip()
+    if head.returncode != 0 or actual != LLAMA_COMMIT:
+        shutil.rmtree(LLAMA_DIR)
+        _fail(
+            f"llama.cpp {LLAMA_VERSION} is not the expected commit.\n"
+            f"  expected: {LLAMA_COMMIT}\n"
+            f"  received: {actual or 'unknown'}\n"
+            f"The tag may have been moved. Check the release before "
+            f"changing the pin."
+        )
+
+
 def build(flags: list[str], backend: str) -> None:
     """Clone and compile the pinned llama-server, if not already built.
 
@@ -124,13 +156,13 @@ def build(flags: list[str], backend: str) -> None:
         backend: The GPU backend being built, for messages ("Metal", "CUDA").
     """
     built = _built_version()
-    if SERVER_BIN.exists() and built == LLAMA_VERSION:
+    if SERVER_BIN.exists() and built == _pin():
         print(f"    already done — llama.cpp {LLAMA_VERSION}")
         return
 
     if LLAMA_DIR.exists():
         print(
-            f"    llama.cpp {built or 'unpinned build'} → {LLAMA_VERSION}, "
+            f"    llama.cpp {built or 'unpinned build'} → {_pin()}, "
             "rebuilding"
         )
         shutil.rmtree(LLAMA_DIR)
@@ -146,6 +178,8 @@ def build(flags: list[str], backend: str) -> None:
     )
     if result.returncode != 0:
         _fail(f"git clone of llama.cpp {LLAMA_VERSION} failed — see output above")
+
+    _verify_commit()
 
     print(
         f"    compiling llama-server {LLAMA_VERSION} with {backend} "
@@ -174,5 +208,5 @@ def build(flags: list[str], backend: str) -> None:
     if result.returncode != 0 or not SERVER_BIN.exists():
         _fail("llama.cpp build failed — see output above")
 
-    VERSION_FILE.write_text(LLAMA_VERSION + "\n")
+    VERSION_FILE.write_text(_pin() + "\n")
     print(f"    built {SERVER_BIN} ({LLAMA_VERSION}, {backend})")
