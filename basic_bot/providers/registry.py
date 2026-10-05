@@ -17,7 +17,7 @@ Engine-core code sees a single InferenceProvider.
 import logging
 from typing import Callable
 
-from basic_bot.providers.protocol import ChatResponse, ModelInfo
+from basic_bot.providers.protocol import ChatResponse, InferenceProvider, ModelInfo
 
 logger = logging.getLogger(__name__)
 
@@ -35,8 +35,8 @@ class ChatProviderRegistry:
     def __init__(
         self,
         *,
-        local_providers: dict,
-        api_provider=None,
+        local_providers: dict[str, InferenceProvider],
+        api_provider: InferenceProvider | None = None,
         local_default: str | None,
         starting_host: str,
         start_local: Callable[[str], None],
@@ -54,7 +54,7 @@ class ChatProviderRegistry:
         self._stop_local = stop_local
 
         # Ownership: model_id → provider, and model_id → host
-        self._providers: dict = {}
+        self._providers: dict[str, InferenceProvider] = {}
         self._hosts: dict[str, str] = {}
         for model_id, provider in local_providers.items():
             self._providers[model_id] = provider
@@ -67,10 +67,10 @@ class ChatProviderRegistry:
         # Each host's default model
         self._defaults: dict[str, str] = {}
         if local_providers:
-            self._defaults[HOST_LOCAL] = (
-                local_default if local_default in local_providers
-                else next(iter(local_providers))
-            )
+            if local_default is not None and local_default in local_providers:
+                self._defaults[HOST_LOCAL] = local_default
+            else:
+                self._defaults[HOST_LOCAL] = next(iter(local_providers))
         if api_provider:
             self._defaults[HOST_API] = api_provider.get_default_model()
 
@@ -187,8 +187,12 @@ class ChatProviderRegistry:
             self._start_server()
 
     def _start_server(self) -> None:
-        logger.info("Starting local chat server for %s", self._active_local_model)
-        self._start_local(self._active_local_model)
+        model_id = self._active_local_model
+        if model_id is None:
+            # Callers select a local model first; this guards the invariant
+            raise RuntimeError("No local model selected to start")
+        logger.info("Starting local chat server for %s", model_id)
+        self._start_local(model_id)
         self._server_up = True
 
     def _stop_server(self) -> None:
