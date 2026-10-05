@@ -14,6 +14,10 @@ send() returns only after the turn is saved and, when due, memory
 is folded. A front end shows one long wait rather than an answer the
 user can't yet reply to.
 
+Engine logs always go to ~/.{agent-id}/{agent-id}.log, beside the
+conversation database, and rotate so they never grow past a fixed
+size. A front end can also echo them to its terminal.
+
 Engine modules are imported inside methods, after open() has applied
 config.toml overrides, because some read config values on import.
 """
@@ -24,6 +28,7 @@ import threading
 import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import basic_bot.config as config
@@ -37,6 +42,13 @@ from basic_bot.providers.registry import HOST_API, HOST_LOCAL
 logger = logging.getLogger(__name__)
 
 DEFAULT_USER = "local"
+
+# Log rotation: when the log reaches LOG_MAX_BYTES, it becomes
+# {agent-id}.log.1, older files move up a number, and the oldest
+# beyond LOG_BACKUPS is deleted. Total size stays under about
+# LOG_MAX_BYTES * (LOG_BACKUPS + 1).
+LOG_MAX_BYTES = 5 * 1024 * 1024
+LOG_BACKUPS = 3
 
 
 class SessionError(Exception):
@@ -80,16 +92,25 @@ def _read_config(agent_path: Path) -> dict:
     return {}
 
 
-def _configure_logging(agent_id: str, log_path: Path | None) -> None:
-    if log_path:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        handler: logging.Handler = logging.FileHandler(log_path)
-    else:
-        handler = logging.StreamHandler()
+def _configure_logging(agent_id: str, log_path: Path, to_terminal: bool) -> None:
+    """Send engine logs to the rotating file, and optionally the terminal."""
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+
+    handlers: list[logging.Handler] = [
+        RotatingFileHandler(
+            log_path,
+            maxBytes=LOG_MAX_BYTES,
+            backupCount=LOG_BACKUPS,
+            encoding="utf-8",
+        ),
+    ]
+    if to_terminal:
+        handlers.append(logging.StreamHandler())
+
     logging.basicConfig(
         format=f"%(asctime)s - [{agent_id}] %(name)s - %(levelname)s - %(message)s",
         level=logging.INFO,
-        handlers=[handler],
+        handlers=handlers,
         force=True,
     )
 
@@ -97,7 +118,7 @@ def _configure_logging(agent_id: str, log_path: Path | None) -> None:
 class Session:
     """A running agent. Create with Session.open()."""
 
-    def __init__(self, runtime, agent_config: dict, log_path: Path | None):
+    def __init__(self, runtime, agent_config: dict, log_path: Path):
         self._runtime = runtime
         self._registry = runtime.chat_provider
         self.agent_config = agent_config
@@ -112,12 +133,15 @@ class Session:
     # --- Opening and closing ---
 
     @classmethod
-    def open(cls, agent_path: str | Path, *, log_to_file: bool = False) -> "Session":
-        """Apply config, load secrets, and build the runtime.
+    def open(
+        cls, agent_path: str | Path, *, log_to_terminal: bool = False,
+    ) -> "Session":
+        """Apply config, start logging, load secrets, and build the runtime.
 
-        Nothing is started yet; call start() for that. With
-        log_to_file, engine logs go to ~/.{agent}/{agent}.log instead
-        of the terminal.
+        Nothing is started yet; call start() for that. Logs always go
+        to ~/.{agent-id}/{agent-id}.log. With log_to_terminal, they
+        also go to the terminal, for front ends that run in one, like
+        the web launcher.
         """
         agent_path = Path(agent_path).resolve()
         dashboard = json.loads((agent_path / "dashboard.json").read_text())
@@ -127,11 +151,8 @@ class Session:
         agent_config = _read_config(agent_path)
         config.apply_overrides(agent_config)
 
-        log_path = (
-            Path.home() / f".{agent_id}" / f"{agent_id}.log"
-            if log_to_file else None
-        )
-        _configure_logging(agent_id, log_path)
+        log_path = Path.home() / f".{agent_id}" / f"{agent_id}.log"
+        _configure_logging(agent_id, log_path, log_to_terminal)
 
         from basic_bot.factory import create_runtime
         from basic_bot.providers.registry import NoModelsError
