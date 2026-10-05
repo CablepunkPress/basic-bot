@@ -9,9 +9,9 @@ and by LLAMA_COMMIT, the commit that tag must point to. A tag is only
 a name and can be moved; a commit identifies the exact source. After
 cloning, the commit is checked before anything is compiled.
 
-After a successful build, the pin is recorded beside the source, and
-a later run rebuilds only if the recorded pin differs. Changing the
-pin is how llama.cpp is upgraded on purpose.
+After a successful build, the pin and the cmake flags are recorded
+beside the source, and a later run rebuilds only if either differs.
+Changing the pin is how llama.cpp is upgraded on purpose.
 
 Build flags and the backend name (Metal or CUDA) are passed by
 __main__.py based on hardware detection.
@@ -36,18 +36,20 @@ LLAMA_REPO = "https://github.com/ggml-org/llama.cpp.git"
 SERVER_BIN = LLAMA_DIR / "build" / "bin" / "llama-server"
 VERSION_FILE = LLAMA_DIR / ".bountiful-version"
 
+RERUN = "Then run 'python3 build.py' again."
+
 
 def _fail(message: str) -> None:
     sys.exit(f"\nERROR: {message}")
 
 
-def _pin() -> str:
-    """What the version file records: tag and commit together."""
-    return f"{LLAMA_VERSION} {LLAMA_COMMIT}"
+def _record(flags: list[str]) -> str:
+    """What the version file records: tag, commit, and cmake flags."""
+    return " ".join([LLAMA_VERSION, LLAMA_COMMIT, *flags])
 
 
 def _built_version() -> str | None:
-    """The llama.cpp pin recorded by the last successful build."""
+    """What the last successful build recorded."""
     if not VERSION_FILE.exists():
         return None
     return VERSION_FILE.read_text().strip() or None
@@ -71,8 +73,9 @@ def _check_macos() -> None:
     """Apple Silicon: Homebrew, Apple's Command Line Tools, and cmake."""
     if shutil.which("brew") is None:
         _fail(
-            "Homebrew is not installed.\n"
-            "Follow 'Prepare your Mac' in the README, then re-run."
+            "Homebrew is not installed.\n\n"
+            "Follow 'Prepare your Mac' in the README.\n"
+            f"{RERUN}"
         )
 
     missing, commands = [], []
@@ -85,9 +88,10 @@ def _check_macos() -> None:
 
     if missing:
         _fail(
-            "Missing required tools: " + ", ".join(missing) + "\n"
-            "Install them and re-run:\n"
-            + "\n".join(f"  {c}" for c in commands)
+            "Missing required tools: " + ", ".join(missing) + "\n\n"
+            "Install them:\n"
+            + "\n".join(f"  {c}" for c in commands) + "\n\n"
+            f"{RERUN}"
         )
     print("    Homebrew, Command Line Tools, and cmake found")
 
@@ -104,16 +108,18 @@ def _check_nvidia_linux() -> None:
         # Arch's cuda package installs here and joins the PATH at next login
         if Path("/opt/cuda/bin/nvcc").exists():
             _fail(
-                "The CUDA toolkit is installed but not on your PATH yet.\n"
-                "Log out and back in, then re-run."
+                "The CUDA toolkit is installed but not on your PATH yet.\n\n"
+                "Log out and back in.\n"
+                f"{RERUN}"
             )
         missing.append("the CUDA toolkit")
 
     if missing:
         _fail(
-            "Missing required tools: " + ", ".join(missing) + "\n"
-            "Install them with your system's package manager and re-run.\n"
-            "  Arch/CachyOS:   sudo pacman -S cmake gcc cuda"
+            "Missing required tools: " + ", ".join(missing) + "\n\n"
+            "Install them with your system's package manager:\n"
+            "  Arch/CachyOS:  sudo pacman -S cmake gcc cuda\n\n"
+            f"{RERUN}"
         )
     print("    cmake, a C++ compiler, and the CUDA toolkit found")
 
@@ -142,7 +148,7 @@ def _verify_commit() -> None:
         _fail(
             f"llama.cpp {LLAMA_VERSION} is not the expected commit.\n"
             f"  expected: {LLAMA_COMMIT}\n"
-            f"  received: {actual or 'unknown'}\n"
+            f"  received: {actual or 'unknown'}\n\n"
             f"The tag may have been moved. Check the release before "
             f"changing the pin."
         )
@@ -155,29 +161,34 @@ def build(flags: list[str], backend: str) -> None:
         flags: Additional cmake flags, e.g. ["-DGGML_CUDA=ON"].
         backend: The GPU backend being built, for messages ("Metal", "CUDA").
     """
+    record = _record(flags)
     built = _built_version()
-    if SERVER_BIN.exists() and built == _pin():
-        print(f"    already done — llama.cpp {LLAMA_VERSION}")
+    if SERVER_BIN.exists() and built == record:
+        print(f"    already built — llama.cpp {LLAMA_VERSION}")
         return
 
     if LLAMA_DIR.exists():
-        print(
-            f"    llama.cpp {built or 'unpinned build'} → {_pin()}, "
-            "rebuilding"
-        )
+        reason = "first pinned build" if built is None else "pin or build flags changed"
+        print(f"    rebuilding llama.cpp {LLAMA_VERSION}: {reason}")
         shutil.rmtree(LLAMA_DIR)
 
     BOUNTIFUL_HOME.mkdir(parents=True, exist_ok=True)
 
+    print(f"    downloading llama.cpp {LLAMA_VERSION} source from GitHub")
     result = subprocess.run(
         [
-            "git", "clone", "--depth", "1",
+            "git", "-c", "advice.detachedHead=false",
+            "clone", "--depth", "1",
             "--branch", LLAMA_VERSION,
             LLAMA_REPO, str(LLAMA_DIR),
         ],
     )
     if result.returncode != 0:
-        _fail(f"git clone of llama.cpp {LLAMA_VERSION} failed — see output above")
+        _fail(
+            f"downloading llama.cpp {LLAMA_VERSION} failed — "
+            f"see output above.\n\n"
+            f"Check your connection. {RERUN}"
+        )
 
     _verify_commit()
 
@@ -208,5 +219,5 @@ def build(flags: list[str], backend: str) -> None:
     if result.returncode != 0 or not SERVER_BIN.exists():
         _fail("llama.cpp build failed — see output above")
 
-    VERSION_FILE.write_text(_pin() + "\n")
+    VERSION_FILE.write_text(record + "\n")
     print(f"    built {SERVER_BIN} ({LLAMA_VERSION}, {backend})")
