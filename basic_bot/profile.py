@@ -6,8 +6,8 @@ that needs profile data imports from here.
 
 Profiles ship with the engine package in basic_bot/profiles/.
 Each profile is a TOML file describing the models, launch args,
-reasoning controls, sampling parameters, and UI metadata for a
-specific hardware target.
+reasoning controls, speculative decoding, sampling parameters, and
+UI metadata for a specific hardware target.
 
 The profile is checked when it loads, so a mistake in a hand-edited
 file stops startup with a clear message instead of failing in the
@@ -216,13 +216,36 @@ def _check_pin(name: str, entry: dict) -> list[str]:
     return problems
 
 
+def _check_draft(name: str, table: dict) -> list[str]:
+    """Check one [draft] table: built-in drafting layers, or a drafter file."""
+    draft_name = f"{name}.draft"
+
+    if "type" not in table and "file" not in table:
+        return [f'{draft_name}: needs type = "mtp" or a file']
+
+    if "type" in table:
+        problems = []
+        if table["type"] != "mtp":
+            problems.append(f'{draft_name}: type must be "mtp"')
+        if "file" in table:
+            problems.append(f"{draft_name}: use either type or file, not both")
+        return problems
+
+    problems = [] if "url" in table else [f"{draft_name}: missing url"]
+    problems += _check_pin(draft_name, table)
+    return problems
+
+
 def _check_entry(name: str, entry: dict, required: tuple) -> list[str]:
-    """Check one model entry: required keys, pin, and reasoning table."""
+    """Check one model entry: required keys, pin, reasoning, and draft tables."""
     problems = [f"{name}: missing {key}" for key in required if key not in entry]
     problems += _check_pin(name, entry)
     reasoning = entry.get("reasoning")
     if reasoning is not None:
         problems += _check_reasoning(name, reasoning)
+    draft = entry.get("draft")
+    if draft is not None:
+        problems += _check_draft(name, draft)
     return problems
 
 
@@ -328,12 +351,14 @@ def get_available_chat_models() -> dict:
 
 
 def get_downloadable_models() -> list[dict]:
-    """All models across all roles, with download status.
+    """All model files across all roles, with download status.
 
     Returns a list of dicts with role, file, url, sha256, size,
     download flag, and whether the file exists on disk. Chat models
-    also carry model_id and default. sha256 and size are None for
-    unpinned models.
+    also carry model_id and default. A chat model's drafter file
+    follows it, with role "draft", for_model naming its model, and
+    the same download flag. sha256 and size are None for unpinned
+    files.
     """
     profile = get_profile()
 
@@ -349,6 +374,7 @@ def get_downloadable_models() -> list[dict]:
 
     models = []
     for role, model_id, entry, download_default in entries:
+        download = entry.get("download", download_default)
         model = {
             "role": role,
             "file": entry["file"],
@@ -356,12 +382,27 @@ def get_downloadable_models() -> list[dict]:
             "url": entry["url"],
             "sha256": entry.get("sha256"),
             "size": entry.get("size"),
-            "download": entry.get("download", download_default),
+            "download": download,
             "exists": (MODELS_DIR / entry["file"]).exists(),
         }
         if model_id is not None:
             model["model_id"] = model_id
             model["default"] = entry.get("default", False)
         models.append(model)
+
+        # A drafter file downloads whenever its model does
+        draft = entry.get("draft") or {}
+        if "file" in draft:
+            models.append({
+                "role": "draft",
+                "file": draft["file"],
+                "display_name": entry.get("display_name"),
+                "url": draft["url"],
+                "sha256": draft.get("sha256"),
+                "size": draft.get("size"),
+                "download": download,
+                "exists": (MODELS_DIR / draft["file"]).exists(),
+                "for_model": model_id,
+            })
 
     return models
