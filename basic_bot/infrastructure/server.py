@@ -88,6 +88,25 @@ def _build_launch_args(config: dict) -> list[str]:
     if config.get("embeddings", False):
         args += ["--embeddings"]
 
+    # Speculative decoding: a drafter proposes tokens the model checks
+    # in one pass. Speeds up generation without changing the output.
+    draft = config.get("draft")
+    if draft:
+        if draft.get("type") == "mtp":
+            args += ["--spec-type", "draft-mtp"]
+        elif "file" in draft:
+            draft_path = MODELS_DIR / draft["file"]
+            if draft_path.exists():
+                args += ["-md", str(draft_path)]
+                if "gpu_layers" in draft:
+                    args += ["-ngld", str(draft["gpu_layers"])]
+            else:
+                logger.warning(
+                    "Draft model %s not found — starting without it. "
+                    "Run 'python3 build.py' to download it.",
+                    draft["file"],
+                )
+
     # Use the chat template embedded in each GGUF. Muse Glimmer
     # requires this; it is harmless for the other models.
     args += ["--jinja"]
