@@ -41,6 +41,7 @@ ROLE_NAMES = {
     "embedding": "embedding model",
     "summary": "summary model",
     "chat": "chat model",
+    "draft": "draft model",
 }
 
 
