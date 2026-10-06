@@ -265,14 +265,3 @@ def stop_all() -> None:
     """Stop all tracked servers. Called on teardown."""
     for role in list(_active):
         stop(role)
-
-
-def is_running(role: str) -> bool:
-    """Check if a server role is tracked and alive."""
-    process = _active.get(role)
-    if process is None:
-        return False
-    if process.poll() is not None:
-        _active.pop(role, None)
-        return False
-    return True
