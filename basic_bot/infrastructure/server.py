@@ -1,13 +1,17 @@
 """llama-server lifecycle management.
 
-Three server roles on dedicated ports set in config.py
+Three server roles, each on its own port from basic_bot.config.
+Every server runs on this machine, and the engine owns all of them.
 
-Sequential mode: only one server runs at a time.
-At startup, only the chat server loads.
-During fold: chat stops → embedding runs → summary runs → chat restarts.
+Sequential mode: only one server runs at a time, because the models
+don't fit in memory together. The chat provider registry decides when
+the chat server runs; a fold suspends chat through it, runs the
+embedding server, then the summary server, and resumes chat.
 
-All model paths, launch args, and port assignments come from the
-hardware profile loaded by basic_bot.profile.
+All model paths and launch args come from the hardware profile loaded
+by basic_bot.profile. Ports are read from config each time they're
+needed, so config.toml overrides apply however early this module is
+imported.
 
 Failures raise ServerError with a message meant for the user. A
 server can start because of a click, not only at launch, so a failed
@@ -36,12 +40,6 @@ EMBEDDING = "embedding"
 SUMMARY = "summary"
 CHAT = "chat"
 
-_ROLE_PORTS = {
-    EMBEDDING: config.EMBEDDING_PORT,
-    SUMMARY: config.SUMMARY_PORT,
-    CHAT: config.CHAT_PORT,
-}
-
 LOG_FILES = {
     EMBEDDING: BOUNTIFUL_HOME / "llama-embedding.log",
     SUMMARY: BOUNTIFUL_HOME / "llama-summary.log",
@@ -61,6 +59,18 @@ class ServerError(RuntimeError):
 # --- Active process tracking ---
 
 _active: dict[str, subprocess.Popen] = {}
+
+
+def _role_port(role: str) -> int:
+    """The port for a server role, read from config at call time."""
+    ports = {
+        EMBEDDING: config.EMBEDDING_PORT,
+        SUMMARY: config.SUMMARY_PORT,
+        CHAT: config.CHAT_PORT,
+    }
+    if role not in ports:
+        raise ServerError(f"Unknown server role: {role}")
+    return ports[role]
 
 
 # --- Build launch command from profile config ---
@@ -168,34 +178,51 @@ def _healthy(port: int) -> bool:
         return False
 
 
+def _port_taken_message(port: int) -> str:
+    """Explain a busy port, and how to find what's holding it."""
+    if _healthy(port):
+        return (
+            f"Port {port} already has a llama-server that this session "
+            f"didn't start. Another agent may be running, or an earlier "
+            f"run didn't shut down cleanly.\n\n"
+            f"Close any other agents. If none are running, the server is "
+            f"left over. Find it with:\n"
+            f"  lsof -i :{port}\n"
+            f"then stop it with:\n"
+            f"  kill <PID>"
+        )
+    return (
+        f"Port {port} is in use by another program.\n\n"
+        f"This shows which one:\n"
+        f"  lsof -i :{port}\n"
+        f"Quit that program, then try again."
+    )
+
+
 # --- Lifecycle ---
 
-def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
+def start(role: str, model_id: str | None = None) -> subprocess.Popen:
     """Start a server by role.
 
     For chat, model_id selects which model to load. Defaults to the
     profile's default chat model.
 
-    Stops any existing server on this role first.
-    Returns the process, or None if reusing an existing server.
-    Raises ServerError if the server can't be started.
+    Stops this role's existing server first. Never reuses a server it
+    didn't start: one already on the port may hold a different model
+    or settings, and couldn't be stopped to switch models.
+
+    Returns the process. Raises ServerError if the server can't start.
     """
     if role in _active:
         stop(role)
 
     config = _config_for_role(role, model_id)
-    port = _ROLE_PORTS[role]
+    port = _role_port(role)
     model_path = MODELS_DIR / config["file"]
     label = f"{role.capitalize()} server"
 
-    # Reuse an existing healthy server on this port
     if _port_in_use(port):
-        if _healthy(port):
-            logger.info("%s already running on port %d", label, port)
-            return None
-        raise ServerError(
-            f"Port {port} is in use by something other than llama-server."
-        )
+        raise ServerError(_port_taken_message(port))
 
     if not SERVER_BIN.exists():
         raise ServerError(
