@@ -48,6 +48,11 @@ def _read_markdown_dir(directory: Path) -> list[str]:
     ]
 
 
+def _local_url(port: int) -> str:
+    """Address of a llama-server this machine runs."""
+    return f"http://localhost:{port}"
+
+
 def _local_model_info(model_id: str, entry: dict, display_name: str):
     """Describe a local model for the UI from its profile entry.
 
@@ -109,7 +114,7 @@ def _build_embedder(chat_registry):
             chat_registry.resume()
 
     embedder = LocalEmbedder(
-        config.EMBEDDING_URL,
+        _local_url(config.EMBEDDING_PORT),
         ctx_size=embedding_config["ctx_size"],
         query_prefix=embedding_config.get("query_prefix", ""),
         passage_prefix=embedding_config.get("passage_prefix", ""),
@@ -133,7 +138,7 @@ def _build_summary_provider():
 
     return LocalProvider(
         model_id,
-        base_url=config.SUMMARY_URL,
+        base_url=_local_url(config.SUMMARY_PORT),
         max_tokens=summary_config["max_tokens"],
         model_info=_local_model_info(model_id, summary_config, model_id),
         reasoning=summary_config.get("reasoning"),
@@ -156,7 +161,7 @@ def _build_local_chat_providers() -> dict:
     for model_id, model_config in get_available_chat_models().items():
         providers[model_id] = LocalProvider(
             model_id,
-            base_url=config.CHAT_URL,
+            base_url=_local_url(config.CHAT_PORT),
             max_tokens=model_config["max_tokens"],
             model_info=_local_model_info(
                 model_id, model_config, model_config["display_name"],
