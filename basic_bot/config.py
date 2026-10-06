@@ -13,15 +13,12 @@ WINDOW_CEILING = 40
 # Summary validation
 SUMMARY_MIN_CHARS = 40
 
-# Local llama.cpp ports
+# Local llama.cpp ports. This machine runs a llama-server on each, and
+# the engine reaches them at http://localhost:{port}. To avoid a
+# conflict with another program, change the port; the address follows.
 EMBEDDING_PORT = 11333
 SUMMARY_PORT = 11444
 CHAT_PORT = 11555
-
-# Local llama.cpp URLs
-EMBEDDING_URL = "http://localhost:11333"
-SUMMARY_URL = "http://localhost:11444"
-CHAT_URL = "http://localhost:11555"
 
 # LocalProvider HTTP request timeout
 REQUEST_TIMEOUT = 600
@@ -35,16 +32,16 @@ HISTORY_LIMIT = 10
 # Tools: agent ships with tool_belt; plugin tools are the tool_box; auto-detects plugin agent tools/ when true
 TOOL_BOX_ENABLED = True
 
-# Log model reasoning/thinking content to terminal
+# Log model reasoning/thinking content to the agent's log file
 LOG_REASONING = False
 
 
 def apply_overrides(overrides: dict) -> None:
     """Override defaults from the agent's config.toml.
 
-    Called once at startup by launch.py before anything else
-    imports from this module. Keys in config.toml are matched
-    case-insensitively to the uppercase constants above.
+    Called once by Session.open() before the engine builds the
+    runtime. Keys in config.toml are matched case-insensitively to
+    the uppercase constants above.
     """
     import basic_bot.config as _self
     for key, value in overrides.items():
