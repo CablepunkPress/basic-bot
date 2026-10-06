@@ -19,6 +19,15 @@
 # re-upload can't change what gets downloaded. sha256 and size come
 # from Hugging Face's API for that commit and are checked after
 # download. To move to a newer file, update all three together.
+#
+# Draft tables (speculative decoding)
+# A [draft] table speeds up a chat model: a small, fast drafter
+# proposes tokens, and the model checks them all in one pass. The
+# output is the model's own; only the speed changes. Either:
+#   type = "mtp"   drafting layers built into the model file
+# or a separate drafter file, pinned like any model:
+#   file, url, sha256, size
+#   gpu_layers     drafter layers to run on the GPU
 
 
 # --- Embedding ---
@@ -94,6 +103,9 @@ presence_penalty = 0.0
 # - llama-server divides -c across -np slots. A generation that runs out
 #   of context returns no answer and no error.
 # - Stop tokens are <|end_of_text|> and <|eot|>. Never stop on <|eom|>.
+# - DFlash drafter (separate file, ~1.6 GB) enables speculative
+#   decoding: faster generation, same output. A startup warning,
+#   "[spec] failed to measure draft model memory", is harmless.
 
 [chat."muse-glimmer-30b-q4_k_xl"]
 file = "Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
@@ -118,6 +130,13 @@ effort_levels = ["low", "medium", "high", "xhigh"]
 effort_default = "high"
 effort_key = "reasoning_strength"
 
+[chat."muse-glimmer-30b-q4_k_xl".draft]
+file = "dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
+url = "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/resolve/70bf1b61ac09f91b24d39038091b41c582bc5d7a/dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
+sha256 = "b2e808bf656086fe86bd0d0bd990f01d33e377537a07c02d45371517c8b264ef"
+size = 1631208128
+gpu_layers = 99   # as in Meta's example
+
 [chat."muse-glimmer-30b-q4_k_xl".sampling]
 temperature = 1.0
 top_p = 0.95
@@ -138,6 +157,8 @@ top_k = 64
 #   Whether llama-server passes it through is not yet verified.
 # - preserve_thinking is on by default: the template keeps thinking
 #   from all earlier turns in the conversation.
+# - bartowski's quantizations include Qwen's MTP drafting layers,
+#   enabled with --spec-type draft-mtp. No separate file.
 
 [chat."qwen3.8-27b-q5_k_m"]
 file = "Qwen3.8-27B-Q5_K_M.gguf"
@@ -162,6 +183,9 @@ effort_levels = ["low", "medium", "xhigh"]
 effort_default = "xhigh"
 effort_key = "reasoning_effort"   # not yet verified
 effort_needs_reasoning = true
+
+[chat."qwen3.8-27b-q5_k_m".draft]
+type = "mtp"
 
 [chat."qwen3.8-27b-q5_k_m".sampling.thinking]
 temperature = 1.0
