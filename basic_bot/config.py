@@ -21,7 +21,7 @@ SUMMARY_PORT = 11444
 CHAT_PORT = 11555
 
 # LocalProvider HTTP request timeout
-REQUEST_TIMEOUT = 600
+REQUEST_TIMEOUT = 1200
 
 # Number of most similar past turn pairs from semantic search
 RAG_RESULT_LIMIT = 5
