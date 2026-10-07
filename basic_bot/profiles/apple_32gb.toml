@@ -106,6 +106,10 @@ presence_penalty = 0.0
 # - DFlash drafter (separate file, ~1.6 GB) enables speculative
 #   decoding: faster generation, same output. A startup warning,
 #   "[spec] failed to measure draft model memory", is harmless.
+# - The template writes "Reasoning strength: X." at the end of the
+#   system message, defaulting to high. Changing effort therefore
+#   invalidates the prompt cache: the whole conversation is re-read.
+#   Choose a default you rarely need to change.
 
 [chat."muse-glimmer-30b-q4_k_xl"]
 file = "Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
