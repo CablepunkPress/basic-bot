@@ -131,7 +131,7 @@ max_tokens = 16384
 [chat."muse-glimmer-30b-q4_k_xl".reasoning]
 mode = "always"
 effort_levels = ["low", "medium", "high", "xhigh"]
-effort_default = "high"
+effort_default = "low"
 effort_key = "reasoning_strength"
 
 [chat."muse-glimmer-30b-q4_k_xl".draft]
