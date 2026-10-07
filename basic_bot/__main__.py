@@ -17,6 +17,7 @@ import json
 import shutil
 import sys
 import time
+import urllib.error
 import urllib.request
 from pathlib import Path
 from urllib.parse import urlparse
@@ -36,6 +37,11 @@ CHUNK = 1024 * 1024
 TIMEOUT = 60          # seconds without data before a stalled download fails
 SPACE_MARGIN = 2 * 1024 ** 3
 PROGRESS_INTERVAL = 0.5
+
+# Waits between retries after a stalled or dropped connection. The
+# count resets whenever a retry makes progress, so a long download
+# survives any number of separate blips.
+RETRY_WAITS = [10, 30, 60, 120, 300]
 
 ROLE_NAMES = {
     "embedding": "embedding model",
@@ -101,6 +107,10 @@ def _sha256(path: Path) -> str:
             digest.update(block)
     print(" done")
     return digest.hexdigest()
+
+
+def _size(path: Path) -> int:
+    return path.stat().st_size if path.exists() else 0
 
 
 def _is_current(model: dict, verified: dict) -> bool:
@@ -200,20 +210,50 @@ def _download(model: dict, number: int, count: int, verified: dict) -> None:
     print(f"    downloading {number} of {count}, {_describe(model)}")
     print(f"      from {_source(model['url'])}")
 
-    try:
-        _fetch(model["url"], partial, model["size"])
-    except Exception as e:
-        _fail(
-            f"the download of the {_describe(model)} stopped: {e}\n\n"
-            f"The partial file is kept.\n"
-            f"Run 'python3 build.py' again to resume."
-        )
+    retries = 0
+    while True:
+        before = _size(partial)
+        error = None
+        try:
+            _fetch(model["url"], partial, model["size"])
+        except urllib.error.HTTPError as e:
+            if e.code < 500:
+                # The server refused the request itself, e.g. a missing
+                # file. Waiting won't change that.
+                _fail(
+                    f"the download of the {_describe(model)} failed: {e}\n\n"
+                    f"URL: {model['url']}"
+                )
+            print()
+            error = e
+        except Exception as e:
+            print()
+            error = e
 
-    if model["size"] is not None and partial.stat().st_size != model["size"]:
-        _fail(
-            f"the {_describe(model)} is incomplete.\n\n"
-            f"Run 'python3 build.py' again to resume."
-        )
+        after = _size(partial)
+        complete = model["size"] is None or after == model["size"]
+        if error is None and complete:
+            break
+        if error is None:
+            # The stream ended normally but the file is short: the
+            # connection was closed partway through.
+            error = "the connection closed early"
+
+        # Progress since the last attempt earns a fresh set of retries
+        if after > before:
+            retries = 0
+
+        if retries >= len(RETRY_WAITS):
+            _fail(
+                f"the download of the {_describe(model)} stopped: {error}\n\n"
+                f"The partial file is kept.\n"
+                f"Run 'python3 build.py' again to resume."
+            )
+
+        wait = RETRY_WAITS[retries]
+        retries += 1
+        print(f"      connection lost ({error}); retrying in {wait} seconds")
+        time.sleep(wait)
 
     if model["sha256"] is not None:
         if _sha256(partial) != model["sha256"]:
