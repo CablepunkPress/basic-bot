@@ -125,7 +125,7 @@ family = "Muse"
 rank = 1
 gpu_layers = -1
 flash_attn = "on"
-ctx_size = 32768
+ctx_size = 131072
 max_tokens = 16384
 
 [chat."muse-glimmer-30b-q4_k_xl".reasoning]
