@@ -16,6 +16,8 @@ import readline  # noqa: F401 — line editing and history for input()
 import sys
 from pathlib import Path
 
+from basic_bot.session import Session, SessionError
+
 HELP = """\
 Commands:
   /models              list models for the current host
@@ -124,7 +126,6 @@ def _command(session, line: str) -> bool:
 
 
 def _converse(session) -> None:
-    from basic_bot.session import SessionError
 
     while True:
         print()
@@ -162,8 +163,6 @@ def main() -> None:
         sys.exit(
             "Run this from an agent's directory, the folder with dashboard.json."
         )
-
-    from basic_bot.session import Session, SessionError
 
     try:
         session = Session.open(agent_path)
