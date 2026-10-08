@@ -8,15 +8,17 @@ The prompt is ordered from most stable to most volatile so the
 inference server's prompt cache can reuse as much as possible. The
 system prompt (persona, instructions, context, tools, summary)
 changes only at startup or at a fold. The transcript only grows.
-Per-turn state rides in a note at the end of the newest message.
+
+Nothing that changes from turn to turn is written into the prompt.
+The current model and settings reach the model only through the
+provider: as API parameters, or through the model's own chat
+template. The reply's metadata records them for the user.
 """
 
 import json
 import logging
 
 from basic_bot.providers.protocol import (
-    REASONING_ALWAYS,
-    REASONING_OPTIONAL,
     ChatResponse,
     InferenceProvider,
     ModelInfo,
@@ -83,61 +85,19 @@ def build_system_prompt(
 
 
 # ---------------------------------------------------------------------------
-# Turn note — per-turn state, appended to the newest user message
+# Transcript
 # ---------------------------------------------------------------------------
 
-def _model_name(model_info: ModelInfo) -> str:
-    """Full model name without repeating the family.
+def _prepare_messages(window: list[dict]) -> list[dict]:
+    """Copy the window for the API.
 
-    Claude display names omit the family ("Haiku 4.5"), local display
-    names include it ("Qwen3.5 9B Q5_K_M"). Prepend only when missing.
+    A fresh copy is built per attempt so a fallback never inherits a
+    failed attempt's tool calls, which the tool loop appends.
     """
-    if model_info.display_name.startswith(model_info.family):
-        return model_info.display_name
-    return f"{model_info.family} {model_info.display_name}"
-
-
-def _build_turn_note(
-    model_info: ModelInfo, reasoning_on: bool, effort: str | None,
-) -> str:
-    """State the current model and its settings for this turn only.
-
-    The settings are the ones actually used, after defaults and
-    corrections, not the ones requested.
-    """
-    lines = [f"You are running on {_model_name(model_info)}."]
-
-    if effort:
-        lines.append(f"Effort is set to {effort}.")
-    elif not model_info.effort_levels:
-        lines.append("This model does not use effort levels.")
-
-    if model_info.reasoning == REASONING_ALWAYS:
-        lines.append("Deep Reasoning is always on for this model.")
-    elif model_info.reasoning == REASONING_OPTIONAL:
-        lines.append(
-            "Deep Reasoning is enabled." if reasoning_on
-            else "Deep Reasoning is disabled."
-        )
-    else:
-        lines.append("This model does not use Deep Reasoning.")
-
-    return "<!-- turn note, written by the system: " + " ".join(lines) + " -->"
-
-
-def _prepare_messages(window: list[dict], turn_note: str) -> list[dict]:
-    """Copy the window for the API and attach the turn note.
-
-    The note goes on the newest user message in the prompt only. The
-    store keeps the user's original words. A fresh copy is built per
-    attempt so a fallback never inherits a failed attempt's tool calls.
-    """
-    messages = [
+    return [
         {"role": m["role"], "content": m["content"]}
         for m in window
     ]
-    messages[-1]["content"] += "\n\n" + turn_note
-    return messages
 
 
 def _lightest_settings(model_info: ModelInfo) -> tuple[bool, str | None]:
@@ -200,9 +160,7 @@ def chat_with_model(
     ]
     context = {"user_id": user_id, "store": runtime.store, "embedder": runtime.embedder}
 
-    messages = _prepare_messages(
-        window, _build_turn_note(model_info, reasoning_on, level),
-    )
+    messages = _prepare_messages(window)
 
     logger.info(
         "Sending to %s (effort=%s, reasoning=%s) — %d messages, %d tools",
@@ -253,12 +211,8 @@ def chat_with_model(
             raise
 
         try:
-            fallback_messages = _prepare_messages(
-                window, _build_turn_note(fallback_info, fb_reasoning, fb_level),
-            )
-
             response = _chat_loop(
-                provider, fallback_messages, system_prompt,
+                provider, _prepare_messages(window), system_prompt,
                 tool_schemas, context, runtime.tool_registry,
                 fallback_id, fb_level, fb_reasoning,
             )
