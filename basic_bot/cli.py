@@ -12,6 +12,7 @@ Engine logs go to ~/.{agent-id}/{agent-id}.log, so they don't interrupt
 the conversation.
 """
 
+import readline  # noqa: F401 — line editing and history for input()
 import sys
 from pathlib import Path
 
