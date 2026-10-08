@@ -16,10 +16,15 @@ user can't yet reply to.
 
 Engine logs always go to ~/.{agent-id}/{agent-id}.log, beside the
 conversation database, and rotate so they never grow past a fixed
-size. A front end can also echo them to its terminal.
+size. A front end can also echo them to its terminal. The log
+records each session's start, with versions, its end, and every
+settings change, so it reads as a complete account of what happened.
 
-Engine modules are imported inside methods, after open() has applied
-config.toml overrides, because some read config values on import.
+Engine modules read config values when their functions run, never
+when they're imported. That's what lets open() apply config.toml
+overrides after everything here has been imported. A module that
+reads config at import, including through a default argument, would
+capture the value before the override.
 """
 
 import json
@@ -28,16 +33,26 @@ import threading
 import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass
+from importlib.metadata import PackageNotFoundError, version
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import basic_bot.config as config
+from basic_bot.chat import chat_with_model
+from basic_bot.factory import create_runtime
+from basic_bot.fold import build_metadata, should_fold
+from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT, LLAMA_VERSION
+from basic_bot.infrastructure.orchestration import fold_sequential
+from basic_bot.infrastructure.server import ServerError, stop_all
+from basic_bot.memory import get_messages
+from basic_bot.profile import detect_hardware
 from basic_bot.providers.protocol import (
     REASONING_ALWAYS,
     REASONING_NONE,
     ModelInfo,
 )
-from basic_bot.providers.registry import HOST_API, HOST_LOCAL
+from basic_bot.providers.registry import HOST_API, HOST_LOCAL, NoModelsError
+from basic_bot.secrets_env import load as load_secrets
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +130,20 @@ def _configure_logging(agent_id: str, log_path: Path, to_terminal: bool) -> None
     )
 
 
+def _versions() -> str:
+    """What's running: basic-bot, the llama.cpp pin, and the profile."""
+    try:
+        engine = version("basic-bot")
+    except PackageNotFoundError:
+        engine = "unknown"
+
+    return (
+        f"basic-bot {engine}, "
+        f"llama.cpp {LLAMA_VERSION} ({LLAMA_COMMIT[:7]}), "
+        f"profile {detect_hardware()}"
+    )
+
+
 class Session:
     """A running agent. Create with Session.open()."""
 
@@ -147,23 +176,21 @@ class Session:
         dashboard = json.loads((agent_path / "dashboard.json").read_text())
         agent_id = dashboard["id"]
 
-        # Overrides first: some engine modules read config when imported
+        # Overrides before anything reads config
         agent_config = _read_config(agent_path)
         config.apply_overrides(agent_config)
 
         log_path = Path.home() / f".{agent_id}" / f"{agent_id}.log"
         _configure_logging(agent_id, log_path, log_to_terminal)
 
-        from basic_bot.factory import create_runtime
-        from basic_bot.providers.registry import NoModelsError
-        from basic_bot.secrets_env import load as load_secrets
-
         load_secrets(agent_path)
         try:
             runtime = create_runtime(agent_path)
         except NoModelsError as e:
+            logger.error("Session could not open: %s", e)
             raise SessionError(str(e)) from e
 
+        logger.info("Session opened: %s", _versions())
         return cls(runtime, agent_config, log_path)
 
     def start(self) -> None:
@@ -173,8 +200,8 @@ class Session:
 
     def close(self) -> None:
         """Stop every server this session started."""
-        from basic_bot.infrastructure.server import stop_all
         stop_all()
+        logger.info("Session closed")
 
     def __enter__(self) -> "Session":
         return self
@@ -256,6 +283,7 @@ class Session:
         if info.reasoning == REASONING_NONE:
             raise SessionError(f"{info.display_name} doesn't use Deep Reasoning.")
         self._thinking = on
+        logger.info("Deep Reasoning turned %s", "on" if on else "off")
 
     def set_effort(self, level: str) -> None:
         controls = self.controls()
@@ -273,17 +301,23 @@ class Session:
                 f"{', '.join(info.effort_levels)}."
             )
         self._effort = level
+        logger.info("Effort set to %s", level)
 
     def _select(self, model_id: str) -> None:
         """Select a model and reset settings. Caller holds the lock."""
-        from basic_bot.infrastructure.server import ServerError
-
         self._model_id = model_id
         self._thinking = None
         self._effort = None
+
+        info = self._registry.get_models()[model_id]
+        logger.info(
+            "Selecting %s (%s); settings reset to its defaults",
+            info.display_name, info.host,
+        )
         try:
             self._registry.select(model_id)
         except ServerError as e:
+            logger.error("Could not start %s: %s", info.display_name, e)
             raise SessionError(str(e)) from e
 
     # --- Conversation ---
@@ -293,11 +327,6 @@ class Session:
 
         Returns only when all three are done.
         """
-        from basic_bot.chat import chat_with_model
-        from basic_bot.fold import build_metadata, should_fold
-        from basic_bot.infrastructure.orchestration import fold_sequential
-        from basic_bot.infrastructure.server import ServerError
-
         message = message.strip()
         if not message:
             raise SessionError("Type a message to send.")
@@ -344,8 +373,6 @@ class Session:
 
     def history(self, limit: int | None = None) -> list[dict]:
         """Recent messages, oldest first: role, content, seq, metadata."""
-        from basic_bot.memory import get_messages
-
         if limit is None:
             limit = config.HISTORY_LIMIT
         limit = min(limit, config.WINDOW_CEILING)
