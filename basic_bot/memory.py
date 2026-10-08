@@ -21,12 +21,15 @@ _SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
 
 
 def get_messages(
-    store: MessageStore, user_id: str, limit: int = config.WINDOW_FLOOR,
+    store: MessageStore, user_id: str, limit: int | None = None,
 ) -> list[dict]:
     """Get recent messages for a user, in chronological order.
 
-    Returns full message dicts including seq and metadata.
+    Returns full message dicts including seq and metadata. The default
+    limit is read from config when called, so overrides apply.
     """
+    if limit is None:
+        limit = config.WINDOW_FLOOR
     return store.get_messages(user_id, limit)
 
 
