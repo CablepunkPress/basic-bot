@@ -127,8 +127,9 @@ def _converse(session) -> None:
     from basic_bot.session import SessionError
 
     while True:
+        print()
         try:
-            line = input("\nyou> ").strip()
+            line = input("you> ").strip()
         except (EOFError, KeyboardInterrupt):
             print()
             return
