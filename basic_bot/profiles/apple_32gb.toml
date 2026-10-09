@@ -55,14 +55,14 @@ ubatch_size = 16384
 # Base: https://huggingface.co/google/gemma-4-12B
 #   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-12B-it
 #       └─ Quantization: https://huggingface.co/bartowski/gemma-4-12B-it-GGUF
-# 8-bit = ~12.7 GB
+# 6-bit, with 8-bit embed and output weights = ~10.48 GB
 [summary]
-file = "gemma-4-12B-it-Q8_0.gguf"
-url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/2ae7d41be21ca62de00a2d320ee9cec50daa3aa6/gemma-4-12B-it-Q8_0.gguf"
-sha256 = "929bd294cbdc59e41450488bea524a174f1c6ddc43f140fdb5905a5fd1e41969"
-size = 12669647328
+file = "gemma-4-12B-it-Q6_K_L.gguf"
+url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/2ae7d41be21ca62de00a2d320ee9cec50daa3aa6/gemma-4-12B-it-Q6_K_L.gguf"
+sha256 = "52766ef472857441086f70f6d1013bec7b9b5238f469c3efefde2281e1c34209"
+size = 10483120608
 download = true
-alias = "gemma-4-12b-it-q8_0"
+alias = "gemma-4-12b-it-q6_k_l"
 provider = "Google"
 family = "Gemma"
 gpu_layers = -1
