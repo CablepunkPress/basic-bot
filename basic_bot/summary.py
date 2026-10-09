@@ -108,8 +108,9 @@ def summarize_batch(
         "and <transcript>. Organize it around the subjects the conversation has "
         "covered. Give the most weight to what is ongoing: "
         "subjects the user said they want to return to, and decisions still pending. "
-        "A question that was simply answered is not an open thread. Rewrite "
-        "freely rather than preserving the wording or order of the existing summary, "
+        "A question that was simply answered is not an open thread. If nothing is ongoing, "
+        "say nothing about it. Never speculate about what the user might want, plan, or decide next. "
+        "Rewrite freely rather than preserving the wording or order of the existing summary, "
         "and keep within the length limit."
         if existing_summary
         else "Write a summary of <transcript>."
