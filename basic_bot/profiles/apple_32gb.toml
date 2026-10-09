@@ -76,7 +76,10 @@ default = false
 switch_key = "enable_thinking"
 
 [summary.sampling]
-temperature = 1.0
+# 0.6 rather than Google's 1.0: in testing on the same batch, six runs
+# at 0.6 had no speaker, invention, or number errors, against several
+# at 1.0 and 0.4. A summary should be faithful rather than varied.
+temperature = 0.6
 top_p = 0.95
 top_k = 64
 presence_penalty = 0.0
