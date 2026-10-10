@@ -7,7 +7,11 @@ Table structure:
     messages    — individual messages with seq, role, content, and metadata
     state       — summary, summarized_through, next_seq per user
     summaries   — append-only summary archive
-    vectors     — embedded turn pairs for RAG retrieval
+    vectors     — embedded turn pairs for RAG retrieval, one per turn
+
+A turn's vector is replaced, not duplicated, when it's stored again.
+A fold that fails after embedding retries the same batch next time,
+so storing must be safe to repeat.
 """
 
 import logging
@@ -68,6 +72,15 @@ CREATE INDEX IF NOT EXISTS idx_messages_session_timestamp
     ON messages(session_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_vectors_session
     ON vectors(session_id);
+
+-- One archive entry per turn. Remove any duplicates left by an older
+-- version first, since the unique index can't be created over them.
+-- Once the index exists, there are none, so this finds nothing.
+DELETE FROM vectors WHERE id NOT IN (
+    SELECT MAX(id) FROM vectors GROUP BY session_id, seq_start
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_vectors_session_turn
+    ON vectors(session_id, seq_start);
 """
 
 
@@ -344,6 +357,8 @@ class SQLiteMessageStore:
     # --- Vector storage (RAG) ---
 
     def store_vectors(self, user_id: str, turns: list[dict]) -> int:
+        """Store embedded turns, replacing any already stored for the
+        same turn. Safe to repeat: a retried fold re-stores its batch."""
         conn = self._connect()
         try:
             now = datetime.now(timezone.utc).isoformat()
@@ -351,7 +366,12 @@ class SQLiteMessageStore:
                 conn.execute(
                     "INSERT INTO vectors "
                     "(session_id, seq_start, seq_end, content, embedding, created_at) "
-                    "VALUES (?, ?, ?, ?, ?, ?)",
+                    "VALUES (?, ?, ?, ?, ?, ?) "
+                    "ON CONFLICT(session_id, seq_start) DO UPDATE SET "
+                    "seq_end = excluded.seq_end, "
+                    "content = excluded.content, "
+                    "embedding = excluded.embedding, "
+                    "created_at = excluded.created_at",
                     (
                         user_id,
                         turn["seq_start"],
