@@ -4,7 +4,7 @@ Three server roles, each on its own port from basic_bot.config.
 Every server runs on this machine, and the engine owns all of them.
 
 Sequential mode: only one server runs at a time, because the models
-don't fit in memory together. The chat provider registry decides when
+don't fit in memory together. The chat provider router decides when
 the chat server runs; a fold suspends chat through it, runs the
 embedding server, then the summary server, and resumes chat.
 
