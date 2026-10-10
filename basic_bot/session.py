@@ -1,7 +1,7 @@
 """Session: a running agent, as a front end sees it.
 
 A front end opens a session, drives it, and closes it. It never
-touches the runtime, the registry, servers, the store, or folding.
+touches the runtime, the router, servers, the store, or folding.
 The session holds the current host, model, Deep Reasoning setting,
 and effort, and decides which controls apply, so every front end
 shows the same thing.
@@ -51,7 +51,7 @@ from basic_bot.providers.protocol import (
     REASONING_NONE,
     ModelInfo,
 )
-from basic_bot.providers.registry import HOST_API, HOST_LOCAL, NoModelsError
+from basic_bot.providers.router import HOST_API, HOST_LOCAL, NoModelsError
 from basic_bot.secrets_env import load as load_secrets
 
 logger = logging.getLogger(__name__)
@@ -149,7 +149,7 @@ class Session:
 
     def __init__(self, runtime, agent_config: dict, log_path: Path):
         self._runtime = runtime
-        self._registry = runtime.chat_provider
+        self._router = runtime.chat_provider
         self.agent_config = agent_config
         self.log_path = log_path
         self._lock = threading.Lock()
@@ -196,7 +196,7 @@ class Session:
     def start(self) -> None:
         """Start the starting host's default model."""
         with self._busy():
-            self._select(self._registry.get_default_model())
+            self._select(self._router.get_default_model())
 
     def close(self) -> None:
         """Stop every server this session started."""
@@ -223,8 +223,8 @@ class Session:
 
     def controls(self) -> Controls:
         """What to show, from the current choices and the model's rules."""
-        models = self._registry.get_models()
-        model_id = self._model_id or self._registry.get_default_model()
+        models = self._router.get_models()
+        model_id = self._model_id or self._router.get_default_model()
         info = models[model_id]
 
         reasoning_on, effort = info.resolve(self._thinking, self._effort)
@@ -235,7 +235,7 @@ class Session:
 
         return Controls(
             host=info.host,
-            hosts=self._registry.hosts(),
+            hosts=self._router.hosts(),
             model=info,
             models=sorted(
                 (m for m in models.values() if m.host == info.host),
@@ -250,7 +250,7 @@ class Session:
 
     def select_host(self, host: str) -> None:
         """Switch host, right away, to that host's default model."""
-        if host not in self._registry.hosts():
+        if host not in self._router.hosts():
             if host == HOST_API:
                 raise SessionError(
                     "No API key is stored, so API models aren't available.\n"
@@ -264,11 +264,11 @@ class Session:
             raise SessionError(f"Unknown host '{host}'. Choose local or api.")
 
         with self._busy():
-            self._select(self._registry.default_for(host))
+            self._select(self._router.default_for(host))
 
     def select_model(self, model_id: str) -> None:
         """Switch model, right away. Settings reset to its defaults."""
-        if model_id not in self._registry.get_models():
+        if model_id not in self._router.get_models():
             raise SessionError(f"Unknown model '{model_id}'.")
         with self._busy():
             self._select(model_id)
@@ -309,13 +309,13 @@ class Session:
         self._thinking = None
         self._effort = None
 
-        info = self._registry.get_models()[model_id]
+        info = self._router.get_models()[model_id]
         logger.info(
             "Selecting %s (%s); settings reset to its defaults",
             info.display_name, info.host,
         )
         try:
-            self._registry.select(model_id)
+            self._router.select(model_id)
         except ServerError as e:
             logger.error("Could not start %s: %s", info.display_name, e)
             raise SessionError(str(e)) from e
@@ -333,7 +333,7 @@ class Session:
 
         with self._busy():
             store = self._runtime.store
-            model_id = self._model_id or self._registry.get_default_model()
+            model_id = self._model_id or self._router.get_default_model()
 
             try:
                 result = chat_with_model(
