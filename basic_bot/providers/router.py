@@ -1,11 +1,11 @@
-"""Chat provider registry.
+"""Chat router.
 
 Composite InferenceProvider that holds local and API providers in one
 catalog, grouped into hosts: "local" models run on this machine, "api"
 models run on a provider's servers. Routes chat() to the provider that
 owns the requested model.
 
-The registry is the single owner of the local chat server. select()
+The router is the single owner of the local chat server. select()
 makes a model the running one right away. suspend() and resume() let
 work that needs the chat server's memory, such as embedding or a fold,
 stop it and bring it back. Suspends nest: only the outermost resume
@@ -29,7 +29,7 @@ class NoModelsError(RuntimeError):
     """Neither a local model nor an API provider is available."""
 
 
-class ChatProviderRegistry:
+class ChatRouter:
     """Composite provider routing to local or API backends."""
 
     def __init__(
