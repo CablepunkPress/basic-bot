@@ -4,14 +4,18 @@ Three server roles, each on its own port from basic_bot.config.
 Every server runs on this machine, and the engine owns all of them.
 
 Sequential mode: only one server runs at a time, because the models
-don't fit in memory together. The chat provider router decides when
-the chat server runs; a fold suspends chat through it, runs the
-embedding server, then the summary server, and resumes chat.
+don't fit in memory together. The chat router decides when the chat
+server runs; a fold suspends chat through it, runs the embedding
+server, then the summary server, and resumes chat.
 
 All model paths and launch args come from the hardware profile loaded
 by basic_bot.profile. Ports are read from config each time they're
 needed, so config.toml overrides apply however early this module is
 imported.
+
+Each llama-server runs in its own session, separate from the terminal,
+so a Ctrl-C there reaches only the front end. The engine alone decides
+when a server stops: on a model switch, a fold, or session close.
 
 Failures raise ServerError with a message meant for the user. A
 server can start because of a click, not only at launch, so a failed
@@ -186,7 +190,9 @@ def _port_taken_message(port: int) -> str:
             f"didn't start. Another agent may be running, or an earlier "
             f"run didn't shut down cleanly.\n\n"
             f"Close any other agents. If none are running, the server is "
-            f"left over. Find it with:\n"
+            f"left over. To stop it, open Activity Monitor, search for "
+            f"llama-server, select it, and click the stop button.\n\n"
+            f"Or, from a terminal, find it with:\n"
             f"  lsof -i :{port}\n"
             f"then stop it with:\n"
             f"  kill <PID>"
@@ -210,6 +216,10 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen:
     Stops this role's existing server first. Never reuses a server it
     didn't start: one already on the port may hold a different model
     or settings, and couldn't be stopped to switch models.
+
+    If startup is interrupted for any reason, including Ctrl-C or a
+    shutdown signal, the half-started server is stopped before the
+    interruption carries on.
 
     Returns the process. Raises ServerError if the server can't start.
     """
@@ -243,31 +253,38 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen:
         "--port", str(port),
     ] + launch_args
 
-    # Start and wait for health. The child keeps its own handle to
-    # the log, so ours can close once it starts.
+    # Start in its own session, so a Ctrl-C in the terminal reaches
+    # only the front end. The child keeps its own handle to the log,
+    # so ours can close once it starts.
     log_path = LOG_FILES[role]
     with open(log_path, "w") as log_file:
         process = subprocess.Popen(
             cmd, stdout=log_file, stderr=subprocess.STDOUT,
+            start_new_session=True,
         )
     logger.info("%s starting on port %d (log: %s)", label, port, log_path)
 
-    deadline = time.monotonic() + HEALTH_TIMEOUT
-    while time.monotonic() < deadline:
-        if process.poll() is not None:
-            raise ServerError(
-                f"{label} exited during startup — check {log_path}"
-            )
-        if _healthy(port):
-            logger.info("%s ready", label)
-            _active[role] = process
-            return process
-        time.sleep(0.5)
+    try:
+        deadline = time.monotonic() + HEALTH_TIMEOUT
+        while time.monotonic() < deadline:
+            if process.poll() is not None:
+                raise ServerError(
+                    f"{label} exited during startup — check {log_path}"
+                )
+            if _healthy(port):
+                logger.info("%s ready", label)
+                _active[role] = process
+                return process
+            time.sleep(0.5)
 
-    _terminate(process)
-    raise ServerError(
-        f"{label} not ready in {HEALTH_TIMEOUT}s — check {log_path}"
-    )
+        raise ServerError(
+            f"{label} not ready in {HEALTH_TIMEOUT}s — check {log_path}"
+        )
+    except BaseException:
+        # Not yet tracked, so nothing else would stop it
+        if process.poll() is None:
+            _terminate(process)
+        raise
 
 
 def _terminate(process: subprocess.Popen) -> None:

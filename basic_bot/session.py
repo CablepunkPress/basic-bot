@@ -20,6 +20,12 @@ size. A front end can also echo them to its terminal. The log
 records each session's start, with versions, its end, and every
 settings change, so it reads as a complete account of what happened.
 
+Every polite way of stopping ends in close(), so llama-server is
+stopped rather than left running: Ctrl-C raises KeyboardInterrupt,
+and open() turns a closed terminal window (SIGHUP) or a logout or
+kill (SIGTERM) into SystemExit. Only a force quit skips close(), and
+the next start reports the leftover server.
+
 Engine modules read config values when their functions run, never
 when they're imported. That's what lets open() apply config.toml
 overrides after everything here has been imported. A module that
@@ -29,6 +35,7 @@ capture the value before the override.
 
 import json
 import logging
+import signal
 import threading
 import tomllib
 from contextlib import contextmanager
@@ -130,6 +137,30 @@ def _configure_logging(agent_id: str, log_path: Path, to_terminal: bool) -> None
     )
 
 
+def _stop_on_signal(signum, frame) -> None:
+    """Turn a hang-up or termination into an orderly shutdown.
+
+    Raising SystemExit unwinds the program normally, so the front end's
+    `with Session.open(...)` block runs close() and stops llama-server.
+    """
+    logger.info("Received %s, shutting down", signal.Signals(signum).name)
+    raise SystemExit(128 + signum)
+
+
+def _handle_shutdown_signals() -> None:
+    """Shut down cleanly when the window closes, or on logout or kill.
+
+    Closing the terminal window sends SIGHUP; logout or `kill` sends
+    SIGTERM. By default either ends Python on the spot, skipping
+    close(). Python only allows handlers from the main thread, which
+    is where every front end opens its session.
+    """
+    if threading.current_thread() is not threading.main_thread():
+        return
+    for sig in (signal.SIGHUP, signal.SIGTERM):
+        signal.signal(sig, _stop_on_signal)
+
+
 def _versions() -> str:
     """What's running: basic-bot, the llama.cpp pin, and the profile."""
     try:
@@ -182,6 +213,9 @@ class Session:
 
         log_path = Path.home() / f".{agent_id}" / f"{agent_id}.log"
         _configure_logging(agent_id, log_path, log_to_terminal)
+
+        # From here on, closing the window shuts down through close()
+        _handle_shutdown_signals()
 
         load_secrets(agent_path)
         try:
