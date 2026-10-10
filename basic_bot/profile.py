@@ -146,7 +146,7 @@ _REQUIRED = {
     "embedding": ("file", "url", "ctx_size"),
     "summary": ("file", "url", "alias", "publisher", "family",
                 "max_tokens", "sampling"),
-    "chat": ("file", "url", "alias", "display_name", "provider",
+    "chat": ("file", "url", "alias", "display_name", "publisher",
              "family", "max_tokens"),
 }
 
