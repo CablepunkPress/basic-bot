@@ -260,7 +260,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     if context_parts:
         sections.append("# CONTEXT\n\n" + "\n\n".join(context_parts))
 
-    # Prompt prefix: persona + instructions + context
+    # Prompt prefix: persona + instructions + context (should be renamed)
     persona = "\n\n".join(sections)
 
     # Storage
