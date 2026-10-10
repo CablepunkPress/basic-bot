@@ -269,7 +269,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     # Tools
     tool_registry = build_registry(agent_path)
 
-    # Providers — registry first, embedder needs the reference
+    # Providers — router first, embedder needs the reference
     summary_provider = _build_summary_provider()
     chat_provider = _build_chat_router(config)
 
