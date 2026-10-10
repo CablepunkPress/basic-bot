@@ -24,7 +24,9 @@ Every polite way of stopping ends in close(), so llama-server is
 stopped rather than left running: Ctrl-C raises KeyboardInterrupt,
 and open() turns a closed terminal window (SIGHUP) or a logout or
 kill (SIGTERM) into SystemExit. Only a force quit skips close(), and
-the next start reports the leftover server.
+the next start reports the leftover server. Once shutdown begins, no
+new server is started, so cleanup still running can't leave one
+behind.
 
 Engine modules read config values when their functions run, never
 when they're imported. That's what lets open() apply config.toml
@@ -50,7 +52,7 @@ from basic_bot.factory import create_runtime
 from basic_bot.fold import build_metadata, should_fold
 from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT, LLAMA_VERSION
 from basic_bot.infrastructure.orchestration import fold_sequential
-from basic_bot.infrastructure.server import ServerError, stop_all
+from basic_bot.infrastructure.server import ServerError, begin_shutdown, stop_all
 from basic_bot.memory import get_messages
 from basic_bot.profile import detect_hardware
 from basic_bot.providers.protocol import (
@@ -140,10 +142,13 @@ def _configure_logging(agent_id: str, log_path: Path, to_terminal: bool) -> None
 def _stop_on_signal(signum, frame) -> None:
     """Turn a hang-up or termination into an orderly shutdown.
 
-    Raising SystemExit unwinds the program normally, so the front end's
+    Shutdown begins at once, so cleanup that runs while the program
+    unwinds, like a fold resuming chat, doesn't start a server. Then
+    raising SystemExit unwinds the program normally, so the front end's
     `with Session.open(...)` block runs close() and stops llama-server.
     """
     logger.info("Received %s, shutting down", signal.Signals(signum).name)
+    begin_shutdown()
     raise SystemExit(128 + signum)
 
 
@@ -233,7 +238,13 @@ class Session:
             self._select(self._router.get_default_model())
 
     def close(self) -> None:
-        """Stop every server this session started."""
+        """Stop every server this session started.
+
+        Shutdown begins first, so nothing still running on another
+        thread, like a fold in the web front end, can start a server
+        after the rest have been stopped.
+        """
+        begin_shutdown()
         stop_all()
         logger.info("Session closed")
 

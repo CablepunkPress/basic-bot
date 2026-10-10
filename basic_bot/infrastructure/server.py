@@ -17,6 +17,12 @@ Each llama-server runs in its own session, separate from the terminal,
 so a Ctrl-C there reaches only the front end. The engine alone decides
 when a server stops: on a model switch, a fold, or session close.
 
+Once shutdown begins, start() declines to start anything, so cleanup
+code still running, such as a fold resuming chat, can't launch a
+server that would outlive the program. It declines quietly rather than
+raising, so an error can't replace the exception that is shutting the
+program down.
+
 Failures raise ServerError with a message meant for the user. A
 server can start because of a click, not only at launch, so a failed
 start must be reportable instead of ending the process.
@@ -63,6 +69,20 @@ class ServerError(RuntimeError):
 # --- Active process tracking ---
 
 _active: dict[str, subprocess.Popen] = {}
+
+# Set once the program begins shutting down; never cleared.
+_shutting_down = False
+
+
+def begin_shutdown() -> None:
+    """Decline every server start from now on.
+
+    Called when shutdown begins, before servers are stopped, so code
+    still running elsewhere, like a fold's cleanup on another thread,
+    can't start a server that would be left running.
+    """
+    global _shutting_down
+    _shutting_down = True
 
 
 def _role_port(role: str) -> int:
@@ -207,7 +227,7 @@ def _port_taken_message(port: int) -> str:
 
 # --- Lifecycle ---
 
-def start(role: str, model_id: str | None = None) -> subprocess.Popen:
+def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
     """Start a server by role.
 
     For chat, model_id selects which model to load. Defaults to the
@@ -221,8 +241,13 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen:
     shutdown signal, the half-started server is stopped before the
     interruption carries on.
 
-    Returns the process. Raises ServerError if the server can't start.
+    Returns the process, or None if shutdown has begun, in which case
+    nothing is started. Raises ServerError if the server can't start.
     """
+    if _shutting_down:
+        logger.info("Not starting %s server: shutting down", role)
+        return None
+
     if role in _active:
         stop(role)
 
@@ -267,6 +292,11 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen:
     try:
         deadline = time.monotonic() + HEALTH_TIMEOUT
         while time.monotonic() < deadline:
+            if _shutting_down:
+                # Shutdown began while this server was loading
+                _terminate(process)
+                logger.info("%s stopped while starting: shutting down", label)
+                return None
             if process.poll() is not None:
                 raise ServerError(
                     f"{label} exited during startup — check {log_path}"
