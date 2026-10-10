@@ -4,6 +4,11 @@ Every provider (Claude, Gemini, local) implements InferenceProvider
 and returns results using these types. The engine never imports
 provider-specific SDKs — translation happens at the boundary.
 
+A provider is the backend that answers requests. A model's publisher
+is the organization that made it. The two differ for local models:
+Muse is published by Meta, but provided by llama-server on this
+machine.
+
 Reasoning and effort are the engine's own vocabulary. ModelInfo says
 what the user can control for each model. How each control reaches
 the model is the provider's private business.
@@ -26,8 +31,8 @@ class ModelInfo:
     """A model available from a provider, as the user sees it."""
     id: str                                   # "claude-haiku-4-5-20251001"
     display_name: str                         # "Haiku 4.5"
-    provider: str                             # "Anthropic"
-    family: str                               # "Claude" — groups models in the UI
+    publisher: str                            # "Anthropic", "Meta" — who made it not who runs it
+    family: str                               # "Claude", "Muse" — groups models in the UI
     host: str                                 # "api" or "local"
     rank: int = 0                             # display order: lower = smaller/cheaper
     reasoning: str = REASONING_NONE           # "none", "optional", or "always"
