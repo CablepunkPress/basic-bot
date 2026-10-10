@@ -313,6 +313,7 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
     except BaseException:
         # Not yet tracked, so nothing else would stop it
         if process.poll() is None:
+            logger.info("%s stopped during startup", label)
             _terminate(process)
         raise
 
