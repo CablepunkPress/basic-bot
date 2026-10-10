@@ -2,7 +2,7 @@
 
 Talks to llama-server's OpenAI-compatible /v1/chat/completions endpoint.
 Each instance wraps a single model on a single endpoint. The factory
-builds one per available model; the registry or runtime holds them.
+builds one per available model; the router or runtime holds them.
 
 Model metadata, reasoning controls, and sampling parameters come from
 the hardware profile, injected at construction by the factory. This
