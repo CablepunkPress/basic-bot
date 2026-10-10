@@ -85,11 +85,11 @@ def _local_model_info(model_id: str, entry: dict, display_name: str):
     )
 
 
-def _build_embedder(chat_registry):
+def _build_embedder(chat_router):
     """Build a ManagedEmbedder that pauses chat while it runs.
 
     The embedding server needs the memory the chat server is using,
-    so chat is suspended through the registry, its single owner,
+    so chat is suspended through the router, its single owner,
     rather than stopped directly.
     """
     import basic_bot.config as config
@@ -100,18 +100,18 @@ def _build_embedder(chat_registry):
     embedding_config = get_embedding_config()
 
     def start_embedding():
-        chat_registry.suspend()
+        chat_router.suspend()
         try:
             start(EMBEDDING)
         except Exception:
-            chat_registry.resume()
+            chat_router.resume()
             raise
 
     def stop_embedding():
         try:
             stop(EMBEDDING)
         finally:
-            chat_registry.resume()
+            chat_router.resume()
 
     embedder = LocalEmbedder(
         _local_url(config.EMBEDDING_PORT),
@@ -188,17 +188,17 @@ def _build_api_chat_provider():
     return ClaudeProvider()
 
 
-def _build_chat_registry(agent_config: dict):
+def _build_chat_router(agent_config: dict):
     """Build the composite chat provider.
 
     Nothing starts here. The session selects the starting model.
     """
     from basic_bot.infrastructure.server import start, stop, CHAT
     from basic_bot.profile import get_default_chat_model
-    from basic_bot.providers.registry import (
+    from basic_bot.providers.router import (
         HOST_API,
         HOST_LOCAL,
-        ChatProviderRegistry,
+        ChatRouter,
     )
 
     local_default, _ = get_default_chat_model()
@@ -211,7 +211,7 @@ def _build_chat_registry(agent_config: dict):
     def stop_local():
         stop(CHAT)
 
-    return ChatProviderRegistry(
+    return ChatRouter(
         local_providers=_build_local_chat_providers(),
         api_provider=_build_api_chat_provider(),
         local_default=local_default,
@@ -271,9 +271,9 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
 
     # Providers — registry first, embedder needs the reference
     summary_provider = _build_summary_provider()
-    chat_provider = _build_chat_registry(config)
+    chat_provider = _build_chat_router(config)
 
-    # Embedder — suspends chat through the registry
+    # Embedder — suspends chat through the router
     embedder = _build_embedder(chat_provider)
 
     # Sampling — resolved from profile, carried on runtime
