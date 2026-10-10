@@ -144,7 +144,7 @@ def _detect_apple() -> str:
 
 _REQUIRED = {
     "embedding": ("file", "url", "ctx_size"),
-    "summary": ("file", "url", "alias", "provider", "family",
+    "summary": ("file", "url", "alias", "publisher", "family",
                 "max_tokens", "sampling"),
     "chat": ("file", "url", "alias", "display_name", "provider",
              "family", "max_tokens"),

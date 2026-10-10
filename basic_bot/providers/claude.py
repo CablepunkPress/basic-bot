@@ -47,7 +47,7 @@ MODELS: dict[str, ModelInfo] = {
     "claude-haiku-4-5-20251001": ModelInfo(
         id="claude-haiku-4-5-20251001",
         display_name="Haiku 4.5",
-        provider="Anthropic",
+        publisher="Anthropic",
         family="Claude",
         host="api",
         rank=1,
@@ -57,7 +57,7 @@ MODELS: dict[str, ModelInfo] = {
     "claude-sonnet-4-6": ModelInfo(
         id="claude-sonnet-4-6",
         display_name="Sonnet 4.6",
-        provider="Anthropic",
+        publisher="Anthropic",
         family="Claude",
         host="api",
         rank=2,
@@ -69,7 +69,7 @@ MODELS: dict[str, ModelInfo] = {
     "claude-opus-4-6": ModelInfo(
         id="claude-opus-4-6",
         display_name="Opus 4.6",
-        provider="Anthropic",
+        publisher="Anthropic",
         family="Claude",
         host="api",
         rank=3,
@@ -81,7 +81,7 @@ MODELS: dict[str, ModelInfo] = {
     "claude-opus-4-7": ModelInfo(
         id="claude-opus-4-7",
         display_name="Opus 4.7",
-        provider="Anthropic",
+        publisher="Anthropic",
         family="Claude",
         host="api",
         rank=4,
@@ -93,7 +93,7 @@ MODELS: dict[str, ModelInfo] = {
     "claude-opus-4-8": ModelInfo(
         id="claude-opus-4-8",
         display_name="Opus 4.8",
-        provider="Anthropic",
+        publisher="Anthropic",
         family="Claude",
         host="api",
         rank=5,

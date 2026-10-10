@@ -71,7 +71,7 @@ def _local_model_info(model_id: str, entry: dict, display_name: str):
     return ModelInfo(
         id=model_id,
         display_name=display_name,
-        provider=entry["provider"],
+        publisher=entry["publisher"],
         family=entry["family"],
         host="local",
         rank=entry.get("rank", 0),
