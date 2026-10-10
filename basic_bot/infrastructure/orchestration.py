@@ -5,8 +5,8 @@ embedding phase (the embedder manages its own server), cycles the
 summary server, and resumes chat. This is local-only infrastructure;
 engine-core fold logic lives in basic_bot.fold.
 
-Chat is suspended through the registry, which owns the chat server,
-so the registry always knows what is running.
+Chat is suspended through the router, which owns the chat server,
+so the router always knows what is running.
 """
 
 import logging
@@ -31,12 +31,12 @@ def fold_sequential(
     from basic_bot.diagnostics import snapshot_memory
     from basic_bot.infrastructure.server import start, stop, SUMMARY
 
-    registry = runtime.chat_provider
+    router = runtime.chat_provider
     existing_summary = state["summary"]
 
     snapshot_memory("pre-fold")
     logger.info("Fold triggered — suspending chat")
-    registry.suspend()
+    router.suspend()
     snapshot_memory("chat-suspended")
 
     try:
@@ -66,5 +66,5 @@ def fold_sequential(
             snapshot_memory("summary-done")
 
     finally:
-        registry.resume()
+        router.resume()
         snapshot_memory("chat-resumed")
