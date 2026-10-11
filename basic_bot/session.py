@@ -14,6 +14,12 @@ send() returns only after the turn is saved and, when due, memory
 is folded. A front end shows one long wait rather than an answer the
 user can't yet reply to.
 
+Each message is stamped with its own time: the user's when it
+arrives, the reply's when it's finished. The turn is saved only after
+the reply is written, so the session, not the store, knows when the
+user's message really arrived. Times are UTC; front ends convert them
+to local time for display.
+
 Engine logs always go to ~/.{agent-id}/{agent-id}.log, beside the
 conversation database, and rotate so they never grow past a fixed
 size. A front end can also echo them to its terminal. The log
@@ -24,9 +30,8 @@ Every polite way of stopping ends in close(), so llama-server is
 stopped rather than left running: Ctrl-C raises KeyboardInterrupt,
 and open() turns a closed terminal window (SIGHUP) or a logout or
 kill (SIGTERM) into SystemExit. Only a force quit skips close(), and
-the next start reports the leftover server. Once shutdown begins, no
-new server is started, so cleanup still running can't leave one
-behind.
+then each server's watchdog stops it. Once shutdown begins, no new
+server is started, so cleanup still running can't leave one behind.
 
 Engine modules read config values when their functions run, never
 when they're imported. That's what lets open() apply config.toml
@@ -42,6 +47,7 @@ import threading
 import tomllib
 from contextlib import contextmanager
 from dataclasses import dataclass
+from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
@@ -85,7 +91,12 @@ class SessionBusy(SessionError):
 
 @dataclass
 class Reply:
-    """The answer to one message, with what actually produced it."""
+    """The answer to one message, with what actually produced it.
+
+    sent_at and replied_at are UTC ISO timestamps: when the user's
+    message arrived, and when the reply was finished. They're the
+    times stored with messages seq and seq + 1.
+    """
     text: str
     seq: int
     model_used: str
@@ -93,6 +104,8 @@ class Reply:
     effort: str | None
     thinking: bool
     fallback: bool
+    sent_at: str
+    replied_at: str
 
 
 @dataclass
@@ -107,6 +120,11 @@ class Controls:
     reasoning_on: bool
     effort_levels: list[str] | None  # None: don't show effort
     effort: str | None
+
+
+def _utc_now() -> str:
+    """The current time, as stored: a UTC ISO timestamp."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _read_config(agent_path: Path) -> dict:
@@ -372,6 +390,8 @@ class Session:
 
         Returns only when all three are done.
         """
+        sent_at = _utc_now()
+
         message = message.strip()
         if not message:
             raise SessionError("Type a message to send.")
@@ -391,9 +411,13 @@ class Session:
                 logger.exception("Chat failed")
                 raise SessionError(f"The model couldn't answer: {e}") from e
 
+            replied_at = _utc_now()
+
             seq = store.save_turn(
                 DEFAULT_USER, message, result["reply"],
                 metadata=build_metadata(result),
+                user_at=sent_at,
+                assistant_at=replied_at,
             )
             logger.info("Saved turn (seq %d–%d)", seq, seq + 1)
 
@@ -414,10 +438,13 @@ class Session:
                 effort=result["effort"],
                 thinking=result["thinking"],
                 fallback=result["fallback"],
+                sent_at=sent_at,
+                replied_at=replied_at,
             )
 
     def history(self, limit: int | None = None) -> list[dict]:
-        """Recent messages, oldest first: role, content, seq, metadata."""
+        """Recent messages, oldest first: role, content, seq, metadata,
+        created_at (UTC)."""
         if limit is None:
             limit = config.HISTORY_LIMIT
         limit = min(limit, config.WINDOW_CEILING)

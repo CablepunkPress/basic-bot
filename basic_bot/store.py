@@ -10,6 +10,9 @@ The protocol covers two concerns:
 The store never calls the embedding provider. It receives and returns
 raw vectors. This keeps the storage backend and embedding provider
 independently swappable.
+
+All timestamps are stored in UTC, as ISO strings. Converting to local
+time is for display, never for storage.
 """
 
 from typing import Protocol
@@ -47,7 +50,7 @@ class MessageStore(Protocol):
                     "content": str,
                     "seq": int,
                     "metadata": dict | None,   # assistant messages only
-                    "created_at": str | None,  # ISO timestamp
+                    "created_at": str | None,  # ISO timestamp, UTC
                 },
                 ...
             ]
@@ -64,7 +67,7 @@ class MessageStore(Protocol):
                     "content": str,
                     "seq": int,
                     "metadata": dict | None,   # assistant messages only
-                    "created_at": str | None,  # ISO timestamp
+                    "created_at": str | None,  # ISO timestamp, UTC
                 },
                 ...
             ]
@@ -72,17 +75,25 @@ class MessageStore(Protocol):
         ...
 
     def save_turn(
-        self, user_id: str, user_msg: str, agent_msg: str,
+        self, user_id: str, user_msg: str, assistant_msg: str,
         metadata: dict | None = None,
+        user_at: str | None = None,
+        assistant_at: str | None = None,
     ) -> int:
         """Atomically save a user+assistant turn pair with sequence numbers.
 
         Assigns the next two sequence numbers and increments the counter.
         Both messages commit together or not at all.
 
+        user_at is when the user's message arrived, and assistant_at is when
+        the reply was finished, both ISO timestamps in UTC. Either one
+        defaults to the moment of saving. The caller supplies them
+        because only it knows when the message arrived: the turn is
+        saved after the reply is written, which can be minutes later.
+
         Metadata (model_used, display_name, effort, thinking, fallback) is
         stored on the assistant message only. The values should reflect what
-        the API actually returned, not what was requested. The API does not 
+        the API actually returned, not what was requested. The API does not
         return actual effort level used, so requested effort is stored instead.
 
         Returns:
@@ -112,7 +123,7 @@ class MessageStore(Protocol):
                     "content": str,
                     "seq": int,
                     "metadata": dict | None,   # assistant messages only
-                    "created_at": str | None,  # ISO timestamp
+                    "created_at": str | None,  # ISO timestamp, UTC
                 },
                 ...
             ]
@@ -125,7 +136,8 @@ class MessageStore(Protocol):
         """Messages with created_at between after and before, ordered ascending.
 
         Date strings in ISO format (e.g., "2026-06-15" or "2026-06-15T00:00:00Z").
-        Limit caps results to prevent unbounded queries.
+        A date without a time is read as a UTC day. Limit caps results to
+        prevent unbounded queries.
 
         Returns:
             [
@@ -134,13 +146,13 @@ class MessageStore(Protocol):
                     "content": str,
                     "seq": int,
                     "metadata": dict | None,   # assistant messages only
-                    "created_at": str | None,  # ISO timestamp
+                    "created_at": str | None,  # ISO timestamp, UTC
                 },
                 ...
             ]
         """
         ...
-    
+
     # --- Vector storage (RAG) ---
 
     def store_vectors(
@@ -153,6 +165,9 @@ class MessageStore(Protocol):
             embedding: list[float]  — pre-computed vector
             seq_start: int          — first seq in the turn pair
             seq_end:   int          — last seq in the turn pair
+
+        Storing a turn that is already stored replaces it, so a retried
+        fold can safely store its batch again.
 
         Returns:
             Number of turns stored.

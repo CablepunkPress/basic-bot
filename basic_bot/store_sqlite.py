@@ -12,6 +12,8 @@ Table structure:
 A turn's vector is replaced, not duplicated, when it's stored again.
 A fold that fails after embedding retries the same batch next time,
 so storing must be safe to repeat.
+
+All timestamps are UTC ISO strings.
 """
 
 import logging
@@ -208,12 +210,18 @@ class SQLiteMessageStore:
             conn.close()
 
     def save_turn(
-        self, user_id: str, user_msg: str, agent_msg: str,
+        self, user_id: str, user_msg: str, assistant_msg: str,
         metadata: dict | None = None,
+        user_at: str | None = None,
+        assistant_at: str | None = None,
     ) -> int:
         conn = self._connect()
         try:
+            # Each message keeps its own time; the moment of saving is
+            # only the fallback
             now = datetime.now(timezone.utc).isoformat()
+            user_time = user_at or now
+            assistant_time = assistant_at or now
 
             # Get or initialize state
             row = conn.execute(
@@ -235,7 +243,7 @@ class SQLiteMessageStore:
                 "INSERT INTO messages "
                 "(session_id, seq, role, content, created_at) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (user_id, next_seq, "user", user_msg, now),
+                (user_id, next_seq, "user", user_msg, user_time),
             )
 
             # Save assistant message with metadata
@@ -245,7 +253,7 @@ class SQLiteMessageStore:
                 "model_used, display_name, effort, thinking, fallback) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    user_id, next_seq + 1, "assistant", agent_msg, now,
+                    user_id, next_seq + 1, "assistant", assistant_msg, assistant_time,
                     metadata.get("model_used") if metadata else None,
                     metadata.get("display_name") if metadata else None,
                     metadata.get("effort") if metadata else None,
