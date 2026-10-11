@@ -13,9 +13,22 @@ by basic_bot.profile. Ports are read from config each time they're
 needed, so config.toml overrides apply however early this module is
 imported.
 
-Each llama-server runs in its own session, separate from the terminal,
-so a Ctrl-C there reaches only the front end. The engine alone decides
-when a server stops: on a model switch, a fold, or session close.
+Each llama-server runs under a small watchdog (watchdog.py), in its
+own session, separate from the terminal:
+
+- The separate session means a Ctrl-C in the terminal reaches only
+  the front end. The engine alone decides when a server stops: on a
+  model switch, a fold, or session close.
+- The watchdog stops llama-server if the engine ends without stopping
+  it, as after a force quit or a crash. The engine holds the write end
+  of the watchdog's stdin; when the engine ends, the operating system
+  closes it, and the watchdog acts. Each process object keeps its pipe
+  open, so a server's process must stay referenced while it runs.
+
+To the rest of the engine, the watchdog is invisible: same port, same
+health check, same log, and it exits when llama-server exits, with the
+same code. Only a forced stop differs: a force-kill can't be passed
+on, so it goes to the whole session, reaching llama-server directly.
 
 Once shutdown begins, start() declines to start anything, so cleanup
 code still running, such as a fold resuming chat, can't launch a
@@ -29,8 +42,11 @@ start must be reportable instead of ending the process.
 """
 
 import logging
+import os
+import signal
 import socket
 import subprocess
+import sys
 import time
 import urllib.error
 import urllib.request
@@ -43,6 +59,9 @@ logger = logging.getLogger(__name__)
 
 BOUNTIFUL_HOME = Path.home() / ".bountiful"
 MODELS_DIR = BOUNTIFUL_HOME / "models"
+
+# Run as a file with the agent's own Python, never imported
+WATCHDOG = Path(__file__).with_name("watchdog.py")
 
 # --- Server roles ---
 
@@ -61,6 +80,10 @@ LOG_FILES = {
 # Metal launch of a large model can be slow.
 HEALTH_TIMEOUT = 180
 
+# How long a server gets to stop before it's killed. Longer than the
+# watchdog's own GRACE, so the watchdog normally finishes the stop.
+STOP_TIMEOUT = 10
+
 
 class ServerError(RuntimeError):
     """A llama-server could not be started. The message is user-facing."""
@@ -68,6 +91,8 @@ class ServerError(RuntimeError):
 
 # --- Active process tracking ---
 
+# Each entry is a watchdog process. Keeping it referenced keeps its
+# stdin pipe open, which is what keeps its llama-server running.
 _active: dict[str, subprocess.Popen] = {}
 
 # Set once the program begins shutting down; never cleared.
@@ -272,20 +297,27 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
 
     # Build command from profile
     launch_args = _build_launch_args(config)
-    cmd = [
+    server_cmd = [
         str(SERVER_BIN),
         "-m", str(model_path),
         "--port", str(port),
     ] + launch_args
 
-    # Start in its own session, so a Ctrl-C in the terminal reaches
-    # only the front end. The child keeps its own handle to the log,
-    # so ours can close once it starts.
+    # Start llama-server under its watchdog, in their own session, so a
+    # Ctrl-C in the terminal reaches only the front end. stdin is the
+    # watchdog's link to the engine: held open here, never written.
+    # close_fds keeps each watchdog from inheriting another's link.
+    # The children keep their own handle to the log, so ours can close.
+    cmd = [sys.executable, str(WATCHDOG), "--"] + server_cmd
     log_path = LOG_FILES[role]
     with open(log_path, "w") as log_file:
         process = subprocess.Popen(
-            cmd, stdout=log_file, stderr=subprocess.STDOUT,
+            cmd,
+            stdin=subprocess.PIPE,
+            stdout=log_file,
+            stderr=subprocess.STDOUT,
             start_new_session=True,
+            close_fds=True,
         )
     logger.info("%s starting on port %d (log: %s)", label, port, log_path)
 
@@ -298,6 +330,7 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
                 logger.info("%s stopped while starting: shutting down", label)
                 return None
             if process.poll() is not None:
+                _close_link(process)
                 raise ServerError(
                     f"{label} exited during startup — check {log_path}"
                 )
@@ -318,13 +351,35 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
         raise
 
 
+def _close_link(process: subprocess.Popen) -> None:
+    """Close our end of a watchdog's stdin, once it's no longer needed."""
+    if process.stdin and not process.stdin.closed:
+        try:
+            process.stdin.close()
+        except OSError:
+            pass
+
+
 def _terminate(process: subprocess.Popen) -> None:
-    """Stop a process, forcefully if it doesn't exit in time."""
-    process.terminate()
+    """Stop a server through its watchdog, forcefully if it takes too long.
+
+    A polite stop goes to the watchdog, which passes it on. A force-kill
+    can't be passed on, so it goes to the whole session, which reaches
+    llama-server directly: the watchdog started its session, so the
+    session's group ID is the watchdog's process ID.
+    """
     try:
-        process.wait(timeout=10)
-    except subprocess.TimeoutExpired:
-        process.kill()
+        process.terminate()
+        try:
+            process.wait(timeout=STOP_TIMEOUT)
+        except subprocess.TimeoutExpired:
+            try:
+                os.killpg(process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            process.wait()
+    finally:
+        _close_link(process)
 
 
 def stop(role: str) -> None:
