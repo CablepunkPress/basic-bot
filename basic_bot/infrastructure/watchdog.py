@@ -17,28 +17,54 @@ and never writes to it. When the engine ends, however it ends,
 including a force quit or a crash, the operating system closes that
 pipe. This program sees the end of input and stops llama-server.
 
+Everything happens in one loop, on one thread. The link is watched
+with select() and read with os.read(), never through sys.stdin, whose
+lock a blocked read would hold until exit and so prevent a clean
+shutdown.
+
 It uses only the standard library and imports nothing from the
 engine, so it reads no config and can't affect anything by loading.
 It runs as a file, not as part of the package, for the same reason.
 """
 
+import os
+import select
 import signal
 import subprocess
 import sys
-import threading
 
 # Seconds llama-server gets to exit after a stop request before it's
 # killed. Must stay below server.py's wait, so this side finishes first.
 GRACE = 5
 
-# How often to check whether llama-server has exited on its own.
+# How often to check llama-server and the engine's link.
 POLL_INTERVAL = 0.2
+
+# The engine's link: this program's stdin.
+LINK = 0
 
 
 def _exit_code(returncode: int) -> int:
     """Mirror llama-server's exit. A process ended by a signal has a
     negative returncode; the shell convention for it is 128 + signal."""
     return returncode if returncode >= 0 else 128 - returncode
+
+
+def _link_closed() -> bool:
+    """True once the engine's end of the link has closed.
+
+    Waits up to POLL_INTERVAL. The engine never writes, so the link
+    becomes readable only when it closes, and a read then returns
+    nothing. Anything else read is discarded.
+    """
+    try:
+        readable, _, _ = select.select([LINK], [], [], POLL_INTERVAL)
+        if not readable:
+            return False
+        return os.read(LINK, 4096) == b""
+    except OSError:
+        # The link is unusable; treat it as closed, the safe direction
+        return True
 
 
 def main() -> None:
@@ -48,35 +74,26 @@ def main() -> None:
     if not command:
         sys.exit("usage: watchdog.py -- <command ...>")
 
-    stop = threading.Event()
+    stop_requested = False
 
-    # A stop request from the engine. The handler only sets the event;
-    # the main loop does the stopping, outside the handler.
+    # A stop request from the engine. The handler only records it; the
+    # loop does the stopping, outside the handler.
     def request_stop(signum, frame):
-        stop.set()
+        nonlocal stop_requested
+        stop_requested = True
 
     for sig in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
         signal.signal(sig, request_stop)
 
     # llama-server inherits stdout and stderr, which are the log file.
-    # Its stdin is empty: the pipe from the engine is for this program
+    # Its stdin is empty: the link to the engine is for this program
     # alone.
     child = subprocess.Popen(command, stdin=subprocess.DEVNULL)
 
-    # The engine never writes, so read() returns only when the pipe
-    # closes, which happens when the engine ends, however it ends.
-    def watch_engine():
-        try:
-            sys.stdin.buffer.read()
-        except Exception:
-            pass
-        stop.set()
-
-    threading.Thread(target=watch_engine, daemon=True).start()
-
-    # Wait for llama-server to exit on its own, or for a stop request
-    while child.poll() is None and not stop.wait(POLL_INTERVAL):
-        pass
+    # Until llama-server exits, a stop is requested, or the engine ends
+    while child.poll() is None and not stop_requested:
+        if _link_closed():
+            break
 
     if child.poll() is None:
         child.terminate()
