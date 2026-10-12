@@ -9,10 +9,16 @@ shows the same thing.
     with Session.open(agent_path) as session:
         session.start()
         reply = session.send("Hello")
+        if reply.memory_update_due:
+            session.update_memory()
 
-send() returns only after the turn is saved and, when due, memory
-is folded. A front end shows one long wait rather than an answer the
-user can't yet reply to.
+send() returns as soon as the reply is written and the turn is saved,
+so a front end can show the answer right away. When the conversation
+has grown enough to fold, the reply says so, and the front end calls
+update_memory(), showing that the agent is updating its memory. If a
+front end doesn't, or an update is interrupted, the next send() runs
+the update before answering, so memory is always up to date before a
+new message is answered.
 
 Each message is stamped with its own time: the user's when it
 arrives, the reply's when it's finished. The turn is saved only after
@@ -96,6 +102,10 @@ class Reply:
     sent_at and replied_at are UTC ISO timestamps: when the user's
     message arrived, and when the reply was finished. They're the
     times stored with messages seq and seq + 1.
+
+    memory_update_due means the conversation is ready to fold: the
+    front end should call update_memory() next, and show that the
+    agent is updating its memory while it runs.
     """
     text: str
     seq: int
@@ -106,6 +116,7 @@ class Reply:
     fallback: bool
     sent_at: str
     replied_at: str
+    memory_update_due: bool
 
 
 @dataclass
@@ -386,9 +397,15 @@ class Session:
     # --- Conversation ---
 
     def send(self, message: str) -> Reply:
-        """Answer a message, save the turn, and fold memory if due.
+        """Answer a message and save the turn.
 
-        Returns only when all three are done.
+        Returns as soon as both are done. If the conversation is ready
+        to fold, the reply's memory_update_due is set, and the front
+        end should call update_memory() next.
+
+        If an update is still due from an earlier turn, because a front
+        end skipped it or it was interrupted, it runs first, so the
+        answer is always given with memory up to date.
         """
         sent_at = _utc_now()
 
@@ -398,6 +415,11 @@ class Session:
 
         with self._busy():
             store = self._runtime.store
+
+            if should_fold(store, DEFAULT_USER):
+                logger.info("Memory update still due from an earlier turn; running it first")
+                self._fold_if_due()
+
             model_id = self._model_id or self._router.get_default_model()
 
             try:
@@ -422,15 +444,6 @@ class Session:
             )
             logger.info("Saved turn (seq %d–%d)", seq, seq + 1)
 
-            fold_state = should_fold(store, DEFAULT_USER)
-            if fold_state:
-                try:
-                    fold_sequential(self._runtime, store, DEFAULT_USER, fold_state)
-                except Exception:
-                    # The turn is saved. The boundary didn't move, so the
-                    # fold runs again after the next message.
-                    logger.exception("Fold failed — will retry next turn")
-
             return Reply(
                 text=result["reply"],
                 seq=seq,
@@ -441,7 +454,32 @@ class Session:
                 fallback=result["fallback"],
                 sent_at=sent_at,
                 replied_at=replied_at,
+                memory_update_due=bool(should_fold(store, DEFAULT_USER)),
             )
+
+    def update_memory(self) -> None:
+        """Fold the conversation into memory, if it's due.
+
+        Call it when a reply's memory_update_due is set, and show that
+        the agent is updating its memory while it runs. Does nothing if
+        no update is due. A failed update is logged, not raised: the
+        turn is already saved, and the update runs again later.
+        """
+        with self._busy():
+            self._fold_if_due()
+
+    def _fold_if_due(self) -> None:
+        """Run a fold if one is due. Caller holds the lock."""
+        store = self._runtime.store
+        fold_state = should_fold(store, DEFAULT_USER)
+        if not fold_state:
+            return
+        try:
+            fold_sequential(self._runtime, store, DEFAULT_USER, fold_state)
+        except Exception:
+            # The turn is saved. The boundary didn't move, so the
+            # update runs again before the next message is answered.
+            logger.exception("Fold failed — will retry before the next reply")
 
     def history(self, limit: int | None = None) -> list[dict]:
         """Recent messages, oldest first: role, content, seq, metadata,

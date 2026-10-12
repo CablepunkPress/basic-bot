@@ -14,6 +14,7 @@ the conversation.
 
 import readline  # noqa: F401 — line editing and history for input()
 import sys
+from contextlib import contextmanager
 from pathlib import Path
 
 from basic_bot.session import Session, SessionError
@@ -31,6 +32,16 @@ Commands:
 Anything else is sent as a message."""
 
 HOST_NAMES = {"local": "local", "api": "API"}
+
+
+@contextmanager
+def _status(text: str):
+    """Show a status while something runs, then clear it."""
+    print(text, end="", flush=True)
+    try:
+        yield
+    finally:
+        print("\r" + " " * len(text) + "\r", end="", flush=True)
 
 
 def _describe(controls) -> str:
@@ -143,13 +154,16 @@ def _converse(session) -> None:
                     return
                 continue
 
-            print("Thinking...", end="", flush=True)
-            try:
+            with _status("Thinking..."):
                 reply = session.send(line)
-            finally:
-                print("\r" + " " * 11 + "\r", end="", flush=True)
             print(f"{session.name}> {reply.text}")
             print(_badge(reply))
+
+            # The reply is already shown; memory updates after it, and
+            # the next prompt waits until it's done
+            if reply.memory_update_due:
+                with _status("Updating memory..."):
+                    session.update_memory()
 
         except SessionError as e:
             print(e)
