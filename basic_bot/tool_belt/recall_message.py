@@ -8,6 +8,8 @@ precise, addressable retrieval.
 
 import json
 
+from basic_bot.annotations import to_seconds
+
 TOOL = {
     "name": "recall_message",
     "description": (
@@ -61,7 +63,7 @@ def _format_message(msg: dict) -> dict:
     if msg.get("metadata"):
         formatted["metadata"] = msg["metadata"]
     if msg.get("created_at"):
-        formatted["created_at"] = msg["created_at"]
+        formatted["created_at"] = to_seconds(msg["created_at"])
     return formatted
 
 
