@@ -12,11 +12,14 @@ changes only at startup or at a fold. The transcript only grows.
 Nothing that changes from turn to turn is written into the prompt.
 The current model and settings reach the model only through the
 provider: as API parameters, or through the model's own chat
-template. The reply's metadata records them for the user.
+template. The reply's metadata records them for the user. The
+current time reaches the model through the newest message's
+annotation, which records when that message arrived.
 """
 
 import json
 import logging
+from datetime import datetime, timezone
 
 from basic_bot.providers.protocol import (
     ChatResponse,
@@ -117,15 +120,24 @@ def chat_with_model(
     model_id: str | None = None,
     effort: str | None = None,
     thinking: bool | None = None,
+    *,
+    sent_at: str | None = None,
 ) -> dict:
     """Chat using conversation memory and tools.
 
     effort and thinking of None mean "use the model's default."
 
+    sent_at is when the message arrived, a UTC ISO timestamp. The
+    session supplies it, so the time the model sees is the time saved
+    with the message. Without one, it's the current time.
+
     Returns a result dict with the reply text and metadata reflecting
     what was actually used (not what was requested, where detectable).
     """
     provider: InferenceProvider = runtime.chat_provider
+
+    if sent_at is None:
+        sent_at = datetime.now(timezone.utc).isoformat()
 
     if model_id is None:
         model_id = provider.get_default_model()
@@ -144,7 +156,7 @@ def chat_with_model(
     logger.info("Processing chat for user %s", user_id)
 
     window, summary, position = load_window(
-        runtime.store, user_id, user_message,
+        runtime.store, user_id, user_message, sent_at,
     )
     summarized_through = position["summarized_through"]
     logger.info(

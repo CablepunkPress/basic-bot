@@ -404,6 +404,7 @@ class Session:
                 result = chat_with_model(
                     self._runtime, DEFAULT_USER, message,
                     model_id, self._effort, self._thinking,
+                    sent_at=sent_at,
                 )
             except ServerError as e:
                 raise SessionError(str(e)) from e

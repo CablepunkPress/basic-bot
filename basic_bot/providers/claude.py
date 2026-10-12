@@ -10,11 +10,11 @@ or extended, is private to this connector.
 """
 
 import logging
-import re
 
 import anthropic
 from anthropic.types import TextBlock, ThinkingBlock, ToolUseBlock
 
+from basic_bot.annotations import strip as strip_annotations
 from basic_bot.providers.protocol import (
     REASONING_OPTIONAL,
     ChatResponse,
@@ -24,7 +24,6 @@ from basic_bot.providers.protocol import (
 
 logger = logging.getLogger(__name__)
 
-_SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
 
 # Token limits
 DEFAULT_MAX_TOKENS = 8192
@@ -232,7 +231,7 @@ class ClaudeProvider:
 
         for block in response.content:
             if isinstance(block, TextBlock):
-                text = _SEQ_ANNOTATION.sub('', block.text).strip()
+                text = strip_annotations(block.text).strip()
             elif isinstance(block, ToolUseBlock):
                 tool_calls.append(ToolCall(
                     name=block.name,

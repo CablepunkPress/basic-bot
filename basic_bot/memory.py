@@ -5,19 +5,18 @@ All storage access goes through the MessageStore protocol. This module
 has no opinion about whether data lives in Firestore, SQLite, or
 anything else.
 
-Messages from storage carry seq and metadata fields. This module strips
-them down to role/content for the Claude API context window, but prefixes
-each message with its sequence number so the model can reference specific
-messages by number. The richer data is available to callers that need it
-(history endpoint, UI).
+Messages from storage carry seq, created_at, and metadata. This module
+strips them down to role/content for the context window, but prefixes
+each message with an annotation of its seq and created_at (see
+basic_bot.annotations), so the model can refer to messages by number
+and knows when each was written. The richer data is available to
+callers that need it (history endpoint, UI).
 """
 
-import re
-
 import basic_bot.config as config
+from basic_bot.annotations import annotate
+from basic_bot.annotations import strip as strip_annotations
 from basic_bot.store import MessageStore
-
-_SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
 
 
 def get_messages(
@@ -37,13 +36,17 @@ def load_window(
     store: MessageStore,
     user_id: str,
     current_message: str,
+    sent_at: str,
 ) -> tuple[list[dict[str, str]], str, dict]:
     """Assemble the model's context: verbatim window + summary + position.
 
+    sent_at is when the current message arrived, a UTC ISO timestamp.
+    It's the time saved with the message, so the annotation the model
+    sees now matches the one it will see on every later turn.
+
     Returns (messages, summary, position) where messages is the API-ready
     list stripped to role/content (everything after the summary boundary,
-    plus the incoming turn). Each message is prefixed with its sequence
-    number so the model can reference messages by number.
+    plus the incoming turn), each prefixed with its annotation.
     """
     state = store.get_state(user_id)
     after = state["summarized_through"]
@@ -53,8 +56,8 @@ def load_window(
         {
             "role": m["role"],
             "content": (
-                f"<!-- seq:{m['seq']} -->"
-                f"{_SEQ_ANNOTATION.sub('', m['content']).strip()}"
+                annotate(m["seq"], m.get("created_at"))
+                + strip_annotations(m["content"]).strip()
             ),
         }
         for m in window
@@ -63,7 +66,7 @@ def load_window(
     current_seq = state["next_seq"]
     messages.append({
         "role": "user",
-        "content": f"<!-- seq:{current_seq} -->{current_message}",
+        "content": annotate(current_seq, sent_at) + current_message,
     })
 
     latest = state["next_seq"] - 1

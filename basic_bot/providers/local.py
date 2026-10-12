@@ -18,11 +18,11 @@ stdlib urllib only — no SDK for localhost HTTP.
 
 import json
 import logging
-import re
 import urllib.error
 import urllib.request
 
 import basic_bot.config as config
+from basic_bot.annotations import strip as strip_annotations
 from basic_bot.providers.protocol import (
     REASONING_OPTIONAL,
     ChatResponse,
@@ -31,8 +31,6 @@ from basic_bot.providers.protocol import (
 )
 
 logger = logging.getLogger(__name__)
-
-_SEQ_ANNOTATION = re.compile(r'<!--\s*seq:\d+\s*-->')
 
 
 class LocalProvider:
@@ -187,7 +185,7 @@ class LocalProvider:
         message = choice["message"]
 
         text = message.get("content") or ""
-        text = _SEQ_ANNOTATION.sub("", text).strip()
+        text = strip_annotations(text).strip()
 
         tool_calls = []
         for tc in message.get("tool_calls") or []:
