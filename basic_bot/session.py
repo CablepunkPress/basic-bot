@@ -457,29 +457,37 @@ class Session:
                 memory_update_due=bool(should_fold(store, DEFAULT_USER)),
             )
 
-    def update_memory(self) -> None:
+    def update_memory(self) -> bool:
         """Fold the conversation into memory, if it's due.
 
         Call it when a reply's memory_update_due is set, and show that
-        the agent is updating its memory while it runs. Does nothing if
-        no update is due. A failed update is logged, not raised: the
-        turn is already saved, and the update runs again later.
+        the agent is updating its memory while it runs. Returns True
+        when memory is up to date, including when no update was due,
+        and False when the update failed. A failure isn't raised: the
+        turn is already saved, and the update runs again before the
+        next message is answered.
         """
         with self._busy():
-            self._fold_if_due()
+            return self._fold_if_due()
 
-    def _fold_if_due(self) -> None:
-        """Run a fold if one is due. Caller holds the lock."""
+    def _fold_if_due(self) -> bool:
+        """Run a fold if one is due. Caller holds the lock.
+
+        Returns True when memory is up to date afterward, False when a
+        due fold failed.
+        """
         store = self._runtime.store
         fold_state = should_fold(store, DEFAULT_USER)
         if not fold_state:
-            return
+            return True
         try:
             fold_sequential(self._runtime, store, DEFAULT_USER, fold_state)
         except Exception:
             # The turn is saved. The boundary didn't move, so the
             # update runs again before the next message is answered.
             logger.exception("Fold failed — will retry before the next reply")
+            return False
+        return True
 
     def history(self, limit: int | None = None) -> list[dict]:
         """Recent messages, oldest first: role, content, seq, metadata,
