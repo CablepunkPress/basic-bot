@@ -30,11 +30,11 @@ health check, same log, and it exits when llama-server exits, with the
 same code. Only a forced stop differs: a force-kill can't be passed
 on, so it goes to the whole session, reaching llama-server directly.
 
-Once shutdown begins, start() declines to start anything, so cleanup
-code still running, such as a fold resuming chat, can't launch a
-server that would outlive the program. It declines quietly rather than
-raising, so an error can't replace the exception that is shutting the
-program down.
+Once shutdown begins (see basic_bot.shutdown), start() declines to
+start anything, so cleanup code still running, such as a fold resuming
+chat, can't launch a server that would outlive the program. It
+declines quietly rather than raising, so an error can't replace the
+exception that is shutting the program down.
 
 Failures raise ServerError with a message meant for the user. A
 server can start because of a click, not only at launch, so a failed
@@ -54,6 +54,7 @@ from pathlib import Path
 
 import basic_bot.config as config
 from basic_bot.infrastructure.llamacpp import SERVER_BIN
+from basic_bot.shutdown import shutting_down
 
 logger = logging.getLogger(__name__)
 
@@ -94,30 +95,6 @@ class ServerError(RuntimeError):
 # Each entry is a watchdog process. Keeping it referenced keeps its
 # stdin pipe open, which is what keeps its llama-server running.
 _active: dict[str, subprocess.Popen] = {}
-
-# Set once the program begins shutting down; never cleared.
-_shutting_down = False
-
-
-def begin_shutdown() -> None:
-    """Decline every server start from now on.
-
-    Called when shutdown begins, before servers are stopped, so code
-    still running elsewhere, like a fold's cleanup on another thread,
-    can't start a server that would be left running.
-    """
-    global _shutting_down
-    _shutting_down = True
-
-
-def shutting_down() -> bool:
-    """Whether shutdown has begun.
-
-    Lets the rest of the engine tell a failure caused by shutdown,
-    like a request cut off when its server was stopped, from a real
-    one, and respond accordingly.
-    """
-    return _shutting_down
 
 
 def _role_port(role: str) -> int:
@@ -279,7 +256,7 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
     Returns the process, or None if shutdown has begun, in which case
     nothing is started. Raises ServerError if the server can't start.
     """
-    if _shutting_down:
+    if shutting_down():
         logger.info("Not starting %s server: shutting down", role)
         return None
 
@@ -334,7 +311,7 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
     try:
         deadline = time.monotonic() + HEALTH_TIMEOUT
         while time.monotonic() < deadline:
-            if _shutting_down:
+            if shutting_down():
                 # Shutdown began while this server was loading
                 _terminate(process)
                 logger.info("%s stopped while starting: shutting down", label)

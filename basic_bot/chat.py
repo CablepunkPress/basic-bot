@@ -21,7 +21,6 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from basic_bot.infrastructure.server import shutting_down
 from basic_bot.memory import load_window
 from basic_bot.providers.protocol import (
     ChatResponse,
@@ -29,6 +28,7 @@ from basic_bot.providers.protocol import (
     ModelInfo,
 )
 from basic_bot.runtime import BotRuntime
+from basic_bot.shutdown import shutting_down
 
 logger = logging.getLogger(__name__)
 

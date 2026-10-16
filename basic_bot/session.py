@@ -64,12 +64,7 @@ from basic_bot.factory import create_runtime
 from basic_bot.fold import build_metadata, should_fold
 from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT, LLAMA_VERSION
 from basic_bot.infrastructure.orchestration import fold_sequential
-from basic_bot.infrastructure.server import (
-    ServerError,
-    begin_shutdown,
-    shutting_down,
-    stop_all,
-)
+from basic_bot.infrastructure.server import ServerError, stop_all
 from basic_bot.memory import get_messages
 from basic_bot.profile import detect_hardware
 from basic_bot.providers.protocol import (
@@ -79,6 +74,7 @@ from basic_bot.providers.protocol import (
 )
 from basic_bot.providers.router import HOST_API, HOST_LOCAL, NoModelsError
 from basic_bot.secrets_env import load as load_secrets
+from basic_bot.shutdown import begin_shutdown, shutting_down
 
 logger = logging.getLogger(__name__)
 
