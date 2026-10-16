@@ -15,10 +15,28 @@ basic_bot.session, so each front end decides where logs go.
 
 import json
 import logging
+import os
 import tomllib
 from pathlib import Path
 
+import basic_bot.config as config
+from basic_bot.embeddings import LocalEmbedder, ManagedEmbedder
+from basic_bot.infrastructure.server import CHAT, EMBEDDING, start, stop
+from basic_bot.profile import (
+    get_available_chat_models,
+    get_default_chat_model,
+    get_embedding_config,
+    get_summary_config,
+)
+from basic_bot.providers.local import LocalProvider
+from basic_bot.providers.protocol import (
+    REASONING_ALWAYS,
+    REASONING_NONE,
+    ModelInfo,
+)
+from basic_bot.providers.router import HOST_API, HOST_LOCAL, ChatRouter
 from basic_bot.runtime import BotRuntime
+from basic_bot.store_sqlite import SQLiteMessageStore
 from basic_bot.tools import build_registry
 
 logger = logging.getLogger(__name__)
@@ -59,12 +77,6 @@ def _local_model_info(model_id: str, entry: dict, display_name: str):
     The [reasoning] table's mode and defaults become ModelInfo fields.
     Its template keys stay with the provider.
     """
-    from basic_bot.providers.protocol import (
-        REASONING_ALWAYS,
-        REASONING_NONE,
-        ModelInfo,
-    )
-
     reasoning = entry.get("reasoning") or {}
     mode = reasoning.get("mode", REASONING_NONE)
 
@@ -92,11 +104,6 @@ def _build_embedder(chat_router):
     so chat is suspended through the router, its single owner,
     rather than stopped directly.
     """
-    import basic_bot.config as config
-    from basic_bot.embeddings import LocalEmbedder, ManagedEmbedder
-    from basic_bot.profile import get_embedding_config
-    from basic_bot.infrastructure.server import start, stop, EMBEDDING
-
     embedding_config = get_embedding_config()
 
     def start_embedding():
@@ -129,10 +136,6 @@ def _build_embedder(chat_router):
 
 def _build_summary_provider():
     """Summary always runs on the local model defined in the profile."""
-    import basic_bot.config as config
-    from basic_bot.profile import get_summary_config
-    from basic_bot.providers.local import LocalProvider
-
     summary_config = get_summary_config()
     model_id = summary_config["alias"]
 
@@ -147,16 +150,11 @@ def _build_summary_provider():
 
 def _build_summary_sampling() -> dict:
     """Load summary sampling from the hardware profile."""
-    from basic_bot.profile import get_summary_config
     return get_summary_config()["sampling"]
 
 
 def _build_local_chat_providers() -> dict:
     """Build a LocalProvider for each available local chat model."""
-    import basic_bot.config as config
-    from basic_bot.profile import get_available_chat_models
-    from basic_bot.providers.local import LocalProvider
-
     providers = {}
     for model_id, model_config in get_available_chat_models().items():
         providers[model_id] = LocalProvider(
@@ -173,8 +171,11 @@ def _build_local_chat_providers() -> dict:
 
 
 def _build_api_chat_provider():
-    """Build ClaudeProvider if an Anthropic API key is stored. None otherwise."""
-    import os
+    """Build ClaudeProvider if an Anthropic API key is stored. None otherwise.
+
+    The anthropic package is optional, so its import stays deferred
+    until Claude moves out of the engine as a connector.
+    """
     if not os.environ.get("ANTHROPIC_API_KEY"):
         return None
     try:
@@ -193,14 +194,6 @@ def _build_chat_router(agent_config: dict):
 
     Nothing starts here. The session selects the starting model.
     """
-    from basic_bot.infrastructure.server import start, stop, CHAT
-    from basic_bot.profile import get_default_chat_model
-    from basic_bot.providers.router import (
-        HOST_API,
-        HOST_LOCAL,
-        ChatRouter,
-    )
-
     local_default, _ = get_default_chat_model()
     provider_name = agent_config.get("inference_provider", "local")
     starting_host = HOST_API if provider_name == "claude" else HOST_LOCAL
@@ -223,8 +216,6 @@ def _build_chat_router(agent_config: dict):
 
 def _build_store(agent_id: str):
     """Create the SQLite store for the agent."""
-    from basic_bot.store_sqlite import SQLiteMessageStore
-
     sqlite_dir = Path.home() / f".{agent_id}"
     sqlite_dir.mkdir(exist_ok=True)
     return SQLiteMessageStore(str(sqlite_dir / f"{agent_id}.db"))
@@ -239,8 +230,8 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     dashboard = json.loads((agent_path / "dashboard.json").read_text())
     agent_id = dashboard["id"]
 
-    # Config — agent settings
-    config = _read_config(agent_path)
+    # Agent settings from config.toml
+    agent_config = _read_config(agent_path)
 
     # Stable prompt prefix, assembled once at startup. Order runs from
     # the user's own words to engine instructions to optional domain
@@ -271,7 +262,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
 
     # Providers — router first, embedder needs the reference
     summary_provider = _build_summary_provider()
-    chat_provider = _build_chat_router(config)
+    chat_provider = _build_chat_router(agent_config)
 
     # Embedder — suspends chat through the router
     embedder = _build_embedder(chat_provider)
