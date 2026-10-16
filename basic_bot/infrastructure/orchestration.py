@@ -12,6 +12,7 @@ so the router always knows what is running.
 import logging
 
 from basic_bot.fold import fold_rag, fold_summary
+from basic_bot.infrastructure.server import SUMMARY, start, stop
 from basic_bot.store import MessageStore
 
 logger = logging.getLogger(__name__)
@@ -28,21 +29,15 @@ def fold_sequential(
     Chat always resumes, even if a phase fails. A failure still
     propagates once chat is back.
     """
-    from basic_bot.diagnostics import snapshot_memory
-    from basic_bot.infrastructure.server import start, stop, SUMMARY
-
     router = runtime.chat_provider
     existing_summary = state["summary"]
 
-    snapshot_memory("pre-fold")
     logger.info("Fold triggered — suspending chat")
     router.suspend()
-    snapshot_memory("chat-suspended")
 
     try:
         # --- Embedding phase ---
         chunk = fold_rag(store, user_id, state, runtime.embedder)
-        snapshot_memory("embedding-done")
 
         if chunk is None:
             logger.warning("RAG failed — skipping summary")
@@ -63,8 +58,6 @@ def fold_sequential(
             )
         finally:
             stop(SUMMARY)
-            snapshot_memory("summary-done")
 
     finally:
         router.resume()
-        snapshot_memory("chat-resumed")
