@@ -110,6 +110,16 @@ def begin_shutdown() -> None:
     _shutting_down = True
 
 
+def shutting_down() -> bool:
+    """Whether shutdown has begun.
+
+    Lets the rest of the engine tell a failure caused by shutdown,
+    like a request cut off when its server was stopped, from a real
+    one, and respond accordingly.
+    """
+    return _shutting_down
+
+
 def _role_port(role: str) -> int:
     """The port for a server role, read from config at call time."""
     ports = {

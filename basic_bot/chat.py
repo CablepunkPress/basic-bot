@@ -21,12 +21,13 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from basic_bot.infrastructure.server import shutting_down
+from basic_bot.memory import load_window
 from basic_bot.providers.protocol import (
     ChatResponse,
     InferenceProvider,
     ModelInfo,
 )
-from basic_bot.memory import load_window
 from basic_bot.runtime import BotRuntime
 
 logger = logging.getLogger(__name__)
@@ -211,16 +212,31 @@ def chat_with_model(
         }
 
     except Exception:
-        logger.exception(
-            "Error with %s, falling back to %s",
-            model_info.display_name, fallback_info.display_name,
-        )
+        # A request cut off by shutdown isn't a failure to recover from:
+        # the servers are being stopped on purpose, and retrying would
+        # only be declined. The session explains it to the user.
+        if shutting_down():
+            raise
 
         # Retry on the fallback model at its lightest settings. If that
-        # is exactly what just failed, retrying would change nothing.
+        # is exactly what just failed, retrying would change nothing,
+        # so the error goes straight to the session, which logs it.
         fb_reasoning, fb_level = _lightest_settings(fallback_info)
         if model_id == fallback_id and (fb_reasoning, fb_level) == (reasoning_on, level):
             raise
+
+        # The retry happens, so this error is logged here, with its
+        # traceback. If the retry also fails, the session logs that one.
+        if model_id == fallback_id:
+            logger.exception(
+                "Error with %s; retrying at its lightest settings",
+                model_info.display_name,
+            )
+        else:
+            logger.exception(
+                "Error with %s, falling back to %s",
+                model_info.display_name, fallback_info.display_name,
+            )
 
         try:
             response = _chat_loop(
@@ -228,27 +244,26 @@ def chat_with_model(
                 tool_schemas, context, runtime.tool_registry,
                 fallback_id, fb_level, fb_reasoning,
             )
-
-            used_info = models.get(response.model_used, fallback_info)
-
-            logger.info(
-                "Fallback to %s succeeded (%d chars, thinking=%s)",
-                used_info.display_name, len(response.text), response.thinking,
-            )
-
-            return {
-                "reply": response.text,
-                "model_used": response.model_used,
-                "display_name": used_info.display_name,
-                "effort": fb_level,
-                "thinking": response.thinking,
-                "fallback": True,
-                "model_mismatch": response.model_used != fallback_id,
-            }
-
         except Exception:
-            logger.exception("Fallback also failed")
+            logger.error("Fallback to %s also failed", fallback_info.display_name)
             raise
+
+        used_info = models.get(response.model_used, fallback_info)
+
+        logger.info(
+            "Fallback to %s succeeded (%d chars, thinking=%s)",
+            used_info.display_name, len(response.text), response.thinking,
+        )
+
+        return {
+            "reply": response.text,
+            "model_used": response.model_used,
+            "display_name": used_info.display_name,
+            "effort": fb_level,
+            "thinking": response.thinking,
+            "fallback": True,
+            "model_mismatch": response.model_used != fallback_id,
+        }
 
 
 def _chat_loop(

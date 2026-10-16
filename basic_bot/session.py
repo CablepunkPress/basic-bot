@@ -64,7 +64,12 @@ from basic_bot.factory import create_runtime
 from basic_bot.fold import build_metadata, should_fold
 from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT, LLAMA_VERSION
 from basic_bot.infrastructure.orchestration import fold_sequential
-from basic_bot.infrastructure.server import ServerError, begin_shutdown, stop_all
+from basic_bot.infrastructure.server import (
+    ServerError,
+    begin_shutdown,
+    shutting_down,
+    stop_all,
+)
 from basic_bot.memory import get_messages
 from basic_bot.profile import detect_hardware
 from basic_bot.providers.protocol import (
@@ -431,6 +436,11 @@ class Session:
             except ServerError as e:
                 raise SessionError(str(e)) from e
             except Exception as e:
+                if shutting_down():
+                    logger.info("Stopped before the reply was finished")
+                    raise SessionError(
+                        "Your agent was stopped before it could answer."
+                    ) from e
                 logger.exception("Chat failed")
                 raise SessionError(f"The model couldn't answer: {e}") from e
 
@@ -474,7 +484,7 @@ class Session:
         """Run a fold if one is due. Caller holds the lock.
 
         Returns True when memory is up to date afterward, False when a
-        due fold failed.
+        due fold failed or was stopped by shutdown.
         """
         store = self._runtime.store
         fold_state = should_fold(store, DEFAULT_USER)
@@ -485,7 +495,10 @@ class Session:
         except Exception:
             # The turn is saved. The boundary didn't move, so the
             # update runs again before the next message is answered.
-            logger.exception("Fold failed — will retry before the next reply")
+            if shutting_down():
+                logger.info("Memory update stopped: shutting down")
+            else:
+                logger.exception("Fold failed — will retry before the next reply")
             return False
         return True
 
