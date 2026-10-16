@@ -43,8 +43,8 @@ def apply_overrides(overrides: dict) -> None:
     runtime. Keys in config.toml are matched case-insensitively to
     the uppercase constants above.
     """
-    import basic_bot.config as _self
+    constants = globals()
     for key, value in overrides.items():
         upper_key = key.upper()
-        if hasattr(_self, upper_key):
-            setattr(_self, upper_key, value)
+        if upper_key in constants:
+            constants[upper_key] = value
