@@ -8,6 +8,8 @@ cross-referencing with recall_message.
 
 import json
 
+from basic_bot.rag import search_memory
+
 TOOL = {
     "name": "search_archive",
     "description": (
@@ -32,8 +34,6 @@ TOOL = {
 
 def handler(context: dict, **tool_input) -> str:
     """Execute search_archive and return JSON results."""
-    from basic_bot.rag import search_memory
-
     query = tool_input.get("query", "")
     results = search_memory(
         context["store"],
