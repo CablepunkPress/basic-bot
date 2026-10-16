@@ -54,6 +54,12 @@ from pathlib import Path
 
 import basic_bot.config as config
 from basic_bot.infrastructure.llamacpp import SERVER_BIN
+from basic_bot.profile import (
+    get_chat_models,
+    get_default_chat_model,
+    get_embedding_config,
+    get_summary_config,
+)
 from basic_bot.shutdown import shutting_down
 
 logger = logging.getLogger(__name__)
@@ -170,13 +176,6 @@ def _profile_entry(role: str, model_id: str | None = None) -> dict:
     For chat, model_id selects which chat model's entry. For embedding
     and summary, the profile has a single entry.
     """
-    from basic_bot.profile import (
-        get_chat_models,
-        get_default_chat_model,
-        get_embedding_config,
-        get_summary_config,
-    )
-
     if role == EMBEDDING:
         entry = dict(get_embedding_config())
         entry["embeddings"] = True
