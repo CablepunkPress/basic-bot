@@ -109,34 +109,34 @@ def _role_port(role: str) -> int:
     return ports[role]
 
 
-# --- Build launch command from profile config ---
+# --- Build launch command from hardware profile model entry ---
 
-def _build_launch_args(config: dict) -> list[str]:
-    """Translate profile config dict into llama-server CLI flags."""
+def _build_launch_args(entry: dict) -> list[str]:
+    """Translate a profile entry into llama-server CLI flags."""
     args = []
 
-    if "gpu_layers" in config:
-        args += ["--n-gpu-layers", str(config["gpu_layers"])]
-    if config.get("flash_attn"):
-        args += ["--flash-attn", config["flash_attn"]]
-    if "ctx_size" in config:
-        args += ["--ctx-size", str(config["ctx_size"])]
-    if "batch_size" in config:
-        args += ["--batch-size", str(config["batch_size"])]
-    if "ubatch_size" in config:
-        args += ["--ubatch-size", str(config["ubatch_size"])]
-    if "n_cpu_moe" in config:
-        args += ["--n-cpu-moe", str(config["n_cpu_moe"])]
-    if config.get("no_mmap"):
+    if "gpu_layers" in entry:
+        args += ["--n-gpu-layers", str(entry["gpu_layers"])]
+    if entry.get("flash_attn"):
+        args += ["--flash-attn", entry["flash_attn"]]
+    if "ctx_size" in entry:
+        args += ["--ctx-size", str(entry["ctx_size"])]
+    if "batch_size" in entry:
+        args += ["--batch-size", str(entry["batch_size"])]
+    if "ubatch_size" in entry:
+        args += ["--ubatch-size", str(entry["ubatch_size"])]
+    if "n_cpu_moe" in entry:
+        args += ["--n-cpu-moe", str(entry["n_cpu_moe"])]
+    if entry.get("no_mmap"):
         args += ["--no-mmap"]
-    if "alias" in config:
-        args += ["--alias", config["alias"]]
-    if config.get("embeddings", False):
+    if "alias" in entry:
+        args += ["--alias", entry["alias"]]
+    if entry.get("embeddings", False):
         args += ["--embeddings"]
 
     # Speculative decoding: a drafter proposes tokens the model checks
     # in one pass. Speeds up generation without changing the output.
-    draft = config.get("draft")
+    draft = entry.get("draft")
     if draft:
         if draft.get("type") == "mtp":
             args += ["--spec-type", "draft-mtp"]
@@ -164,23 +164,23 @@ def _build_launch_args(config: dict) -> list[str]:
     return args
 
 
-def _config_for_role(role: str, model_id: str | None = None) -> dict:
-    """Load the profile config for a server role.
+def _profile_entry(role: str, model_id: str | None = None) -> dict:
+    """The hardware profile's entry for a server role.
 
-    For chat, model_id selects which chat model entry to use.
-    For embedding and summary, the profile has a single entry.
+    For chat, model_id selects which chat model's entry. For embedding
+    and summary, the profile has a single entry.
     """
     from basic_bot.profile import (
-        get_embedding_config,
-        get_summary_config,
         get_chat_models,
         get_default_chat_model,
+        get_embedding_config,
+        get_summary_config,
     )
 
     if role == EMBEDDING:
-        config = dict(get_embedding_config())
-        config["embeddings"] = True
-        return config
+        entry = dict(get_embedding_config())
+        entry["embeddings"] = True
+        return entry
 
     if role == SUMMARY:
         return get_summary_config()
@@ -191,8 +191,8 @@ def _config_for_role(role: str, model_id: str | None = None) -> dict:
             if model_id not in models:
                 raise ServerError(f"Unknown chat model: {model_id}")
             return models[model_id]
-        _, config = get_default_chat_model()
-        return config
+        _, entry = get_default_chat_model()
+        return entry
 
     raise ServerError(f"Unknown server role: {role}")
 
@@ -263,9 +263,9 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
     if role in _active:
         stop(role)
 
-    config = _config_for_role(role, model_id)
+    entry = _profile_entry(role, model_id)
     port = _role_port(role)
-    model_path = MODELS_DIR / config["file"]
+    model_path = MODELS_DIR / entry["file"]
     label = f"{role.capitalize()} server"
 
     if _port_in_use(port):
@@ -283,7 +283,7 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
         )
 
     # Build command from profile
-    launch_args = _build_launch_args(config)
+    launch_args = _build_launch_args(entry)
     server_cmd = [
         str(SERVER_BIN),
         "-m", str(model_path),
