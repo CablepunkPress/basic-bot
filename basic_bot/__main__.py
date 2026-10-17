@@ -23,11 +23,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
-from basic_bot.profile import (
-    detect_hardware,
-    get_downloadable_models,
-    MODELS_DIR,
-)
+from basic_bot.paths import MODELS_DIR
+from basic_bot.profile import detect_hardware, get_downloadable_models
 
 # Which files have passed their checksum, so a rebuild doesn't rehash
 # 40GB. Only a cache: the checksum in the profile is the truth.

@@ -24,13 +24,14 @@ import sys
 import tomllib
 from pathlib import Path
 
+from basic_bot.paths import MODELS_DIR
+
 logger = logging.getLogger(__name__)
 
 _hardware: str | None = None
 _profile: dict | None = None
 
 PROFILES_DIR = Path(__file__).parent / "profiles"
-MODELS_DIR = Path.home() / ".bountiful" / "models"
 
 # The only Apple memory size that has been tested.
 APPLE_TESTED_GB = 32

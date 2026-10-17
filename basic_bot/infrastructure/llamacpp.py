@@ -23,6 +23,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from basic_bot.paths import BOUNTIFUL_HOME, LLAMA_DIR, SERVER_BIN
+
 LLAMA_VERSION = "v0.5.0"
 # The commit the tag points to. A tag can be moved; a commit can't.
 # Check with:
@@ -30,10 +32,7 @@ LLAMA_VERSION = "v0.5.0"
 # For an annotated tag, use the line ending in ^{}.
 LLAMA_COMMIT = "7fe450e19305b828c199d602c23a8337aaa1f03b"
 
-BOUNTIFUL_HOME = Path.home() / ".bountiful"
-LLAMA_DIR = BOUNTIFUL_HOME / "llama.cpp"
 LLAMA_REPO = "https://github.com/ggml-org/llama.cpp.git"
-SERVER_BIN = LLAMA_DIR / "build" / "bin" / "llama-server"
 VERSION_FILE = LLAMA_DIR / ".bountiful-version"
 
 RERUN = "Then run 'python3 build.py' again."

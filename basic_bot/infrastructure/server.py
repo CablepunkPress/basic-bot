@@ -53,7 +53,7 @@ import urllib.request
 from pathlib import Path
 
 import basic_bot.config as config
-from basic_bot.infrastructure.llamacpp import SERVER_BIN
+from basic_bot.paths import BOUNTIFUL_HOME, MODELS_DIR, SERVER_BIN
 from basic_bot.profile import (
     get_chat_models,
     get_default_chat_model,
@@ -63,9 +63,6 @@ from basic_bot.profile import (
 from basic_bot.shutdown import shutting_down
 
 logger = logging.getLogger(__name__)
-
-BOUNTIFUL_HOME = Path.home() / ".bountiful"
-MODELS_DIR = BOUNTIFUL_HOME / "models"
 
 # Run as a file with the agent's own Python, never imported
 WATCHDOG = Path(__file__).with_name("watchdog.py")
