@@ -1,7 +1,15 @@
 # Hardware Profile: NVIDIA 12GB+ VRAM
 # Tested on: RTX 3060 12GB + 32GB DDR4
 # Prototype hardware. The supported platform is apple_32gb.
-
+#
+# Format and needs
+# format is the version of this file's layout, so the engine can tell
+# when a profile was written for a different version of it. [needs]
+# states what the machine must have:
+#   backend     the GPU backend llama.cpp is built with: "metal" or "vulkan"
+#   memory_gb   the memory the models can use: unified memory on a Mac,
+#               the graphics card's own memory with Vulkan
+#
 # Sequential server mode — one llama-server process at a time.
 # All models fit in 12GB VRAM individually. No CPU offloading
 # needed for the default chat model.
@@ -21,6 +29,11 @@
 #   effort_needs_reasoning  optional only: true if effort does nothing
 #                           while reasoning is off
 
+format = 1
+
+[needs]
+backend = "vulkan"
+memory_gb = 12
 
 # --- Embedding ---
 # Nemotron-3-Embed-8B Q8_0 — 8B dense transformer, 4096-dim vectors
