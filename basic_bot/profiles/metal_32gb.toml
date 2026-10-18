@@ -1,5 +1,13 @@
-# Hardware Profile: Apple 32GB
-# Designed for: Apple M6 Mac Mini 32GB Unified Memory
+# Hardware Profile: Metal 32GB
+# Designed for: Apple M6 Mac Mini 32GB unified memory
+#
+# Format and needs
+# format is the version of this file's layout, so the engine can tell
+# when a profile was written for a different version of it.
+# [needs] states what the machine must have:
+#   backend     the GPU backend llama.cpp is built with: "metal" or "vulkan"
+#   memory_gb   the memory the models can use: unified memory on a Mac,
+#               the graphics card's own memory with Vulkan
 #
 # Reasoning tables
 # A [reasoning] table describes how a model reasons, in the engine's
@@ -29,6 +37,11 @@
 #   file, url, sha256, size
 #   gpu_layers     drafter layers to run on the GPU
 
+format = 1
+
+[needs]
+backend = "metal"
+memory_gb = 32
 
 # --- Embedding ---
 # Base: https://huggingface.co/mistralai/Ministral-3-8B-Base-2512
