@@ -120,7 +120,7 @@ def _detect_apple() -> str:
             "Could not read this Mac's memory size. Using the 32GB "
             "profile, the only one tested."
         )
-        return "apple_32gb"
+        return "metal_32gb"
 
     logger.info("Detected Apple Silicon with %d GB memory", ram_gb)
 
@@ -138,10 +138,13 @@ def _detect_apple() -> str:
             ram_gb,
         )
 
-    return "apple_32gb"
+    return "metal_32gb"
 
 
 # --- Validation ---
+
+PROFILE_FORMAT = 1
+BACKENDS = ("metal", "vulkan")
 
 _REQUIRED = {
     "embedding": ("file", "url", "ctx_size"),
@@ -150,6 +153,33 @@ _REQUIRED = {
     "chat": ("file", "url", "alias", "display_name", "publisher",
              "family", "max_tokens"),
 }
+
+
+def _check_format(profile: dict) -> list[str]:
+    """Check the profile's format version and its [needs] table."""
+    problems = []
+
+    fmt = profile.get("format")
+    if not isinstance(fmt, int) or isinstance(fmt, bool):
+        problems.append(f"missing format = {PROFILE_FORMAT} before the first table")
+    elif fmt != PROFILE_FORMAT:
+        problems.append(
+            f"format {fmt} isn't one this engine reads "
+            f"(it reads format {PROFILE_FORMAT})"
+        )
+
+    needs = profile.get("needs")
+    if not isinstance(needs, dict):
+        problems.append("missing [needs] table")
+        return problems
+    if needs.get("backend") not in BACKENDS:
+        problems.append(f"needs.backend must be one of: {', '.join(BACKENDS)}")
+    memory = needs.get("memory_gb")
+    if not (isinstance(memory, int) and not isinstance(memory, bool)
+            and memory > 0):
+        problems.append("needs.memory_gb must be a positive whole number")
+
+    return problems
 
 
 def _check_reasoning(name: str, table: dict) -> list[str]:
@@ -252,7 +282,7 @@ def _check_entry(name: str, entry: dict, required: tuple) -> list[str]:
 
 def _validate(profile: dict, profile_path: Path) -> None:
     """Stop with a list of problems if the profile is malformed."""
-    problems = []
+    problems = _check_format(profile)
 
     for role in ("embedding", "summary"):
         if role not in profile:
