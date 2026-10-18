@@ -348,7 +348,7 @@ def _build_config(hardware: str) -> tuple[list[str], str]:
     Metal is llama.cpp's default on macOS, so Apple Silicon needs no
     backend flag. Detection has already stopped on unsupported hardware.
     """
-    if hardware.startswith("apple"):
+    if hardware.startswith("metal"):
         return COMMON_FLAGS, "Metal"
     return ["-DGGML_CUDA=ON", *COMMON_FLAGS], "CUDA"
 

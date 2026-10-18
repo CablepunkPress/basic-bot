@@ -125,7 +125,7 @@ def _check_nvidia_linux() -> None:
 
 def check_prerequisites(hardware: str) -> None:
     """Verify the build tools for the detected hardware are installed."""
-    if hardware.startswith("apple"):
+    if hardware.startswith("metal"):
         _check_macos()
     else:
         _check_nvidia_linux()
