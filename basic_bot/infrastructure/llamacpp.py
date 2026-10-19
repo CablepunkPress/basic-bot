@@ -22,6 +22,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import NoReturn
 
 from basic_bot.paths import BOUNTIFUL_HOME, LLAMA_DIR, SERVER_BIN
 
@@ -38,7 +39,7 @@ VERSION_FILE = LLAMA_DIR / ".bountiful-version"
 RERUN = "Then run 'python3 build.py' again."
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     sys.exit(f"\nERROR: {message}")
 
 
@@ -123,9 +124,9 @@ def _check_nvidia_linux() -> None:
     print("    cmake, a C++ compiler, and the CUDA toolkit found")
 
 
-def check_prerequisites(hardware: str) -> None:
-    """Verify the build tools for the detected hardware are installed."""
-    if hardware.startswith("metal"):
+def check_prerequisites(backend: str) -> None:
+    """Verify the build tools for this machine's backend are installed."""
+    if backend == "metal":
         _check_macos()
     else:
         _check_nvidia_linux()

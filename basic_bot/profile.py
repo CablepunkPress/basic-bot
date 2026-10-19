@@ -1,144 +1,106 @@
 """Hardware profile loader.
 
-Detects hardware once, loads the matching profile TOML once,
-caches the result for the lifetime of the process. Every module
-that needs profile data imports from here.
+Detects the machine once, chooses the profile that fits it, loads and
+checks that profile once, and caches the result for the lifetime of
+the process. Every module that needs profile data imports from here.
 
-Profiles ship with the engine package in basic_bot/profiles/.
-Each profile is a TOML file describing the models, launch args,
-reasoning controls, speculative decoding, sampling parameters, and
-UI metadata for a specific hardware target.
+Profiles ship with the engine package in basic_bot/profiles/. Each is
+a TOML file describing the models, launch args, reasoning controls,
+speculative decoding, sampling parameters, and UI metadata for one
+kind of machine, and its [needs] table states what that machine must
+have.
+
+Detection reports facts about the machine: the GPU backend, which
+comes from the operating system, and the memory models can use.
+Selection takes the largest profile for that backend that fits the
+memory. No code names a machine, so a profile for new hardware needs
+no new code.
 
 The profile is checked when it loads, so a mistake in a hand-edited
-file stops startup with a clear message instead of failing in the
-middle of a conversation.
+file is reported with a clear message instead of failing in the
+middle of a conversation. Problems raise ProfileError rather than
+exiting, so a web server or a hosted service can report them.
 
 Two gates determine whether a chat model appears in the UI:
 it must be in the profile and downloaded to disk.
 """
 
 import logging
-import shutil
 import subprocess
 import sys
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
+from typing import NoReturn
 
 from basic_bot.paths import MODELS_DIR
 
 logger = logging.getLogger(__name__)
 
-_hardware: str | None = None
-_profile: dict | None = None
-
 PROFILES_DIR = Path(__file__).parent / "profiles"
 
-# The only Apple memory size that has been tested.
-APPLE_TESTED_GB = 32
 
+class ProfileError(RuntimeError):
+    """No profile fits this machine, or a profile is malformed.
 
-# --- Hardware detection ---
-
-def detect_hardware() -> str:
-    """Detect GPU hardware. Returns a profile name.
-
-    Results are cached — detection runs once per process.
+    The message is user-facing.
     """
-    global _hardware
-    if _hardware is not None:
-        return _hardware
-
-    if sys.platform == "darwin":
-        _hardware = _detect_apple()
-        return _hardware
-
-    if shutil.which("nvidia-smi"):
-        _hardware = _detect_nvidia()
-        return _hardware
-
-    sys.exit(
-        "No supported GPU detected.\n"
-        "Bountiful runs on an Apple Silicon Mac with 32GB of memory."
-    )
 
 
-def _detect_nvidia() -> str:
-    """Identify NVIDIA GPU by VRAM and return a profile name.
+@dataclass(frozen=True)
+class Machine:
+    """What detection found: the GPU backend and the memory for models."""
+    backend: str
+    memory_gb: int
 
-    The 12GB card was the engine's prototype hardware. It still works,
-    but the Mac is the supported platform.
-    """
-    result = subprocess.run(
-        ["nvidia-smi", "--query-gpu=name,memory.total",
-         "--format=csv,noheader,nounits"],
-        capture_output=True, text=True,
-    )
-    if result.returncode != 0:
-        sys.exit("nvidia-smi failed. Check your GPU drivers.")
 
-    lines = result.stdout.strip().split("\n")
-    name, vram_str = lines[0].split(",")
-    name = name.strip()
-    vram_mb = int(vram_str.strip())
-    vram_gb = vram_mb // 1024
+_machine: Machine | None = None
+_loaded: tuple[str, dict] | None = None
 
-    logger.info("Detected: %s (%d GB VRAM)", name, vram_gb)
 
-    if vram_gb < 12:
-        sys.exit(
-            f"GPU has {vram_gb}GB VRAM. Bountiful requires at least 12GB."
+# --- Machine detection ---
+
+def detect_machine() -> Machine:
+    """This machine's backend and model memory, detected once per process."""
+    global _machine
+    if _machine is None:
+        if sys.platform == "darwin":
+            _machine = Machine("metal", _mac_memory_gb())
+        elif sys.platform == "linux":
+            _machine = Machine("vulkan", _vulkan_memory_gb())
+        else:
+            raise ProfileError(
+                "Bountiful runs on an Apple Silicon Mac or on Linux."
+            )
+        logger.info(
+            "Detected %s with %d GB for models",
+            _machine.backend.capitalize(), _machine.memory_gb,
         )
-
-    logger.warning(
-        "%s detected. This 12GB card was Bountiful's prototype hardware. "
-        "It works, but its 9B chat model isn't suited to real daily use. "
-        "The supported platform is an Apple Silicon Mac with 32GB.",
-        name,
-    )
-    return "nvidia_12gb"
+    return _machine
 
 
-def _detect_apple() -> str:
-    """Identify Apple Silicon memory and return a profile name.
-
-    Only 32GB is tested. Larger Macs use the 32GB profile with a
-    warning; smaller ones stop, because the models don't fit.
-    """
-    ram_gb = None
+def _mac_memory_gb() -> int:
+    """A Mac's unified memory, in whole gigabytes."""
     try:
         result = subprocess.run(
             ["sysctl", "-n", "hw.memsize"],
             capture_output=True, text=True,
         )
         if result.returncode == 0:
-            ram_gb = int(result.stdout.strip()) // (1024 ** 3)
+            return int(result.stdout.strip()) // (1024 ** 3)
     except (ValueError, OSError):
         pass
+    raise ProfileError("Couldn't read this Mac's memory size.")
 
-    if ram_gb is None:
-        logger.warning(
-            "Could not read this Mac's memory size. Using the 32GB "
-            "profile, the only one tested."
-        )
-        return "metal_32gb"
 
-    logger.info("Detected Apple Silicon with %d GB memory", ram_gb)
+def _vulkan_memory_gb() -> int:
+    """A graphics card's memory, read through llama.cpp's Vulkan build.
 
-    if ram_gb < APPLE_TESTED_GB:
-        sys.exit(
-            f"This Mac has {ram_gb}GB of memory. Bountiful needs 32GB: "
-            f"its models don't fit in less."
-        )
-
-    if ram_gb > APPLE_TESTED_GB:
-        logger.warning(
-            "This Mac has %dGB of memory. Bountiful is tested only on "
-            "32GB Macs, so it will use the 32GB profile. It should work, "
-            "but this configuration is untested.",
-            ram_gb,
-        )
-
-    return "metal_32gb"
+    Arrives with the Vulkan build, where it can be tested on Linux.
+    """
+    raise ProfileError(
+        "Bountiful on Linux is moving to Vulkan and doesn't run there yet."
+    )
 
 
 # --- Validation ---
@@ -153,6 +115,13 @@ _REQUIRED = {
     "chat": ("file", "url", "alias", "display_name", "publisher",
              "family", "max_tokens"),
 }
+
+
+def _raise_problems(path: Path, problems: list[str]) -> NoReturn:
+    raise ProfileError(
+        f"Problems in {path.name}:\n"
+        + "\n".join(f"  - {p}" for p in problems)
+    )
 
 
 def _check_format(profile: dict) -> list[str]:
@@ -281,7 +250,7 @@ def _check_entry(name: str, entry: dict, required: tuple) -> list[str]:
 
 
 def _validate(profile: dict, profile_path: Path) -> None:
-    """Stop with a list of problems if the profile is malformed."""
+    """Raise ProfileError listing every problem, if the profile is malformed."""
     problems = _check_format(profile)
 
     for role in ("embedding", "summary"):
@@ -297,40 +266,80 @@ def _validate(profile: dict, profile_path: Path) -> None:
         problems += _check_entry(f'chat."{model_id}"', entry, _REQUIRED["chat"])
 
     if problems:
-        sys.exit(
-            f"Problems in {profile_path.name}:\n"
-            + "\n".join(f"  - {p}" for p in problems)
+        _raise_problems(profile_path, problems)
+
+
+# --- Selection ---
+
+def _read(path: Path) -> dict:
+    """Parse one profile file."""
+    try:
+        return tomllib.loads(path.read_text())
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        raise ProfileError(f"Couldn't read {path.name}: {e}") from e
+
+
+def _select(machine: Machine) -> tuple[str, dict]:
+    """The largest profile for this machine's backend that fits its memory.
+
+    Returns (name, profile). Only each profile's format and [needs] are
+    checked here; the chosen profile is checked in full when it loads.
+    """
+    candidates = []
+    for path in sorted(PROFILES_DIR.glob("*.toml")):
+        profile = _read(path)
+        problems = _check_format(profile)
+        if problems:
+            _raise_problems(path, problems)
+        needs = profile["needs"]
+        if needs["backend"] == machine.backend:
+            candidates.append((needs["memory_gb"], path.stem, profile))
+
+    backend = machine.backend.capitalize()
+    if not candidates:
+        raise ProfileError(f"No profile is available for {backend}.")
+
+    fitting = [c for c in candidates if c[0] <= machine.memory_gb]
+    if not fitting:
+        smallest = min(c[0] for c in candidates)
+        raise ProfileError(
+            f"This machine has {machine.memory_gb} GB for models. "
+            f"Bountiful needs at least {smallest} GB with {backend}: "
+            f"its models don't fit in less."
         )
+
+    memory_gb, name, profile = max(fitting, key=lambda c: c[0])
+    if machine.memory_gb > memory_gb:
+        logger.warning(
+            "This machine has %d GB for models. Bountiful's largest %s "
+            "profile, %s, is made for %d GB, so it will use that. It "
+            "should work, but this configuration is untested.",
+            machine.memory_gb, backend, name, memory_gb,
+        )
+    return name, profile
 
 
 # --- Loading ---
 
+def _load() -> tuple[str, dict]:
+    """Choose, load, and check the profile, once per process."""
+    global _loaded
+    if _loaded is None:
+        name, profile = _select(detect_machine())
+        _validate(profile, PROFILES_DIR / f"{name}.toml")
+        logger.info("Loaded hardware profile: %s", name)
+        _loaded = (name, profile)
+    return _loaded
+
+
 def get_profile() -> dict:
-    """Load, check, and cache the hardware profile.
+    """The profile in use."""
+    return _load()[1]
 
-    The profile TOML is read from the engine package directory.
-    Detection, parsing, and checking happen once per process.
-    """
-    global _profile
-    if _profile is not None:
-        return _profile
 
-    hw = detect_hardware()
-    profile_path = PROFILES_DIR / f"{hw}.toml"
-
-    if not profile_path.exists():
-        sys.exit(
-            f"No profile found for hardware '{hw}' at {profile_path}\n"
-            f"Available profiles: "
-            f"{[p.stem for p in PROFILES_DIR.glob('*.toml')]}"
-        )
-
-    profile = tomllib.loads(profile_path.read_text())
-    _validate(profile, profile_path)
-
-    _profile = profile
-    logger.info("Loaded hardware profile: %s", hw)
-    return _profile
+def profile_name() -> str:
+    """The name of the profile in use, such as metal_32gb."""
+    return _load()[0]
 
 
 # --- Profile helpers ---
@@ -365,7 +374,7 @@ def get_default_chat_model() -> tuple[str, dict]:
         first = next(iter(models))
         return first, models[first]
 
-    sys.exit("No chat models defined in profile.")
+    raise ProfileError("No chat models are defined in the profile.")
 
 
 def get_available_chat_models() -> dict:

@@ -66,7 +66,7 @@ from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT, LLAMA_VERSION
 from basic_bot.infrastructure.orchestration import fold_sequential
 from basic_bot.infrastructure.server import ServerError, stop_all
 from basic_bot.memory import get_messages
-from basic_bot.profile import detect_hardware
+from basic_bot.profile import ProfileError, profile_name
 from basic_bot.providers.protocol import (
     REASONING_ALWAYS,
     REASONING_NONE,
@@ -206,7 +206,7 @@ def _versions() -> str:
     return (
         f"basic-bot {engine}, "
         f"llama.cpp {LLAMA_VERSION} ({LLAMA_COMMIT[:7]}), "
-        f"profile {detect_hardware()}"
+        f"profile {profile_name()}"
     )
 
 
@@ -255,11 +255,12 @@ class Session:
         load_secrets(agent_path)
         try:
             runtime = create_runtime(agent_path)
-        except NoModelsError as e:
+            versions = _versions()
+        except (NoModelsError, ProfileError) as e:
             logger.error("Session could not open: %s", e)
             raise SessionError(str(e)) from e
 
-        logger.info("Session opened: %s", _versions())
+        logger.info("Session opened: %s", versions)
         return cls(runtime, agent_config, log_path)
 
     def start(self) -> None:

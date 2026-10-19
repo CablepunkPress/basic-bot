@@ -20,11 +20,17 @@ import time
 import urllib.error
 import urllib.request
 from pathlib import Path
+from typing import NoReturn
 from urllib.parse import urlparse
 
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
 from basic_bot.paths import MODELS_DIR
-from basic_bot.profile import detect_hardware, get_downloadable_models
+from basic_bot.profile import (
+    ProfileError,
+    detect_machine,
+    get_downloadable_models,
+    profile_name,
+)
 
 # Which files have passed their checksum, so a rebuild doesn't rehash
 # 40GB. Only a cache: the checksum in the profile is the truth.
@@ -48,7 +54,7 @@ ROLE_NAMES = {
 }
 
 
-def _fail(message: str) -> None:
+def _fail(message: str) -> NoReturn:
     sys.exit(f"\nERROR: {message}")
 
 
@@ -342,27 +348,31 @@ def _download_models() -> None:
 COMMON_FLAGS = ["-DLLAMA_USE_PREBUILT_UI=OFF"]
 
 
-def _build_config(hardware: str) -> tuple[list[str], str]:
-    """cmake flags and backend name for the detected hardware.
+def _build_config(backend: str) -> tuple[list[str], str]:
+    """cmake flags and backend name for this machine's backend.
 
-    Metal is llama.cpp's default on macOS, so Apple Silicon needs no
-    backend flag. Detection has already stopped on unsupported hardware.
+    Metal is llama.cpp's default on macOS, so it needs no backend flag.
     """
-    if hardware.startswith("metal"):
+    if backend == "metal":
         return COMMON_FLAGS, "Metal"
     return ["-DGGML_CUDA=ON", *COMMON_FLAGS], "CUDA"
 
 
 def main() -> None:
     print("  detecting hardware")
-    hw = detect_hardware()
-    print(f"    hardware: {hw}")
+    try:
+        machine = detect_machine()
+        name = profile_name()
+    except ProfileError as e:
+        _fail(str(e))
+    print(f"    {machine.backend.capitalize()}, {machine.memory_gb} GB for models")
+    print(f"    profile: {name}")
 
     print("  checking build tools")
-    check_prerequisites(hw)
+    check_prerequisites(machine.backend)
 
     print("  llama.cpp, the inference server")
-    flags, backend = _build_config(hw)
+    flags, backend = _build_config(machine.backend)
     build(flags, backend)
 
     print("  AI models")
