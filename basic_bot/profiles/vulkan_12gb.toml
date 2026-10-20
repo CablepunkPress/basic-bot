@@ -1,20 +1,17 @@
-# Hardware Profile: NVIDIA 12GB+ VRAM
+# Hardware Profile: Vulkan 12GB
 # Tested on: RTX 3060 12GB + 32GB DDR4
-# Prototype hardware. The supported platform is metal_32gb.
+#
+# Sequential server mode: one llama-server process at a time. Each
+# model fits in 12GB of graphics memory on its own, with no CPU
+# offloading for the default chat model.
 #
 # Format and needs
 # format is the version of this file's layout, so the engine can tell
-# when a profile was written for a different version of it. [needs]
-# states what the machine must have:
+# when a profile was written for a different version of it.
+# [needs] states what the machine must have:
 #   backend     the GPU backend llama.cpp is built with: "metal" or "vulkan"
 #   memory_gb   the memory the models can use: unified memory on a Mac,
 #               the graphics card's own memory with Vulkan
-#
-# Sequential server mode — one llama-server process at a time.
-# All models fit in 12GB VRAM individually. No CPU offloading
-# needed for the default chat model.
-
-# Build: llama.cpp compiled with -DGGML_CUDA=ON
 #
 # Reasoning tables
 # A [reasoning] table describes how a model reasons, in the engine's
@@ -28,6 +25,14 @@
 #   effort_key              chat_template_kwargs key for the level
 #   effort_needs_reasoning  optional only: true if effort does nothing
 #                           while reasoning is off
+#
+# Pinned downloads
+# Each url names a specific commit, not main, so a publisher's later
+# re-upload can't change what gets downloaded. sha256 and size come
+# from Hugging Face's API for that commit and are checked after
+# download. To move to a newer file, update all three together.
+# The embedding, summary, and default chat models are always
+# downloaded; the build offers the other chat models, once each.
 
 format = 1
 
@@ -36,12 +41,14 @@ backend = "vulkan"
 memory_gb = 12
 
 # --- Embedding ---
-# Nemotron-3-Embed-8B Q8_0 — 8B dense transformer, 4096-dim vectors
-# query:/passage: prefix format. ~8.46 GB on disk.
+# Nemotron-3-Embed-8B Q8_0: 8B dense transformer, 4096-dim vectors,
+# query:/passage: prefix format. ~8.46 GB. The same file as metal_32gb.
 
 [embedding]
 file = "Nemotron-3-Embed-8B-Q8_0.gguf"
-url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/main/Nemotron-3-Embed-8B-Q8_0.gguf"
+url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/1ffb81e403311c4dc6879b9c3cbb6ebfa18b86df/Nemotron-3-Embed-8B-Q8_0.gguf"
+sha256 = "0d0e0d9f291fc116a830bf5cd0f0e18d756c6b6f0f24f9d2ba64f4d188bc78fd"
+size = 8458435477
 alias = "nemotron-3-embed-8b-q8_0"
 query_prefix = "query: "
 passage_prefix = "passage: "
@@ -52,15 +59,16 @@ ubatch_size = 8192
 
 
 # --- Summary ---
-# Gemma 4 12B IT Q5_K_M — pure transformer, 12B dense
-# Replaces Qwen3-8B for summary. Larger model with better instruction
-# following for supersession. Pure transformer avoids the hybrid
-# SSM/attention failure that destroyed summaries.
+# Gemma 4 12B IT Q5_K_M: pure transformer, 12B dense, ~8.77 GB. From the
+# same commit as metal_32gb's Q6_K_L. A pure transformer avoids the
+# hybrid SSM/attention failure that destroyed summaries.
 # Thinking always off. No presence penalty (single-shot generation).
 
 [summary]
 file = "gemma-4-12B-it-Q5_K_M.gguf"
-url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/main/gemma-4-12B-it-Q5_K_M.gguf"
+url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/2ae7d41be21ca62de00a2d320ee9cec50daa3aa6/gemma-4-12B-it-Q5_K_M.gguf"
+sha256 = "24fe88d9e6bba6a1805629a09e40d4d837a894d559c7708055f7a03211e2a25e"
+size = 8774965728
 alias = "gemma-4-12b-it-q5_k_m"
 publisher = "Google"
 family = "Gemma"
@@ -82,64 +90,26 @@ presence_penalty = 0.0
 
 
 # --- Chat Models ---
-# The default chat model is always downloaded; the build offers the
-# others. The UI shows models whose GGUF file exists on disk.
+# The UI shows models whose GGUF file exists on disk.
 
-
-# Qwen3-8B Q8_0 — same model as summary, higher precision than Q4_K_M
-# Pure transformer, 8B dense, fits entirely in 12GB VRAM.
-# Proven: ~15-30s per response without thinking, correct self-identification.
-# Sampling per Qwen3-8B-GGUF card recommendations for quantized models.
-
-[chat.qwen3-8b-q8_0]
-file = "Qwen3-8B-Q8_0.gguf"
-url = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-default = false
-alias = "qwen3-8b-q8_0"
-display_name = "Qwen3 8B Q8_0"
-publisher = "Alibaba"
-family = "Qwen"
-rank = 1
-gpu_layers = -1
-flash_attn = "on"
-ctx_size = 32768
-max_tokens = 16384
-
-[chat.qwen3-8b-q8_0.reasoning]
-mode = "optional"
-default = false
-switch_key = "enable_thinking"
-
-[chat.qwen3-8b-q8_0.sampling.thinking]
-temperature = 0.6
-top_p = 0.95
-top_k = 20
-min_p = 0.0
-presence_penalty = 1.5
-
-[chat.qwen3-8b-q8_0.sampling.non_thinking]
-temperature = 0.7
-top_p = 0.8
-top_k = 20
-min_p = 0.0
-presence_penalty = 1.5
-
-
-# Qwen3.5-9B Q5_K_M — hybrid SSM/attention (DeltaNet + Gated Attention)
-# 9B parameters, all active per token. ~6.1 GiB on disk.
-# Unsloth quantization. Do NOT use for summary (destroys existing summaries).
-# Sampling per Qwen3.5-9B card recommendations for general tasks.
+# --- Qwen3.5 9B ---
+# Hybrid SSM/attention (DeltaNet + Gated Attention), 9B parameters, all
+# active per token. ~6.58 GB. Unsloth quantization. Never use it as the
+# summary model: it destroys existing summaries.
+# Sampling per the Qwen3.5-9B card's recommendations for general tasks.
 # Thinking can be switched; no effort levels.
 
 [chat."qwen3.5-9b-q5_k_m"]
 file = "Qwen3.5-9B-Q5_K_M.gguf"
-url = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf"
+url = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q5_K_M.gguf"
+sha256 = "dc2a39aef291f91a9116ad214058da0d86eb648743a124bd8c333787c4b9c91c"
+size = 6577841376
 default = true
 alias = "qwen3.5-9b-q5_k_m"
 display_name = "Qwen3.5 9B Q5_K_M"
 publisher = "Alibaba"
 family = "Qwen"
-rank = 2
+rank = 1
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
