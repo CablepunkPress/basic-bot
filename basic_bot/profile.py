@@ -282,22 +282,25 @@ def _check_pin(name: str, entry: dict) -> list[str]:
 
 
 def _check_draft(name: str, table: dict) -> list[str]:
-    """Check one [draft] table: built-in drafting layers, or a drafter file."""
+    """Check one [draft] table: a drafter file, a type, or both.
+
+    type = "mtp" alone means drafting layers built into the model
+    file. A file is a separate drafter, pinned like any model. Both
+    together are a separate drafter whose type llama.cpp can't tell
+    from the file, such as Gemma 4's MTP assistants.
+    """
     draft_name = f"{name}.draft"
 
     if "type" not in table and "file" not in table:
-        return [f'{draft_name}: needs type = "mtp" or a file']
+        return [f'{draft_name}: needs type = "mtp", a file, or both']
 
-    if "type" in table:
-        problems = []
-        if table["type"] != "mtp":
-            problems.append(f'{draft_name}: type must be "mtp"')
-        if "file" in table:
-            problems.append(f"{draft_name}: use either type or file, not both")
-        return problems
-
-    problems = [] if "url" in table else [f"{draft_name}: missing url"]
-    problems += _check_pin(draft_name, table)
+    problems = []
+    if "type" in table and table["type"] != "mtp":
+        problems.append(f'{draft_name}: type must be "mtp"')
+    if "file" in table:
+        if "url" not in table:
+            problems.append(f"{draft_name}: missing url")
+        problems += _check_pin(draft_name, table)
     return problems
 
 

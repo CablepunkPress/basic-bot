@@ -139,14 +139,17 @@ def _build_launch_args(entry: dict) -> list[str]:
 
     # Speculative decoding: a drafter proposes tokens the model checks
     # in one pass. Speeds up generation without changing the output.
+    # A drafter file alone: llama.cpp reads its type from the file.
+    # type = "mtp" alone: drafting layers built into the model file.
+    # Both: a drafter file whose type llama.cpp can't read from it,
+    # such as Gemma 4's MTP assistants.
     draft = entry.get("draft")
     if draft:
-        if draft.get("type") == "mtp":
-            args += ["--spec-type", "draft-mtp"]
-        elif "file" in draft:
+        spec_type = ["--spec-type", "draft-mtp"] if draft.get("type") == "mtp" else []
+        if "file" in draft:
             draft_path = MODELS_DIR / draft["file"]
             if draft_path.exists():
-                args += ["-md", str(draft_path)]
+                args += ["-md", str(draft_path)] + spec_type
                 if "gpu_layers" in draft:
                     args += ["-ngld", str(draft["gpu_layers"])]
             else:
@@ -155,6 +158,8 @@ def _build_launch_args(entry: dict) -> list[str]:
                     "Run 'python3 build.py' to download it.",
                     draft["file"],
                 )
+        else:
+            args += spec_type
 
     # Use the chat template embedded in each GGUF. Muse Glimmer
     # requires this; it is harmless for the other models.
