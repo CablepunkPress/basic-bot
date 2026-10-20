@@ -304,6 +304,12 @@ def _check_draft(name: str, table: dict) -> list[str]:
 def _check_entry(name: str, entry: dict, required: tuple) -> list[str]:
     """Check one model entry: required keys, pin, reasoning, and draft tables."""
     problems = [f"{name}: missing {key}" for key in required if key not in entry]
+    if "download" in entry:
+        problems.append(
+            f"{name}: download is no longer used. The embedding, summary, "
+            f"and default chat models are always downloaded, and the build "
+            f"offers the other chat models."
+        )
     problems += _check_pin(name, entry)
     reasoning = entry.get("reasoning")
     if reasoning is not None:
@@ -329,6 +335,17 @@ def _validate(profile: dict, profile_path: Path) -> None:
         problems.append("no [chat] models defined")
     for model_id, entry in chat.items():
         problems += _check_entry(f'chat."{model_id}"', entry, _REQUIRED["chat"])
+        if not isinstance(entry.get("default", False), bool):
+            problems.append(f'chat."{model_id}": default must be true or false')
+
+    # The default chat model is always downloaded, so there must be
+    # exactly one, or which models are mandatory would be ambiguous.
+    defaults = [m for m, e in chat.items() if e.get("default") is True]
+    if chat and len(defaults) != 1:
+        problems.append(
+            f"exactly one chat model must have default = true "
+            f"(found {len(defaults)})"
+        )
 
     if problems:
         _raise_problems(profile_path, problems)
@@ -347,8 +364,8 @@ def _read(path: Path) -> dict:
 def _select(machine: Machine) -> tuple[str, dict]:
     """The largest profile for this machine's backend that fits its memory.
 
-    Returns (name, profile). Only each profile’s format and [needs] 
-    are checked here; the caller checks the chosen profile in full.
+    Returns (name, profile). Only each profile's format and [needs] are
+    checked here; the caller checks the chosen profile in full.
     """
     candidates = []
     for path in sorted(PROFILES_DIR.glob("*.toml")):
@@ -477,19 +494,13 @@ def get_chat_models() -> dict:
 def get_default_chat_model() -> tuple[str, dict]:
     """The chat model marked default = true.
 
-    Returns (model_id, config) tuple.
+    The validator ensures there is exactly one. Returns (model_id,
+    config).
     """
     for model_id, config in get_chat_models().items():
-        if config.get("default", False):
+        if config.get("default") is True:
             return model_id, config
-
-    # No default marked — use the first one
-    models = get_chat_models()
-    if models:
-        first = next(iter(models))
-        return first, models[first]
-
-    raise ProfileError("No chat models are defined in the profile.")
+    raise ProfileError("The profile has no default chat model.")
 
 
 def get_available_chat_models() -> dict:
@@ -506,30 +517,33 @@ def get_available_chat_models() -> dict:
 
 
 def get_downloadable_models() -> list[dict]:
-    """All model files across all roles, with download status.
+    """Every model file the profile names, and whether it's mandatory.
 
-    Returns a list of dicts with role, file, url, sha256, size,
-    download flag, and whether the file exists on disk. Chat models
-    also carry model_id and default. A chat model's drafter file
-    follows it, with role "draft", for_model naming its model, and
-    the same download flag. sha256 and size are None for unpinned
-    files.
+    The embedding model, the summary model, and the default chat model
+    are mandatory: the build always downloads them. Every other chat
+    model is optional, downloaded only if the user accepts it.
+
+    Each dict has role, file, display_name, url, sha256, size,
+    mandatory, and exists; sha256 and size are None for unpinned
+    files. Chat models also carry model_id. A chat model's drafter
+    file follows it, with role "draft" and for_model naming its model,
+    and is mandatory exactly when its model is.
     """
     profile = get_profile()
+    default_id, _ = get_default_chat_model()
 
-    # (role, model_id, entry, download by default)
+    # (role, model_id, entry, mandatory)
     entries = [
         ("embedding", None, profile["embedding"], True),
         ("summary", None, profile["summary"], True),
     ]
     entries += [
-        ("chat", model_id, config, False)
+        ("chat", model_id, config, model_id == default_id)
         for model_id, config in get_chat_models().items()
     ]
 
     models = []
-    for role, model_id, entry, download_default in entries:
-        download = entry.get("download", download_default)
+    for role, model_id, entry, mandatory in entries:
         model = {
             "role": role,
             "file": entry["file"],
@@ -537,15 +551,13 @@ def get_downloadable_models() -> list[dict]:
             "url": entry["url"],
             "sha256": entry.get("sha256"),
             "size": entry.get("size"),
-            "download": download,
+            "mandatory": mandatory,
             "exists": (MODELS_DIR / entry["file"]).exists(),
         }
         if model_id is not None:
             model["model_id"] = model_id
-            model["default"] = entry.get("default", False)
         models.append(model)
 
-        # A drafter file downloads whenever its model does
         draft = entry.get("draft") or {}
         if "file" in draft:
             models.append({
@@ -555,7 +567,7 @@ def get_downloadable_models() -> list[dict]:
                 "url": draft["url"],
                 "sha256": draft.get("sha256"),
                 "size": draft.get("size"),
-                "download": download,
+                "mandatory": mandatory,
                 "exists": (MODELS_DIR / draft["file"]).exists(),
                 "for_model": model_id,
             })

@@ -12,8 +12,24 @@ Pinned models, those with sha256 and size in the profile, are checked
 against their checksum and downloaded again when the pin changes. An
 interrupted download keeps its partial file and resumes on the next
 run. Unpinned models are accepted if present, but never downloaded.
+
+Which models are downloaded follows a rule. The embedding model, the
+summary model, and the default chat model, with its drafter, are
+mandatory. Every other chat model is optional: the build asks about
+each one once, defaulting to no, and records the answer beside the
+models in .choices.json, since every agent on the machine shares
+them. An optional model already on disk counts as accepted.
+--models asks about every optional model again. With no one at the
+keyboard, as when an app or a hosted service runs the build, only
+mandatory models are downloaded and nothing is recorded, so the
+questions wait for the next build someone runs by hand.
+
+Model files the profile doesn't use, or that belong to a declined
+model, are listed with their sizes and offered for deletion,
+defaulting to no.
 """
 
+import argparse
 import hashlib
 import json
 import shutil
@@ -37,6 +53,14 @@ from basic_bot.profile import (
 # Which files have passed their checksum, so a rebuild doesn't rehash
 # 40GB. Only a cache: the checksum in the profile is the truth.
 VERIFIED_FILE = MODELS_DIR / ".verified.json"
+
+# The user's answers about optional models: model ids accepted and
+# declined.
+CHOICES_FILE = MODELS_DIR / ".choices.json"
+
+# On a machine that's already set up, mandatory downloads larger than
+# this ask first, as when an update makes a new chat model the default.
+CONFIRM_BYTES = 5 * 1000 ** 3
 
 CHUNK = 1024 * 1024
 TIMEOUT = 60          # seconds without data before a stalled download fails
@@ -286,18 +310,126 @@ def _remaining_bytes(needed: list[dict]) -> int:
     return remaining
 
 
-def _download_models() -> None:
-    """List every model's status, then download what's missing."""
+# --- Choosing optional models ---
+
+def _ask(question: str, default: bool) -> bool:
+    """A yes-or-no question, answered at the keyboard."""
+    hint = "[Y/n]" if default else "[y/N]"
+    try:
+        answer = input(f"    {question} {hint} ").strip().lower()
+    except EOFError:
+        return default
+    if not answer:
+        return default
+    return answer in ("y", "yes")
+
+
+def _load_choices() -> dict[str, list[str]]:
+    try:
+        data = json.loads(CHOICES_FILE.read_text())
+    except (OSError, ValueError):
+        data = {}
+    return {key: list(data.get(key, [])) for key in ("accepted", "declined")}
+
+
+def _record_choice(choices: dict, model_id: str, accepted: bool) -> None:
+    for key in ("accepted", "declined"):
+        if model_id in choices[key]:
+            choices[key].remove(model_id)
+    choices["accepted" if accepted else "declined"].append(model_id)
+    CHOICES_FILE.write_text(json.dumps(choices, indent=2) + "\n")
+
+
+def _wants(model: dict, size: int, choices: dict,
+           ask_again: bool, interactive: bool) -> bool:
+    """Whether an optional chat model should be on this machine."""
+    model_id = model["model_id"]
+    name = model.get("display_name") or model["file"]
+
+    if ask_again and interactive:
+        if model["exists"]:
+            wanted = _ask(f"Keep {name} ({_gb(size)}, downloaded)?", True)
+        else:
+            wanted = _ask(f"Download {name} ({_gb(size)})?", False)
+        _record_choice(choices, model_id, wanted)
+        return wanted
+
+    if model_id in choices["accepted"]:
+        return True
+    if model_id in choices["declined"]:
+        return False
+
+    # Already here, e.g. an old default that became optional
+    if model["exists"]:
+        _record_choice(choices, model_id, True)
+        return True
+
+    if not interactive:
+        return False
+    wanted = _ask(f"{name} is available ({_gb(size)}). Download it?", False)
+    _record_choice(choices, model_id, wanted)
+    return wanted
+
+
+def _offer_cleanup(unused: list[Path], interactive: bool, verified: dict) -> None:
+    """List model files nothing uses, and offer to delete them."""
+    if not unused:
+        return
+    total = sum(p.stat().st_size for p in unused)
+    print()
+    print("    model files this profile doesn't use:")
+    for path in unused:
+        print(f"      {path.name} ({_gb(path.stat().st_size)})")
+    if not interactive:
+        print(f"    delete them by hand to free {_gb(total)}")
+        return
+    if not _ask(f"Delete them, freeing {_gb(total)}?", False):
+        return
+    for path in unused:
+        path.unlink()
+        verified.pop(path.name, None)
+    _save_verified(verified)
+    print("    deleted")
+
+
+# --- Models ---
+
+def _download_models(ask_again: bool) -> None:
+    """Decide which models belong here, then download what's missing."""
     MODELS_DIR.mkdir(parents=True, exist_ok=True)
     verified = _load_verified()
+    already_set_up = bool(verified)
+    choices = _load_choices()
+    interactive = sys.stdin.isatty()
 
+    models = get_downloadable_models()
+    drafter_size = {
+        m["for_model"]: m["size"] or 0 for m in models if m["role"] == "draft"
+    }
+
+    wanted_ids: set[str] = set()
+    declined_files: set[str] = set()
     needed = []
-    for model in get_downloadable_models():
+
+    for model in models:
         description = _describe(model)
 
-        if not model["download"]:
-            print(f"    {description} — optional, not downloaded")
-            continue
+        if model["role"] == "draft":
+            # Follows its chat model, which was just decided and listed
+            if not model["mandatory"] and model["for_model"] not in wanted_ids:
+                if model["sha256"] is not None:
+                    declined_files.add(model["file"])
+                continue
+        elif not model["mandatory"]:
+            if model["sha256"] is None:
+                print(f"    {description} — optional, not pinned yet")
+                continue
+            size = model["size"] + drafter_size.get(model["model_id"], 0)
+            if not _wants(model, size, choices, ask_again, interactive):
+                print(f"    {description} — optional, not downloaded")
+                declined_files.add(model["file"])
+                continue
+            wanted_ids.add(model["model_id"])
 
         if _is_current(model, verified):
             status = "downloaded and verified" if model["sha256"] else "present"
@@ -306,19 +438,38 @@ def _download_models() -> None:
 
         if model["sha256"] is None:
             _fail(
-                f"the {description} is marked for download but isn't "
-                f"pinned.\n\n"
+                f"the {description} is required but isn't pinned.\n\n"
                 f"Add its sha256 and size to the profile, with a url that "
-                f"names a commit, or set download = false.\n"
+                f"names a commit. 'python -m basic_bot.pin' prints them.\n"
                 f"Then run 'python3 build.py' again."
             )
 
         print(f"    {description} — needs download ({_gb(model['size'])})")
         needed.append(model)
 
+    named = {m["file"] for m in models}
+    unused = sorted(
+        p for p in MODELS_DIR.glob("*.gguf")
+        if p.name not in named or p.name in declined_files
+    )
+    _offer_cleanup(unused, interactive, verified)
+
     if not needed:
         print("    nothing to download")
         return
+
+    required = _remaining_bytes([m for m in needed if m["mandatory"]])
+    if already_set_up and interactive and required > CONFIRM_BYTES:
+        print()
+        if not _ask(
+            f"The required models need {_gb(required)} of new downloads. "
+            f"Download them now?",
+            True,
+        ):
+            sys.exit(
+                "\nStopped before downloading. Run 'python3 build.py' "
+                "again when you're ready."
+            )
 
     remaining = _remaining_bytes(needed)
     free = shutil.disk_usage(MODELS_DIR).free
@@ -360,7 +511,20 @@ def _build_config(backend: str) -> tuple[list[str], str]:
     return ["-DGGML_VULKAN=ON", *COMMON_FLAGS], "Vulkan"
 
 
+def _arguments() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        prog="python3 build.py",
+        description="Build llama.cpp and download the AI models.",
+    )
+    parser.add_argument(
+        "--models", action="store_true",
+        help="ask again about every optional chat model",
+    )
+    return parser.parse_args()
+
+
 def main() -> None:
+    args = _arguments()
     try:
         backend = platform_backend()
     except ProfileError as e:
@@ -382,7 +546,7 @@ def main() -> None:
     print(f"    profile: {name}")
 
     print("  AI models")
-    _download_models()
+    _download_models(ask_again=args.models)
 
 
 if __name__ == "__main__":
