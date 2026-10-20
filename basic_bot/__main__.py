@@ -381,7 +381,7 @@ def _offer_cleanup(unused: list[Path], interactive: bool, verified: dict) -> Non
     for path in unused:
         print(f"      {path.name} ({_gb(path.stat().st_size)})")
     if not interactive:
-        print(f"    delete them by hand to free {_gb(total)}")
+        print(f"    delete them from {MODELS_DIR} to free {_gb(total)}")
         return
     if not _ask(f"Delete them, freeing {_gb(total)}?", False):
         return
