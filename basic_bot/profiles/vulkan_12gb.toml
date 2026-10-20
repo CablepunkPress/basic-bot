@@ -92,44 +92,51 @@ presence_penalty = 0.0
 # --- Chat Models ---
 # The UI shows models whose GGUF file exists on disk.
 
-# --- Qwen3.5 9B ---
-# Hybrid SSM/attention (DeltaNet + Gated Attention), 9B parameters, all
-# active per token. ~6.58 GB. Unsloth quantization. Never use it as the
-# summary model: it destroys existing summaries.
-# Sampling per the Qwen3.5-9B card's recommendations for general tasks.
-# Thinking can be switched; no effort levels.
+# --- Gemma 4 26B A4B ---
+# Base: https://huggingface.co/google/gemma-4-26B-A4B
+#   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-26B-A4B-it
+#       └─ Quantization: https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf
+# Mixture of experts: 25.2B parameters, 3.8B active per token (8 of
+# 128 experts plus one shared), 30 layers. ~14.4 GB.
+# Google's quantization-aware training (QAT) Q4_0: trained to be cut
+# to 4 bits, so it keeps more quality than an ordinary 4-bit file.
+# From the Gemma 4 model cards:
+# - Thinking is off unless switched on per request with
+#   chat_template_kwargs {"enable_thinking": true}. No effort levels.
+# - Google recommends temperature 1.0, top_p 0.95, top_k 64 for all
+#   uses, with or without thinking.
+# - Earlier turns should carry only final answers, not thinking; the
+#   chat template embedded in the GGUF handles this.
+# - Vision needs the separate mmproj file, which isn't downloaded yet.
+# - No drafter: Google's card says one must be a QAT checkpoint of the
+#   same precision, and none is published as a GGUF.
+# - It doesn't fit in 12 GB. llama.cpp's automatic fitting moves
+#   experts to system memory until the rest fits, as long as
+#   gpu_layers stays at -1 and n_cpu_moe is not set: setting tensor
+#   placement by hand turns the fitting off.
 
-[chat."qwen3.5-9b-q5_k_m"]
-file = "Qwen3.5-9B-Q5_K_M.gguf"
-url = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/3885219b6810b007914f3a7950a8d1b469d598a5/Qwen3.5-9B-Q5_K_M.gguf"
-sha256 = "dc2a39aef291f91a9116ad214058da0d86eb648743a124bd8c333787c4b9c91c"
-size = 6577841376
+[chat."gemma-4-26b-a4b-it-qat-q4_0"]
+file = "gemma-4-26B_q4_0-it.gguf"
+url = "https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/d1c082be9cf3c8a514acf63b8761f4b41935842e/gemma-4-26B_q4_0-it.gguf"
+sha256 = "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d"
+size = 14439363584
 default = true
-alias = "qwen3.5-9b-q5_k_m"
-display_name = "Qwen3.5 9B Q5_K_M"
-publisher = "Alibaba"
-family = "Qwen"
+alias = "gemma-4-26b-a4b-it-qat-q4_0"
+display_name = "Gemma 4 26B A4B QAT Q4_0"
+publisher = "Google"
+family = "Gemma"
 rank = 1
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
 
-[chat."qwen3.5-9b-q5_k_m".reasoning]
+[chat."gemma-4-26b-a4b-it-qat-q4_0".reasoning]
 mode = "optional"
 default = false
 switch_key = "enable_thinking"
 
-[chat."qwen3.5-9b-q5_k_m".sampling.thinking]
+[chat."gemma-4-26b-a4b-it-qat-q4_0".sampling]
 temperature = 1.0
 top_p = 0.95
-top_k = 20
-min_p = 0.0
-presence_penalty = 1.5
-
-[chat."qwen3.5-9b-q5_k_m".sampling.non_thinking]
-temperature = 0.7
-top_p = 0.8
-top_k = 20
-min_p = 0.0
-presence_penalty = 1.5
+top_k = 64

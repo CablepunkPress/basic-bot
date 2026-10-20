@@ -38,6 +38,8 @@
 # or a separate drafter file, pinned like any model:
 #   file, url, sha256, size
 #   gpu_layers     drafter layers to run on the GPU
+# or both, for a drafter file whose type llama.cpp can't read from
+# it, such as Gemma 4's MTP assistants.
 
 format = 1
 
@@ -162,6 +164,107 @@ top_p = 0.95
 top_k = 64
 
 
+# --- Gemma 4 31B ---
+# Base: https://huggingface.co/google/gemma-4-31B
+#   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-31B-it
+#       └─ Quantization: https://huggingface.co/bartowski/google_gemma-4-31B-it-GGUF
+# Dense, 30.7B parameters, 60 layers, mostly sliding-window attention.
+# 4-bit: ~19.6 GB, plus the MTP drafter, ~0.5 GB.
+# From the Gemma 4 model cards:
+# - Thinking is off unless switched on per request with
+#   chat_template_kwargs {"enable_thinking": true}. No effort levels.
+# - Google recommends temperature 1.0, top_p 0.95, top_k 64 for all
+#   uses, with or without thinking.
+# - Earlier turns should carry only final answers, not thinking; the
+#   chat template embedded in the GGUF handles this.
+# - Vision needs the separate mmproj file, which isn't downloaded yet.
+# - The MTP drafter is Google's gemma-4-31B-it-assistant. llama.cpp
+#   can't tell its type from the file, so the draft table states it.
+#   Google claims up to 3x faster generation; on the M6's bandwidth
+#   this dense model is slow without it.
+
+[chat."gemma-4-31b-it-q4_k_m"]
+file = "google_gemma-4-31B-it-Q4_K_M.gguf"
+url = "https://huggingface.co/bartowski/google_gemma-4-31B-it-GGUF/resolve/619aca7589c72be65dd968de8602ad23d68b5c14/google_gemma-4-31B-it-Q4_K_M.gguf"
+sha256 = "2959c1b0a4f792493bb0092846ea06aec54547e47be979c282634d938d501b75"
+size = 19598489952
+default = false
+alias = "gemma-4-31b-it-q4_k_m"
+display_name = "Gemma 4 31B Q4_K_M"
+publisher = "Google"
+family = "Gemma"
+rank = 2
+gpu_layers = -1
+flash_attn = "on"
+ctx_size = 32768
+max_tokens = 16384
+
+[chat."gemma-4-31b-it-q4_k_m".reasoning]
+mode = "optional"
+default = false
+switch_key = "enable_thinking"
+
+[chat."gemma-4-31b-it-q4_k_m".draft]
+type = "mtp"
+file = "mtp-google_gemma-4-31B-it-Q8_0.gguf"
+url = "https://huggingface.co/bartowski/google_gemma-4-31B-it-GGUF/resolve/619aca7589c72be65dd968de8602ad23d68b5c14/mtp-google_gemma-4-31B-it-Q8_0.gguf"
+sha256 = "743b2b719e448f9a06e774b4f33dd7a391a73e94d32297c7590256484562eb52"
+size = 514705920
+
+[chat."gemma-4-31b-it-q4_k_m".sampling]
+temperature = 1.0
+top_p = 0.95
+top_k = 64
+
+
+# --- Gemma 4 26B A4B ---
+# Base: https://huggingface.co/google/gemma-4-26B-A4B
+#   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-26B-A4B-it
+#       └─ Quantization: https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf
+# Mixture of experts: 25.2B parameters, 3.8B active per token (8 of
+# 128 experts plus one shared), 30 layers. ~14.4 GB.
+# Google's quantization-aware training (QAT) Q4_0: trained to be cut
+# to 4 bits, so it keeps more quality than an ordinary 4-bit file.
+# From the Gemma 4 model cards:
+# - Thinking is off unless switched on per request with
+#   chat_template_kwargs {"enable_thinking": true}. No effort levels.
+# - Google recommends temperature 1.0, top_p 0.95, top_k 64 for all
+#   uses, with or without thinking.
+# - Earlier turns should carry only final answers, not thinking; the
+#   chat template embedded in the GGUF handles this.
+# - Vision needs the separate mmproj file, which isn't downloaded yet.
+# - No drafter: Google's card says one must be a QAT checkpoint of the
+#   same precision, and none is published as a GGUF.
+# - On the Mac it fits whole in memory; with only 3.8B parameters read
+#   per token, it should generate much faster than the dense models.
+
+[chat."gemma-4-26b-a4b-it-qat-q4_0"]
+file = "gemma-4-26B_q4_0-it.gguf"
+url = "https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/d1c082be9cf3c8a514acf63b8761f4b41935842e/gemma-4-26B_q4_0-it.gguf"
+sha256 = "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d"
+size = 14439363584
+default = false
+alias = "gemma-4-26b-a4b-it-qat-q4_0"
+display_name = "Gemma 4 26B A4B QAT Q4_0"
+publisher = "Google"
+family = "Gemma"
+rank = 3
+gpu_layers = -1
+flash_attn = "on"
+ctx_size = 32768
+max_tokens = 16384
+
+[chat."gemma-4-26b-a4b-it-qat-q4_0".reasoning]
+mode = "optional"
+default = false
+switch_key = "enable_thinking"
+
+[chat."gemma-4-26b-a4b-it-qat-q4_0".sampling]
+temperature = 1.0
+top_p = 0.95
+top_k = 64
+
+
 # --- Qwen3.8 27B ---
 # Base: https://huggingface.co/Qwen/Qwen3.8-27B
 #   └─ Quantization: https://huggingface.co/bartowski/Qwen3.8-27B-GGUF
@@ -189,7 +292,7 @@ alias = "qwen3.8-27b-q5_k_m"
 display_name = "Qwen3.8 27B Q5_K_M"
 publisher = "Alibaba"
 family = "Qwen"
-rank = 2
+rank = 4
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
