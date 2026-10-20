@@ -1,6 +1,6 @@
 # Hardware Profile: NVIDIA 12GB+ VRAM
 # Tested on: RTX 3060 12GB + 32GB DDR4
-# Prototype hardware. The supported platform is apple_32gb.
+# Prototype hardware. The supported platform is metal_32gb.
 #
 # Format and needs
 # format is the version of this file's layout, so the engine can tell
@@ -42,7 +42,6 @@ memory_gb = 12
 [embedding]
 file = "Nemotron-3-Embed-8B-Q8_0.gguf"
 url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/main/Nemotron-3-Embed-8B-Q8_0.gguf"
-download = true
 alias = "nemotron-3-embed-8b-q8_0"
 query_prefix = "query: "
 passage_prefix = "passage: "
@@ -62,7 +61,6 @@ ubatch_size = 8192
 [summary]
 file = "gemma-4-12B-it-Q5_K_M.gguf"
 url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/main/gemma-4-12B-it-Q5_K_M.gguf"
-download = true
 alias = "gemma-4-12b-it-q5_k_m"
 publisher = "Google"
 family = "Gemma"
@@ -84,11 +82,8 @@ presence_penalty = 0.0
 
 
 # --- Chat Models ---
-# Multiple models can be defined. Only models with download = true
-# are fetched at build time. Others are available if the user
-# downloads them manually.
-
-# The UI shows models whose GGUF file exists on disk.
+# The default chat model is always downloaded; the build offers the
+# others. The UI shows models whose GGUF file exists on disk.
 
 
 # Qwen3-8B Q8_0 — same model as summary, higher precision than Q4_K_M
@@ -99,7 +94,6 @@ presence_penalty = 0.0
 [chat.qwen3-8b-q8_0]
 file = "Qwen3-8B-Q8_0.gguf"
 url = "https://huggingface.co/Qwen/Qwen3-8B-GGUF/resolve/main/Qwen3-8B-Q8_0.gguf"
-download = false
 default = false
 alias = "qwen3-8b-q8_0"
 display_name = "Qwen3 8B Q8_0"
@@ -140,7 +134,6 @@ presence_penalty = 1.5
 [chat."qwen3.5-9b-q5_k_m"]
 file = "Qwen3.5-9B-Q5_K_M.gguf"
 url = "https://huggingface.co/unsloth/Qwen3.5-9B-GGUF/resolve/main/Qwen3.5-9B-Q5_K_M.gguf"
-download = true
 default = true
 alias = "qwen3.5-9b-q5_k_m"
 display_name = "Qwen3.5 9B Q5_K_M"
