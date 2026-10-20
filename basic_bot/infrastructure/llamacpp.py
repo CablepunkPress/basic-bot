@@ -13,8 +13,8 @@ After a successful build, the pin and the cmake flags are recorded
 beside the source, and a later run rebuilds only if either differs.
 Changing the pin is how llama.cpp is upgraded on purpose.
 
-Build flags and the backend name (Metal or CUDA) are passed by
-__main__.py based on hardware detection.
+Build flags and the backend name (Metal or Vulkan) are passed by
+__main__.py, from the operating system.
 """
 
 import os
@@ -96,32 +96,43 @@ def _check_macos() -> None:
     print("    Homebrew, Command Line Tools, and cmake found")
 
 
-def _check_nvidia_linux() -> None:
-    """NVIDIA on Linux: cmake, a C++ compiler, and the CUDA toolkit."""
+# Headers the Vulkan build needs, where distributions install them.
+# SPIR-V's are a separate package that the Vulkan one doesn't always
+# pull in, per llama.cpp's build documentation (docs/build.md).
+VULKAN_HEADER = Path("/usr/include/vulkan/vulkan.h")
+SPIRV_HEADER = Path("/usr/include/spirv/unified1/spirv.hpp")
+
+
+def _check_vulkan_linux() -> None:
+    """Vulkan on Linux: cmake, a C++ compiler, glslc, and the headers.
+
+    The Vulkan loader and the graphics driver are needed too, but
+    desktop distributions install those already. If one is missing,
+    detection finds no graphics card and says so.
+    """
     missing = []
     if shutil.which("cmake") is None:
         missing.append("cmake")
     if not any(shutil.which(c) for c in ("c++", "g++", "clang++")):
         missing.append("a C++ compiler")
-
-    if shutil.which("nvcc") is None:
-        # Arch's cuda package installs here and joins the PATH at next login
-        if Path("/opt/cuda/bin/nvcc").exists():
-            _fail(
-                "The CUDA toolkit is installed but not on your PATH yet.\n\n"
-                "Log out and back in.\n"
-                f"{RERUN}"
-            )
-        missing.append("the CUDA toolkit")
+    if not VULKAN_HEADER.exists():
+        missing.append("the Vulkan headers")
+    if shutil.which("glslc") is None:
+        missing.append("glslc, the shader compiler")
+    if not SPIRV_HEADER.exists():
+        missing.append("the SPIR-V headers")
 
     if missing:
         _fail(
             "Missing required tools: " + ", ".join(missing) + "\n\n"
             "Install them with your system's package manager:\n"
-            "  Arch/CachyOS:  sudo pacman -S cmake gcc cuda\n\n"
+            "  Arch/CachyOS:   sudo pacman -S cmake gcc vulkan-headers "
+            "shaderc spirv-headers\n"
+            "  Debian/Ubuntu:  sudo apt install cmake g++ libvulkan-dev "
+            "glslc spirv-headers\n\n"
             f"{RERUN}"
         )
-    print("    cmake, a C++ compiler, and the CUDA toolkit found")
+    print("    cmake, a C++ compiler, glslc, and the Vulkan headers found")
 
 
 def check_prerequisites(backend: str) -> None:
@@ -129,7 +140,7 @@ def check_prerequisites(backend: str) -> None:
     if backend == "metal":
         _check_macos()
     else:
-        _check_nvidia_linux()
+        _check_vulkan_linux()
 
 
 # ---------------------------------------------------------------------------
@@ -159,8 +170,8 @@ def build(flags: list[str], backend: str) -> None:
     """Clone and compile the pinned llama-server, if not already built.
 
     Args:
-        flags: Additional cmake flags, e.g. ["-DGGML_CUDA=ON"].
-        backend: The GPU backend being built, for messages ("Metal", "CUDA").
+        flags: Additional cmake flags, e.g. ["-DGGML_VULKAN=ON"].
+        backend: The GPU backend being built, for messages ("Metal", "Vulkan").
     """
     record = _record(flags)
     built = _built_version()
@@ -205,15 +216,12 @@ def build(flags: list[str], backend: str) -> None:
     if configure.returncode != 0:
         _fail("cmake configure failed — see output above")
 
-    # CUDA builds segfault with too many parallel jobs
-    jobs = "4" if backend == "CUDA" else str(os.cpu_count() or 4)
-
     result = subprocess.run(
         [
             "cmake", "--build", "build",
             "--config", "Release",
             "--target", "llama-server",
-            "-j", jobs,
+            "-j", str(os.cpu_count() or 4),
         ],
         cwd=LLAMA_DIR,
     )

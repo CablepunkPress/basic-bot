@@ -2,9 +2,11 @@
 
 Called by build.py in the bountiful repo, as `python -m basic_bot`.
 
-Detects hardware, checks the build tools for it, compiles the pinned
-llama.cpp with the right backend, and downloads the models the
-hardware profile requires.
+Takes the GPU backend from the operating system, checks the build
+tools for it, and compiles the pinned llama.cpp with that backend.
+Then detects the machine's memory, which on Linux needs the
+llama-server just built, chooses and records the hardware profile,
+and downloads the models it requires.
 
 Pinned models, those with sha256 and size in the profile, are checked
 against their checksum and downloaded again when the pin changes. An
@@ -27,9 +29,9 @@ from basic_bot.infrastructure.llamacpp import build, check_prerequisites
 from basic_bot.paths import MODELS_DIR
 from basic_bot.profile import (
     ProfileError,
-    detect_machine,
+    choose_profile,
     get_downloadable_models,
-    profile_name,
+    platform_backend,
 )
 
 # Which files have passed their checksum, so a rebuild doesn't rehash
@@ -355,25 +357,29 @@ def _build_config(backend: str) -> tuple[list[str], str]:
     """
     if backend == "metal":
         return COMMON_FLAGS, "Metal"
-    return ["-DGGML_CUDA=ON", *COMMON_FLAGS], "CUDA"
+    return ["-DGGML_VULKAN=ON", *COMMON_FLAGS], "Vulkan"
 
 
 def main() -> None:
-    print("  detecting hardware")
     try:
-        machine = detect_machine()
-        name = profile_name()
+        backend = platform_backend()
     except ProfileError as e:
         _fail(str(e))
-    print(f"    {machine.backend.capitalize()}, {machine.memory_gb} GB for models")
-    print(f"    profile: {name}")
+    flags, backend_name = _build_config(backend)
 
-    print("  checking build tools")
-    check_prerequisites(machine.backend)
+    print(f"  checking build tools for {backend_name}")
+    check_prerequisites(backend)
 
     print("  llama.cpp, the inference server")
-    flags, backend = _build_config(machine.backend)
-    build(flags, backend)
+    build(flags, backend_name)
+
+    print("  choosing a hardware profile")
+    try:
+        machine, name = choose_profile()
+    except ProfileError as e:
+        _fail(str(e))
+    print(f"    {backend_name}, {machine.memory_gb} GB for models")
+    print(f"    profile: {name}")
 
     print("  AI models")
     _download_models()
