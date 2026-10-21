@@ -17,6 +17,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from basic_bot.agent import load_agent
+
 
 def _discover_tool_secrets(agent_path: Path) -> list[tuple[str, str, str]]:
     """Scan tools/*/tool.json for secret declarations."""
@@ -52,7 +54,7 @@ def _ensure_package(name: str, reason: str) -> None:
 def run(agent_path: Path) -> None:
     """Interactive secret setup for the agent at agent_path."""
     agent_path = Path(agent_path)
-    dashboard = json.loads((agent_path / "dashboard.json").read_text())
+    dashboard = load_agent(agent_path)
     agent_id = dashboard["id"]
 
     print(f"{agent_id} — API key setup\n")

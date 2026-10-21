@@ -5,9 +5,10 @@ keys through add_secrets.py or installs a tool group that needs it.
 Without it, no keys are loaded and the agent runs local-only.
 """
 
-import json
 import os
 from pathlib import Path
+
+from basic_bot.agent import load_agent
 
 
 def load(agent_path: Path) -> None:
@@ -19,7 +20,7 @@ def load(agent_path: Path) -> None:
         return
 
     agent_path = Path(agent_path)
-    dashboard = json.loads((agent_path / "dashboard.json").read_text())
+    dashboard = load_agent(agent_path)
     agent_id = dashboard["id"]
 
     try:
