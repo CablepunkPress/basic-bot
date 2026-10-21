@@ -1,0 +1,4 @@
+# This agent's memory: its conversation database, its log, and its
+# backups. If you keep this folder in git, this keeps them out of every
+# commit, so they can't be pushed anywhere by accident.
+data/

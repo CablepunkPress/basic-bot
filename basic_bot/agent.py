@@ -1,20 +1,53 @@
-"""An agent's agent.json: its identity, read with defaults.
+"""An agent: its folder, its identity, and creating one.
+
+An agent is a folder holding everything that is its own:
+
+    agent.json      identity, written once when the agent is created
+    persona.md      from the template, then the user's
+    config.toml
+    context/
+    tools/
+    data/           its database, log, and backups
+    .gitignore      keeps data/ out of git, if the user chooses git
 
 agent.json is the agent's license: issued once, when the agent is
 created, in the folder created for it. Creating an agent writes only
 id, name, and description, and nothing else ever writes them.
 Everything else is read here with a default, so a field added later
 works for agents created before it, without anyone editing their
-files.
+files. A front end that keeps its own fields in agent.json, such as
+an icon or colors, reads them with its own defaults.
 
-A front end that keeps its own fields in agent.json, such as an icon
-or colors, reads them with its own defaults.
+The other files come from templates in basic_bot/templates/agent/.
+They are copied once, when the agent is created, and then belong to
+the user; later versions never overwrite them.
+
+Where an agent's folder goes is the front end's choice. This module
+only creates the folder it is given, and never inside one that
+already exists.
 """
 
 import json
+import re
+import shutil
 from pathlib import Path
 
 AGENT_FILE = "agent.json"
+DATA_DIR = "data"
+TEMPLATES = Path(__file__).parent / "templates" / "agent"
+
+# Template files whose real names would be hidden, which packaging
+# would skip, are stored without the dot and renamed when copied.
+_RENAMED = {"gitignore": ".gitignore"}
+
+# An id becomes a folder name, a keyring entry, and a log prefix, so it
+# must be simple. It's lowercase, which also keeps it the same folder
+# on a Mac, whose disk ignores case, and on Linux, whose disk doesn't.
+VALID_ID = re.compile(r"[a-z0-9][a-z0-9_-]*")
+RESERVED_IDS = {
+    "bountiful": "it is the name of the application",
+    "my-agent": "it is the old template's placeholder name",
+}
 
 
 class AgentError(ValueError):
@@ -40,3 +73,75 @@ def load_agent(agent_path: str | Path) -> dict:
     agent.setdefault("name", agent_id)
     agent.setdefault("description", "A Bountiful agent")
     return agent
+
+
+def id_from(name: str) -> str:
+    """Turn a name like 'Leroy Jenkins' into an id like 'leroy-jenkins'."""
+    return re.sub(r"\s+", "-", name.strip().lower())
+
+
+def name_from(agent_id: str) -> str:
+    """Turn an id like 'leroy-jenkins' into a name like 'Leroy Jenkins'."""
+    return agent_id.replace("-", " ").replace("_", " ").title()
+
+
+def id_problem(agent_id: str) -> str | None:
+    """Why an id can't be used, or None if it's fine.
+
+    Whether another agent already uses it is the registry's question,
+    not this one's.
+    """
+    if not agent_id:
+        return "The agent's id can't be empty."
+    if agent_id in RESERVED_IDS:
+        return f"'{agent_id}' can't be used because {RESERVED_IDS[agent_id]}."
+    if not VALID_ID.fullmatch(agent_id):
+        return (
+            f"'{agent_id}' can't be used. Use lowercase letters, numbers, "
+            f"hyphens, and underscores, starting with a letter or number."
+        )
+    return None
+
+
+def create_agent(
+    folder: str | Path, agent_id: str, name: str,
+    description: str = "A Bountiful agent",
+) -> Path:
+    """Create a new agent's folder, with its agent.json and templates.
+
+    The folder must not exist yet: an agent is never created inside a
+    folder that's already there, such as ~/Music for an agent named
+    music. Returns the new folder.
+    """
+    problem = id_problem(agent_id)
+    if problem:
+        raise AgentError(problem)
+
+    folder = Path(folder).expanduser()
+    if folder.exists():
+        raise AgentError(
+            f"{folder} already exists. An agent needs a new folder of its "
+            f"own; choose another name or place."
+        )
+
+    folder.mkdir(parents=True)
+    try:
+        identity = {"id": agent_id, "name": name, "description": description}
+        (folder / AGENT_FILE).write_text(json.dumps(identity, indent=4) + "\n")
+
+        for template in sorted(TEMPLATES.rglob("*")):
+            if template.is_dir() or template.name.startswith("."):
+                continue
+            relative = template.relative_to(TEMPLATES)
+            target = folder / relative.with_name(
+                _RENAMED.get(relative.name, relative.name)
+            )
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(template, target)
+
+        (folder / DATA_DIR).mkdir()
+    except BaseException:
+        # Leave nothing half-made behind
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
+    return folder
