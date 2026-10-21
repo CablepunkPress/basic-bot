@@ -6,7 +6,7 @@ The session holds the current host, model, Deep Reasoning setting,
 and effort, and decides which controls apply, so every front end
 shows the same thing.
 
-    with Session.open(agent_path) as session:
+    with Session.open(agent_path, data_dir) as session:
         session.start()
         reply = session.send("Hello")
         if reply.memory_update_due:
@@ -26,7 +26,13 @@ the reply is written, so the session, not the store, knows when the
 user's message really arrived. Times are UTC; front ends convert them
 to local time for display.
 
-Engine logs always go to ~/.{agent-id}/{agent-id}.log, beside the
+An agent is a folder, agent_path, holding its identity, persona,
+config, context, and tools. Its data, the conversation database and
+the engine log, goes in data_dir, which the front end chooses: for
+Bountiful, a data folder inside the agent's folder. The engine opens
+the database where it's told.
+
+Engine logs always go to {agent-id}.log in data_dir, beside the
 conversation database, and rotate so they never grow past a fixed
 size. A front end can also echo them to its terminal. The log
 records each session's start, with versions, its end, and every
@@ -46,7 +52,6 @@ reads config at import, including through a default argument, would
 capture the value before the override.
 """
 
-import json
 import logging
 import signal
 import threading
@@ -59,6 +64,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 import basic_bot.config as config
+from basic_bot.agent import AgentError, load_agent
 from basic_bot.chat import chat_with_model
 from basic_bot.factory import create_runtime
 from basic_bot.fold import build_metadata, should_fold
@@ -213,10 +219,11 @@ def _versions() -> str:
 class Session:
     """A running agent. Create with Session.open()."""
 
-    def __init__(self, runtime, agent_config: dict, log_path: Path):
+    def __init__(self, runtime, agent_config: dict, data_dir: Path, log_path: Path):
         self._runtime = runtime
         self._router = runtime.chat_provider
         self.agent_config = agent_config
+        self.data_dir = data_dir
         self.log_path = log_path
         self._lock = threading.Lock()
 
@@ -229,24 +236,30 @@ class Session:
 
     @classmethod
     def open(
-        cls, agent_path: str | Path, *, log_to_terminal: bool = False,
+        cls, agent_path: str | Path, data_dir: str | Path, *,
+        log_to_terminal: bool = False,
     ) -> "Session":
         """Apply config, start logging, load secrets, and build the runtime.
 
-        Nothing is started yet; call start() for that. Logs always go
-        to ~/.{agent-id}/{agent-id}.log. With log_to_terminal, they
-        also go to the terminal, for front ends that run in one, like
-        the web launcher.
+        agent_path is the agent's folder; data_dir is where its
+        database and log go, created if needed. Nothing is started
+        yet; call start() for that. Logs always go to {agent-id}.log
+        in data_dir. With log_to_terminal, they also go to the
+        terminal, for front ends that run in one, like the web
+        launcher.
         """
         agent_path = Path(agent_path).resolve()
-        dashboard = json.loads((agent_path / "dashboard.json").read_text())
-        agent_id = dashboard["id"]
+        data_dir = Path(data_dir).expanduser().resolve()
+        try:
+            agent_id = load_agent(agent_path)["id"]
+        except AgentError as e:
+            raise SessionError(str(e)) from e
 
         # Overrides before anything reads config
         agent_config = _read_config(agent_path)
         config.apply_overrides(agent_config)
 
-        log_path = Path.home() / f".{agent_id}" / f"{agent_id}.log"
+        log_path = data_dir / f"{agent_id}.log"
         _configure_logging(agent_id, log_path, log_to_terminal)
 
         # From here on, closing the window shuts down through close()
@@ -254,14 +267,15 @@ class Session:
 
         load_secrets(agent_path)
         try:
-            runtime = create_runtime(agent_path)
+            runtime = create_runtime(agent_path, data_dir)
             versions = _versions()
         except (NoModelsError, ProfileError) as e:
             logger.error("Session could not open: %s", e)
             raise SessionError(str(e)) from e
 
         logger.info("Session opened: %s", versions)
-        return cls(runtime, agent_config, log_path)
+        logger.info("Agent data: %s", data_dir)
+        return cls(runtime, agent_config, data_dir, log_path)
 
     def start(self) -> None:
         """Start the starting host's default model."""

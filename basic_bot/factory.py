@@ -13,13 +13,13 @@ Logging is configured by whoever opens the runtime, normally
 basic_bot.session, so each front end decides where logs go.
 """
 
-import json
 import logging
 import os
 import tomllib
 from pathlib import Path
 
 import basic_bot.config as config
+from basic_bot.agent import load_agent
 from basic_bot.embeddings import LocalEmbedder, ManagedEmbedder
 from basic_bot.infrastructure.server import CHAT, EMBEDDING, start, stop
 from basic_bot.profile import (
@@ -214,20 +214,24 @@ def _build_chat_router(agent_config: dict):
     )
 
 
-def _build_store(agent_id: str):
-    """Create the SQLite store for the agent."""
-    sqlite_dir = Path.home() / f".{agent_id}"
-    sqlite_dir.mkdir(exist_ok=True)
-    return SQLiteMessageStore(str(sqlite_dir / f"{agent_id}.db"))
+def _build_store(agent_id: str, data_dir: Path):
+    """Create the SQLite store in the agent's data folder."""
+    return SQLiteMessageStore(str(data_dir / f"{agent_id}.db"))
 
 
-def create_runtime(agent_path: str | Path) -> BotRuntime:
-    """Build a fully configured bot runtime from an agent directory."""
+def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
+    """Build a fully configured bot runtime from an agent's folder.
+
+    agent_path holds the agent: agent.json, persona.md, config.toml,
+    context, and tools. data_dir is where its database goes, chosen
+    by the front end.
+    """
 
     agent_path = Path(agent_path).resolve()
+    data_dir = Path(data_dir)
 
-    # Dashboard — agent identity
-    dashboard = json.loads((agent_path / "dashboard.json").read_text())
+    # agent.json — the agent's identity
+    dashboard = load_agent(agent_path)
     agent_id = dashboard["id"]
 
     # Agent settings from config.toml
@@ -239,7 +243,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
 
     # Persona — user-authored, in the agent directory
     persona_text = (agent_path / "persona.md").read_text().strip()
-    persona_text = persona_text.replace("{{ name }}", dashboard.get("name", agent_id))
+    persona_text = persona_text.replace("{{ name }}", dashboard["name"])
     sections = [persona_text]
 
     # Instructions — engine-owned, every .md file in instructions/
@@ -255,7 +259,7 @@ def create_runtime(agent_path: str | Path) -> BotRuntime:
     persona = "\n\n".join(sections)
 
     # Storage
-    store = _build_store(agent_id)
+    store = _build_store(agent_id, data_dir)
 
     # Tools
     tool_registry = build_registry(agent_path)

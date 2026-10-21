@@ -1,15 +1,20 @@
 """Terminal chat for a Bountiful agent.
 
-Run from the agent's directory, with the agent's Python:
+A front end, called with an agent's folder and its data folder, as
+'bountiful chat' does. For testing the engine with nothing else
+installed, it also runs on its own, with Bountiful's Python:
 
-    .venv/bin/python -m basic_bot.cli
+    python -m basic_bot.terminal AGENT_FOLDER [DATA_FOLDER]
+
+The data folder defaults to the agent folder's data/, as Bountiful
+keeps it.
 
 Everything here goes through basic_bot.session. If this file ever
 needs something the session doesn't offer, that's engine work living
 in a front end, and it belongs in the session instead.
 
-Engine logs go to ~/.{agent-id}/{agent-id}.log, so they don't interrupt
-the conversation.
+Engine logs go to the agent's log file in its data folder, so they
+don't interrupt the conversation.
 """
 
 import readline  # noqa: F401 — line editing and history for input()
@@ -171,15 +176,10 @@ def _converse(session) -> None:
             print("\nStopped.")
 
 
-def main() -> None:
-    agent_path = Path.cwd()
-    if not (agent_path / "dashboard.json").exists():
-        sys.exit(
-            "Run this from an agent's directory, the folder with dashboard.json."
-        )
-
+def chat(agent_path: Path, data_dir: Path) -> None:
+    """Open the agent's session and chat with it until the user leaves."""
     try:
-        session = Session.open(agent_path)
+        session = Session.open(agent_path, data_dir)
     except SessionError as e:
         sys.exit(f"ERROR: {e}")
 
@@ -194,6 +194,14 @@ def main() -> None:
         print("Type /help for commands.")
         _converse(session)
         print("Stopping...", flush=True)
+
+
+def main() -> None:
+    if not 2 <= len(sys.argv) <= 3:
+        sys.exit("Usage: python -m basic_bot.terminal AGENT_FOLDER [DATA_FOLDER]")
+    agent_path = Path(sys.argv[1]).expanduser()
+    data_dir = Path(sys.argv[2]).expanduser() if len(sys.argv) == 3 else agent_path / "data"
+    chat(agent_path, data_dir)
 
 
 if __name__ == "__main__":
