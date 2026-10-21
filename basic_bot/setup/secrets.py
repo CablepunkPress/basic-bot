@@ -1,6 +1,6 @@
 """Store an agent's API keys in the OS keyring.
 
-Scans the agent's dashboard.json for identity and tools/*/tool.json
+Scans the agent's agent.json for identity and tools/*/tool.json
 for secret declarations. Shows what's set, prompts for what's missing.
 
 Nothing here is part of the base install. The keyring library is
