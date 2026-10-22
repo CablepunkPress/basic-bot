@@ -42,7 +42,7 @@ def _write(data: dict) -> None:
     AGENTS_REGISTRY.parent.mkdir(parents=True, exist_ok=True)
     fd, temp = tempfile.mkstemp(dir=AGENTS_REGISTRY.parent, suffix=".tmp")
     with os.fdopen(fd, "w") as f:
-        f.write(json.dumps(data, indent=4) + "\n")
+        f.write(json.dumps(data, indent=2) + "\n")
     os.replace(temp, AGENTS_REGISTRY)
 
 
