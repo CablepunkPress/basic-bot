@@ -33,6 +33,7 @@ import argparse
 import hashlib
 import json
 import shutil
+import subprocess
 import sys
 import time
 import urllib.error
@@ -41,6 +42,7 @@ from pathlib import Path
 from typing import NoReturn
 from urllib.parse import urlparse
 
+from basic_bot import registry
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
 from basic_bot.paths import MODELS_DIR
 from basic_bot.profile import (
@@ -490,6 +492,52 @@ def _download_models(ask_again: bool) -> None:
         _download(model, number, len(needed), verified)
 
 
+# --- Agents' tool dependencies ---
+
+def _install_tool_dependencies() -> None:
+    """Install what every recorded agent's tool groups declare.
+
+    Tool groups live in each agent's tools/ folder, but their
+    dependencies live in this venv, which a rebuild starts empty.
+    pip skips anything already installed.
+    """
+    try:
+        found = registry.entries()
+    except registry.RegistryError as e:
+        # Only tools are affected, so the rest of the build goes on
+        print(f"    skipping agents' tools: {e}")
+        return
+
+    deps: set[str] = set()
+    for entry in found:
+        if not entry.present:
+            continue
+        for manifest_path in sorted((entry.folder / "tools").glob("*/tool.json")):
+            try:
+                manifest = json.loads(manifest_path.read_text())
+            except (OSError, ValueError) as e:
+                print(f"    skipping {manifest_path}: {e}")
+                continue
+            deps.update(manifest.get("dependencies", []))
+
+    if not deps:
+        print("    no tool dependencies to install")
+        return
+
+    print(f"    installing tool dependencies: {', '.join(sorted(deps))}")
+    result = subprocess.run(
+        [
+            sys.executable, "-m", "pip", "install", "--quiet",
+            "--disable-pip-version-check", *sorted(deps),
+        ],
+    )
+    if result.returncode != 0:
+        _fail(
+            "installing tool dependencies failed — see output above.\n\n"
+            "Check your connection, then run 'python3 build.py' again."
+        )
+
+
 # --- Build ---
 
 # Flags for every backend. By default, llama.cpp's build downloads
@@ -525,6 +573,10 @@ def _arguments() -> argparse.Namespace:
 
 def main() -> None:
     args = _arguments()
+
+    print("  agents' tools")
+    _install_tool_dependencies()
+
     try:
         backend = platform_backend()
     except ProfileError as e:
