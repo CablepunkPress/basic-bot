@@ -99,9 +99,13 @@ def _source(url: str) -> str:
 
 @dataclass
 class Model:
-    """One model as the user sees it: its own file, then its drafter's."""
+    """One model as the user sees it: its own file, then its drafter's.
+    
+    model_id is the chat model's id in the profile, or the role
+    ("embedding", "summary") for the two models that have none.
+    """
     role: str
-    model_id: str | None
+    model_id: str
     name: str
     mandatory: bool
     files: list[dict]
@@ -135,7 +139,7 @@ def profile_models() -> list[Model]:
             continue
         models.append(Model(
             role=entry["role"],
-            model_id=entry.get("model_id"),
+            model_id=entry.get("model_id") or entry["role"],
             name=entry.get("display_name") or entry["file"],
             mandatory=entry["mandatory"],
             files=[entry],
