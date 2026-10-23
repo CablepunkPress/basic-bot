@@ -309,9 +309,9 @@ def _check_entry(name: str, entry: dict, required: tuple) -> list[str]:
     problems = [f"{name}: missing {key}" for key in required if key not in entry]
     if "download" in entry:
         problems.append(
-            f"{name}: download is no longer used. The embedding, summary, "
-            f"and default chat models are always downloaded, and the build "
-            f"offers the other chat models."
+            f"{name}: download is no longer used. The build downloads the "
+            f"embedding, summary, and default chat models, and "
+            f"'bountiful models' offers the other chat models."
         )
     problems += _check_pin(name, entry)
     reasoning = entry.get("reasoning")
@@ -524,12 +524,13 @@ def get_downloadable_models() -> list[dict]:
 
     The embedding model, the summary model, and the default chat model
     are mandatory: the build always downloads them. Every other chat
-    model is optional, downloaded only if the user accepts it.
+    model is optional, offered by 'bountiful models'.
 
     Each dict has role, file, display_name, url, sha256, size,
     mandatory, and exists; sha256 and size are None for unpinned
-    files. Chat models also carry model_id. A chat model's drafter
-    file follows it, with role "draft" and for_model naming its model,
+    files, and display_name is None where the profile gives none.
+    Chat models also carry model_id. A chat model's drafter file
+    follows it, with role "draft" and for_model naming its model,
     and is mandatory exactly when its model is.
     """
     profile = get_profile()
