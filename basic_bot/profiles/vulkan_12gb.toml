@@ -31,8 +31,11 @@
 # re-upload can't change what gets downloaded. sha256 and size come
 # from Hugging Face's API for that commit and are checked after
 # download. To move to a newer file, update all three together.
-# The embedding, summary, and default chat models are always
-# downloaded; the build offers the other chat models, once each.
+# The build downloads the embedding, summary, and default chat
+# models; 'bountiful models' offers the other chat models.
+# display_name is the name people see. Chat models need one; for
+# the embedding and summary models it's optional, and the file
+# name stands in without it.
 
 format = 1
 
@@ -49,6 +52,7 @@ file = "Nemotron-3-Embed-8B-Q8_0.gguf"
 url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/1ffb81e403311c4dc6879b9c3cbb6ebfa18b86df/Nemotron-3-Embed-8B-Q8_0.gguf"
 sha256 = "0d0e0d9f291fc116a830bf5cd0f0e18d756c6b6f0f24f9d2ba64f4d188bc78fd"
 size = 8458435477
+display_name = "Nemotron 3 Embed 8B Q8_0"
 alias = "nemotron-3-embed-8b-q8_0"
 query_prefix = "query: "
 passage_prefix = "passage: "
@@ -69,6 +73,7 @@ file = "gemma-4-12B-it-Q5_K_M.gguf"
 url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/2ae7d41be21ca62de00a2d320ee9cec50daa3aa6/gemma-4-12B-it-Q5_K_M.gguf"
 sha256 = "24fe88d9e6bba6a1805629a09e40d4d837a894d559c7708055f7a03211e2a25e"
 size = 8774965728
+display_name = "Gemma 4 12B Q5_K_M"
 alias = "gemma-4-12b-it-q5_k_m"
 publisher = "Google"
 family = "Gemma"
