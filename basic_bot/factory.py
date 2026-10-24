@@ -14,8 +14,6 @@ basic_bot.session, so each front end decides where logs go.
 """
 
 import logging
-import os
-import tomllib
 from pathlib import Path
 
 import basic_bot.config as config
@@ -34,20 +32,12 @@ from basic_bot.providers.protocol import (
     REASONING_NONE,
     ModelInfo,
 )
-from basic_bot.providers.router import HOST_API, HOST_LOCAL, ChatRouter
+from basic_bot.providers.router import HOST_LOCAL, ChatRouter
 from basic_bot.runtime import BotRuntime
 from basic_bot.store_sqlite import SQLiteMessageStore
 from basic_bot.tools import build_registry
 
 logger = logging.getLogger(__name__)
-
-
-def _read_config(agent_path: Path) -> dict:
-    """Read agent config.toml, returning empty dict if absent."""
-    config_file = agent_path / "config.toml"
-    if config_file.exists():
-        return tomllib.loads(config_file.read_text())
-    return {}
 
 
 def _read_markdown_dir(directory: Path) -> list[str]:
@@ -85,7 +75,7 @@ def _local_model_info(model_id: str, entry: dict, display_name: str):
         display_name=display_name,
         publisher=entry["publisher"],
         family=entry["family"],
-        host="local",
+        host=HOST_LOCAL,
         rank=entry.get("rank", 0),
         reasoning=mode,
         reasoning_default=(
@@ -170,33 +160,12 @@ def _build_local_chat_providers() -> dict:
     return providers
 
 
-def _build_api_chat_provider():
-    """Build ClaudeProvider if an Anthropic API key is stored. None otherwise.
-
-    The anthropic package is optional, so its import stays deferred
-    until Claude moves out of the engine as a connector.
-    """
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        return None
-    try:
-        from basic_bot.providers.claude import ClaudeProvider
-    except ImportError:
-        logger.warning(
-            "An Anthropic API key is stored, but the anthropic package is not "
-            "installed. Run 'python3 add_secrets.py' to restore Claude access."
-        )
-        return None
-    return ClaudeProvider()
-
-
-def _build_chat_router(agent_config: dict):
+def _build_chat_router():
     """Build the composite chat provider.
 
     Nothing starts here. The session selects the starting model.
     """
     local_default, _ = get_default_chat_model()
-    provider_name = agent_config.get("inference_provider", "local")
-    starting_host = HOST_API if provider_name == "claude" else HOST_LOCAL
 
     def start_local(model_id):
         start(CHAT, model_id)
@@ -206,9 +175,7 @@ def _build_chat_router(agent_config: dict):
 
     return ChatRouter(
         local_providers=_build_local_chat_providers(),
-        api_provider=_build_api_chat_provider(),
         local_default=local_default,
-        starting_host=starting_host,
         start_local=start_local,
         stop_local=stop_local,
     )
@@ -233,9 +200,6 @@ def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
     # agent.json — the agent's identity
     dashboard = load_agent(agent_path)
     agent_id = dashboard["id"]
-
-    # Agent settings from config.toml
-    agent_config = _read_config(agent_path)
 
     # Stable prompt prefix, assembled once at startup. Order runs from
     # the user's own words to engine instructions to optional domain
@@ -266,7 +230,7 @@ def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
 
     # Providers — router first, embedder needs the reference
     summary_provider = _build_summary_provider()
-    chat_provider = _build_chat_router(agent_config)
+    chat_provider = _build_chat_router()
 
     # Embedder — suspends chat through the router
     embedder = _build_embedder(chat_provider)
