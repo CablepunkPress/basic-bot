@@ -1,8 +1,10 @@
 """Inference provider protocol and shared data types.
 
-Every provider (Claude, Gemini, local) implements InferenceProvider
-and returns results using these types. The engine never imports
-provider-specific SDKs — translation happens at the boundary.
+This is the engine's model jack. Every provider implements
+InferenceProvider and returns results using these types: today the
+local provider, which talks to llama-server on this machine, and
+later the providers a connector plugs in. The engine never imports
+provider-specific SDKs; translation happens inside each provider.
 
 A provider is the backend that answers requests. A model's publisher
 is the organization that made it. The two differ for local models:
@@ -29,12 +31,12 @@ REASONING_ALWAYS = "always"        # the model always reasons
 @dataclass
 class ModelInfo:
     """A model available from a provider, as the user sees it."""
-    id: str                                   # "claude-haiku-4-5-20251001"
-    display_name: str                         # "Haiku 4.5"
-    publisher: str                            # "Anthropic", "Meta" — who made it not who runs it
-    family: str                               # "Claude", "Muse" — groups models in the UI
-    host: str                                 # "api" or "local"
-    rank: int = 0                             # display order: lower = smaller/cheaper
+    id: str                                   # "muse-glimmer-30b-q4_k_xl"
+    display_name: str                         # "Muse Glimmer 30B Q4_K_XL"
+    publisher: str                            # "Meta", "Google": who made it, not who runs it
+    family: str                               # "Muse", "Gemma": groups models in the UI
+    host: str                                 # where it runs: "local", or a connector's host
+    rank: int = 0                             # display order
     reasoning: str = REASONING_NONE           # "none", "optional", or "always"
     reasoning_default: bool = False           # on or off when nothing is chosen
     effort_levels: list[str] | None = None    # lowest to highest
