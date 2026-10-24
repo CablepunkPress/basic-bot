@@ -1,9 +1,10 @@
 """Chat router.
 
-Composite InferenceProvider that holds local and API providers in one
-catalog, grouped into hosts: "local" models run on this machine, "api"
-models run on a provider's servers. Routes chat() to the provider that
-owns the requested model.
+Composite InferenceProvider that holds the chat providers in one
+catalog, grouped into hosts. Today there is one host, "local": models
+that run on this machine. The host list is what front ends read, so
+a host added later appears in their controls without changes to
+them. Routes chat() to the provider that owns the requested model.
 
 The router is the single owner of the local chat server. select()
 makes a model the running one right away. suspend() and resume() let
@@ -22,34 +23,30 @@ from basic_bot.providers.protocol import ChatResponse, InferenceProvider, ModelI
 logger = logging.getLogger(__name__)
 
 HOST_LOCAL = "local"
-HOST_API = "api"
 
 
 class NoModelsError(RuntimeError):
-    """Neither a local model nor an API provider is available."""
+    """No chat model is available."""
 
 
 class ChatRouter:
-    """Composite provider routing to local or API backends."""
+    """Composite provider routing to the provider that owns each model."""
 
     def __init__(
         self,
         *,
         local_providers: dict[str, InferenceProvider],
-        api_provider: InferenceProvider | None = None,
         local_default: str | None,
-        starting_host: str,
         start_local: Callable[[str], None],
         stop_local: Callable[[], None],
     ):
-        if not local_providers and not api_provider:
+        if not local_providers:
             raise NoModelsError(
-                "No chat models are downloaded and no API key is stored.\n"
-                "Run 'python3 build.py' to download the local models."
+                "No chat models are downloaded.\n"
+                "Run 'python3 build.py' to download them."
             )
 
         self._local_providers = local_providers
-        self._api_provider = api_provider
         self._start_local = start_local
         self._stop_local = stop_local
 
@@ -59,24 +56,12 @@ class ChatRouter:
         for model_id, provider in local_providers.items():
             self._providers[model_id] = provider
             self._hosts[model_id] = HOST_LOCAL
-        if api_provider:
-            for model_id in api_provider.get_models():
-                self._providers[model_id] = api_provider
-                self._hosts[model_id] = HOST_API
 
         # Each host's default model
-        self._defaults: dict[str, str] = {}
-        if local_providers:
-            if local_default is not None and local_default in local_providers:
-                self._defaults[HOST_LOCAL] = local_default
-            else:
-                self._defaults[HOST_LOCAL] = next(iter(local_providers))
-        if api_provider:
-            self._defaults[HOST_API] = api_provider.get_default_model()
-
-        if starting_host not in self._defaults:
-            starting_host = HOST_LOCAL if HOST_LOCAL in self._defaults else HOST_API
-        self._starting_host = starting_host
+        if local_default is not None and local_default in local_providers:
+            self._defaults = {HOST_LOCAL: local_default}
+        else:
+            self._defaults = {HOST_LOCAL: next(iter(local_providers))}
 
         # What the user has selected, and whether the local server is up.
         # These differ during a suspend, or after a failed start.
@@ -91,18 +76,16 @@ class ChatRouter:
         merged: dict[str, ModelInfo] = {}
         for provider in self._local_providers.values():
             merged.update(provider.get_models())
-        if self._api_provider:
-            merged.update(self._api_provider.get_models())
         return merged
 
     def get_default_model(self) -> str:
-        """The default model of the current host, or the starting host."""
-        return self._defaults[self._active_host or self._starting_host]
+        """The default model of the current host, or of local before any selection."""
+        return self._defaults[self._active_host or HOST_LOCAL]
 
     def get_fallback_model(self) -> str:
         """Fallback stays within the current host.
 
-        A local failure must never send the conversation to the API.
+        A failure on one host must never send the conversation to another.
         """
         return self.get_default_model()
 
@@ -110,7 +93,7 @@ class ChatRouter:
 
     def hosts(self) -> list[str]:
         """The hosts with at least one model, local first."""
-        return [h for h in (HOST_LOCAL, HOST_API) if h in self._defaults]
+        return list(self._defaults)
 
     def default_for(self, host: str) -> str:
         return self._defaults[host]
@@ -121,7 +104,7 @@ class ChatRouter:
 
     @property
     def active_local_model(self) -> str | None:
-        """The local model selected, or None if on the API."""
+        """The local model selected, or None before any selection."""
         return self._active_local_model
 
     # --- Selection ---
@@ -129,9 +112,8 @@ class ChatRouter:
     def select(self, model_id: str) -> str:
         """Make model_id the running model, right away.
 
-        Moving to the API stops the local server. Moving to a local
-        model starts it, or swaps models. Unknown models fall back to
-        the default. Returns the model actually selected.
+        Starts the local server, or swaps models. Unknown models fall
+        back to the default. Returns the model actually selected.
 
         If the server fails to start, the selection stands and the
         error propagates; the next select() or chat() tries again.
@@ -140,16 +122,8 @@ class ChatRouter:
             logger.warning("Unknown model '%s', using default", model_id)
             model_id = self.get_default_model()
 
-        if self._hosts[model_id] == HOST_API:
-            if self._active_host == HOST_LOCAL:
-                logger.info("Switching to API — stopping local chat server")
-            self._stop_server()
-            self._active_host = HOST_API
-            self._active_local_model = None
-            return model_id
-
-        # Local: nothing to do if this model is already running, or
-        # selected and waiting for a resume
+        # Nothing to do if this model is already running, or selected
+        # and waiting for a resume
         if (
             self._active_host == HOST_LOCAL
             and self._active_local_model == model_id
