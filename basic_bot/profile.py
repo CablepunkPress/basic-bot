@@ -219,6 +219,7 @@ def _check_format(profile: dict) -> list[str]:
 REASONING_KEYS = (
     "mode", "default", "switch_key", "effort_levels", "effort_default",
     "effort_key", "effort_needs_reasoning", "budget",
+    "budget_start_tag", "budget_end_tag",
 )
 
 
@@ -301,6 +302,18 @@ def _check_reasoning(name: str, table: dict) -> list[str]:
             f"{name}.reasoning: budget must be a positive whole number of "
             f"tokens, or a table by effort level"
         )
+
+    tags = [table.get("budget_start_tag"), table.get("budget_end_tag")]
+    if any(t is not None for t in tags):
+        if not all(isinstance(t, str) and t for t in tags):
+            problems.append(
+                f"{name}.reasoning: budget_start_tag and budget_end_tag "
+                f"go together, as text"
+            )
+        if budget is None:
+            problems.append(
+                f"{name}.reasoning: budget_start_tag and budget_end_tag need a budget"
+            )
 
     return problems
 

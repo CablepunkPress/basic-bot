@@ -20,8 +20,10 @@ writes BUDGET_MESSAGE into the reasoning and closes it, so the model
 answers instead of reasoning on. It's a guard against reasoning that
 never ends, not a way to make answers shorter: max_tokens still caps
 the whole reply. llama-server applies it only when it can find the
-template's end-of-reasoning tag, so each model's budget is checked
-once by hand (models.md).
+template's start and end of reasoning. It finds them itself for most
+templates; for one it can't, such as Muse's, the table names them
+(budget_start_tag and budget_end_tag) and they're sent with the
+request. Each model's budget is checked once by hand (models.md).
 
 stdlib urllib only — no SDK for localhost HTTP.
 """
@@ -74,6 +76,10 @@ class LocalProvider:
         self._switch_key = reasoning.get("switch_key")
         self._effort_key = reasoning.get("effort_key")
         self._budget = reasoning.get("budget")
+        self._budget_tags = {
+            "reasoning_budget_start_tag": reasoning.get("budget_start_tag"),
+            "reasoning_budget_end_tag": reasoning.get("budget_end_tag"),
+        }
 
         logger.info(
             "Local provider configured: %s → %s", model_id, self._endpoint,
@@ -129,6 +135,7 @@ class LocalProvider:
         if budget is not None:
             payload["reasoning_budget_tokens"] = budget
             payload["reasoning_budget_message"] = BUDGET_MESSAGE
+            payload.update({k: v for k, v in self._budget_tags.items() if v})
 
         # Sampling — caller override (summary) or profile defaults (chat)
         if sampling:
