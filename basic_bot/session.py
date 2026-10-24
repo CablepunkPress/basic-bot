@@ -78,8 +78,7 @@ from basic_bot.providers.protocol import (
     REASONING_NONE,
     ModelInfo,
 )
-from basic_bot.providers.router import HOST_API, HOST_LOCAL, NoModelsError
-from basic_bot.secrets_env import load as load_secrets
+from basic_bot.providers.router import NoModelsError
 from basic_bot.shutdown import begin_shutdown, shutting_down
 
 logger = logging.getLogger(__name__)
@@ -239,7 +238,7 @@ class Session:
         cls, agent_path: str | Path, data_dir: str | Path, *,
         log_to_terminal: bool = False,
     ) -> "Session":
-        """Apply config, start logging, load secrets, and build the runtime.
+        """Apply config, start logging, and build the runtime.
 
         agent_path is the agent's folder; data_dir is where its
         database and log go, created if needed. Nothing is started
@@ -265,7 +264,6 @@ class Session:
         # From here on, closing the window shuts down through close()
         _handle_shutdown_signals()
 
-        load_secrets(agent_path)
         try:
             runtime = create_runtime(agent_path, data_dir)
             versions = _versions()
@@ -278,7 +276,7 @@ class Session:
         return cls(runtime, agent_config, data_dir, log_path)
 
     def start(self) -> None:
-        """Start the starting host's default model."""
+        """Start the default model."""
         with self._busy():
             self._select(self._router.get_default_model())
 
@@ -341,17 +339,7 @@ class Session:
     def select_host(self, host: str) -> None:
         """Switch host, right away, to that host's default model."""
         if host not in self._router.hosts():
-            if host == HOST_API:
-                raise SessionError(
-                    "No API key is stored, so API models aren't available.\n"
-                    "Run 'python3 add_secrets.py' to add one."
-                )
-            if host == HOST_LOCAL:
-                raise SessionError(
-                    "No local models are downloaded.\n"
-                    "Run 'python3 build.py' to download them."
-                )
-            raise SessionError(f"Unknown host '{host}'. Choose local or api.")
+            raise SessionError(f"Unknown host '{host}'.")
 
         with self._busy():
             self._select(self._router.default_for(host))
