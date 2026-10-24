@@ -216,9 +216,28 @@ def _check_format(profile: dict) -> list[str]:
     return problems
 
 
+REASONING_KEYS = (
+    "mode", "default", "switch_key", "effort_levels", "effort_default",
+    "effort_key", "effort_needs_reasoning", "budget",
+)
+
+
+def _is_count(value) -> bool:
+    """A positive whole number, not a bool (which Python counts as one)."""
+    return isinstance(value, int) and not isinstance(value, bool) and value > 0
+
+
 def _check_reasoning(name: str, table: dict) -> list[str]:
-    """Check one [reasoning] table against the rules in the profile header."""
-    problems = []
+    """Check one [reasoning] table against the rules in the profile header.
+
+    Unknown keys are reported, since a misspelled one would otherwise
+    be ignored without a word.
+    """
+    problems = [
+        f"{name}.reasoning: unknown key {key} "
+        f"(known: {', '.join(REASONING_KEYS)})"
+        for key in table if key not in REASONING_KEYS
+    ]
     mode = table.get("mode")
 
     if mode not in ("optional", "always"):
@@ -257,6 +276,30 @@ def _check_reasoning(name: str, table: dict) -> list[str]:
         problems.append(
             f"{name}.reasoning: effort_needs_reasoning applies only "
             f"to optional reasoning"
+        )
+
+    budget = table.get("budget")
+    if isinstance(budget, dict):
+        if not isinstance(levels, list) or not levels:
+            problems.append(
+                f"{name}.reasoning: a budget by effort level needs effort_levels"
+            )
+        else:
+            for level, tokens in budget.items():
+                if level not in levels:
+                    problems.append(
+                        f"{name}.reasoning: budget names {level}, "
+                        f"which isn't one of {levels}"
+                    )
+                elif not _is_count(tokens):
+                    problems.append(
+                        f"{name}.reasoning: budget for {level} must be a "
+                        f"positive whole number of tokens"
+                    )
+    elif budget is not None and not _is_count(budget):
+        problems.append(
+            f"{name}.reasoning: budget must be a positive whole number of "
+            f"tokens, or a table by effort level"
         )
 
     return problems
@@ -313,6 +356,9 @@ def _check_entry(name: str, entry: dict, required: tuple) -> list[str]:
             f"embedding, summary, and default chat models, and "
             f"'bountiful models' offers the other chat models."
         )
+    if "display_name" in entry and not (
+            isinstance(entry["display_name"], str) and entry["display_name"]):
+        problems.append(f"{name}: display_name must be text")
     problems += _check_pin(name, entry)
     reasoning = entry.get("reasoning")
     if reasoning is not None:

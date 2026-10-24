@@ -21,6 +21,14 @@
 #   effort_key              chat_template_kwargs key for the level
 #   effort_needs_reasoning  optional only: true if effort does nothing
 #                           while reasoning is off
+#   budget                  the most tokens the model may spend reasoning
+#                           on one request: one number, or a table by
+#                           effort level (a level left out has no limit).
+#                           When it runs out, llama-server tells the model
+#                           to answer. A guard against reasoning that never
+#                           ends; max_tokens still caps the whole reply.
+#                           Starting values, tuned from the log's "Reasoning
+#                           budget reached" lines.
 #
 # Pinned downloads
 # Each url names a specific commit, not main, so a publisher's later
@@ -155,6 +163,9 @@ mode = "always"
 effort_levels = ["low", "medium", "high", "xhigh"]
 effort_default = "high"
 effort_key = "reasoning_strength"
+# On October 24, at high, Muse reasoned for two minutes without
+# answering until it was stopped. About 70 seconds at high.
+budget = { low = 512, medium = 768, high = 1024, xhigh = 2048 }
 
 [chat."muse-glimmer-30b-q4_k_xl".draft]
 file = "dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
@@ -208,6 +219,7 @@ max_tokens = 16384
 mode = "optional"
 default = false
 switch_key = "enable_thinking"
+budget = 1024
 
 [chat."gemma-4-31b-it-q4_k_m".draft]
 type = "mtp"
@@ -283,7 +295,12 @@ top_k = 64
 #   Levels: xhigh (default) / medium / low. There is no "high".
 #   Whether llama-server passes it through is not yet verified.
 # - preserve_thinking is on by default: the template keeps thinking
-#   from all earlier turns in the conversation.
+#   from all earlier turns in the conversation. The engine sends
+#   stored replies without their thinking, so it matters only within
+#   one turn's tool calls.
+# - At xhigh, on October 24, it reasoned for over 1,700 tokens on a
+#   two-sentence correction without finishing. Its ordinary xhigh
+#   turn was 435 tokens. The default is medium, since there is no high.
 # - bartowski's quantizations include Qwen's MTP drafting layers,
 #   enabled with --spec-type draft-mtp. No separate file.
 
@@ -308,9 +325,10 @@ mode = "optional"
 default = false
 switch_key = "enable_thinking"
 effort_levels = ["low", "medium", "xhigh"]
-effort_default = "xhigh"
+effort_default = "medium"
 effort_key = "reasoning_effort"   # not yet verified
 effort_needs_reasoning = true
+budget = { low = 512, medium = 768, xhigh = 1536 }
 
 [chat."qwen3.8-27b-q5_k_m".draft]
 type = "mtp"

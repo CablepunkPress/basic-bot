@@ -13,6 +13,16 @@ The profile's [reasoning] table names the keys each model's template
 expects, so a new model with a new dialect needs a profile entry,
 not code.
 
+The [reasoning] table can also set a budget: the most tokens the
+model may spend reasoning on one request, for every effort level or
+for each. llama-server counts them, and when the budget runs out it
+writes BUDGET_MESSAGE into the reasoning and closes it, so the model
+answers instead of reasoning on. It's a guard against reasoning that
+never ends, not a way to make answers shorter: max_tokens still caps
+the whole reply. llama-server applies it only when it can find the
+template's end-of-reasoning tag, so each model's budget is checked
+once by hand (models.md).
+
 stdlib urllib only — no SDK for localhost HTTP.
 """
 
@@ -31,6 +41,14 @@ from basic_bot.providers.protocol import (
 )
 
 logger = logging.getLogger(__name__)
+
+# Written into the model's reasoning, in its own voice, when the
+# reasoning budget runs out. llama-server adds the end-of-reasoning
+# tag after it, so the next thing the model writes is its answer.
+BUDGET_MESSAGE = (
+    "\n\nI've thought about this long enough. I'll answer now, "
+    "and if I'm not sure, I'll say so plainly and ask.\n"
+)
 
 
 class LocalProvider:
@@ -55,6 +73,7 @@ class LocalProvider:
         reasoning = reasoning or {}
         self._switch_key = reasoning.get("switch_key")
         self._effort_key = reasoning.get("effort_key")
+        self._budget = reasoning.get("budget")
 
         logger.info(
             "Local provider configured: %s → %s", model_id, self._endpoint,
@@ -105,6 +124,12 @@ class LocalProvider:
         if template_kwargs:
             payload["chat_template_kwargs"] = template_kwargs
 
+        # Reasoning budget, a guard against reasoning that never ends
+        budget = self._budget_for(reasoning_on, level)
+        if budget is not None:
+            payload["reasoning_budget_tokens"] = budget
+            payload["reasoning_budget_message"] = BUDGET_MESSAGE
+
         # Sampling — caller override (summary) or profile defaults (chat)
         if sampling:
             payload.update(sampling)
@@ -112,7 +137,19 @@ class LocalProvider:
             payload.update(self._sampling_for(reasoning_on))
 
         data = self._post(payload)
-        return self._parse_response(data)
+        return self._parse_response(data, budget)
+
+    def _budget_for(self, reasoning_on: bool, level: str | None) -> int | None:
+        """The reasoning budget for this request, or None for no limit.
+
+        The profile gives one number for every level, or a table by
+        effort level. A level missing from the table has no limit.
+        """
+        if not reasoning_on or self._budget is None:
+            return None
+        if isinstance(self._budget, dict):
+            return self._budget.get(level) if level else None
+        return self._budget
 
     def _sampling_for(self, reasoning_on: bool) -> dict:
         """Profile sampling for the current reasoning state.
@@ -180,7 +217,7 @@ class LocalProvider:
 
     # --- Inbound translation ---
 
-    def _parse_response(self, data: dict) -> ChatResponse:
+    def _parse_response(self, data: dict, budget: int | None = None) -> ChatResponse:
         choice = data["choices"][0]
         message = choice["message"]
 
@@ -209,6 +246,14 @@ class LocalProvider:
 
         if reasoning and config.LOG_REASONING:
             logger.info("Reasoning: %s", reasoning)
+
+        # The budget message in the reasoning means llama-server cut it
+        # short. Logged, so budgets can be tuned against real turns.
+        if reasoning and budget is not None and BUDGET_MESSAGE.strip() in reasoning:
+            logger.warning(
+                "Reasoning budget reached (%d tokens); the model was told to answer",
+                budget,
+            )
 
         # Token usage
         usage = data.get("usage", {})
