@@ -36,12 +36,17 @@ logger = logging.getLogger(__name__)
 def _execute_tool(
     registry: dict, name: str, context: dict, tool_input: dict,
 ) -> str:
-    """Dispatch a tool call and return the result as a JSON string."""
+    """Dispatch a tool call and return the result as a JSON string.
+
+    The handler's context is the turn's context plus its own group's
+    settings, so a tool sees its group's settings and no other's.
+    """
     entry = registry.get(name)
     if not entry:
         return json.dumps({"error": f"Unknown tool '{name}'"})
+    tool_context = {**context, "settings": entry.get("settings", {})}
     try:
-        result = entry["handler"](context, **tool_input)
+        result = entry["handler"](tool_context, **tool_input)
         return result if isinstance(result, str) else json.dumps(result)
     except Exception as e:
         logger.exception("Tool '%s' failed", name)
@@ -171,7 +176,12 @@ def chat_with_model(
     tool_schemas = [
         entry["schema"] for entry in runtime.tool_registry.values()
     ]
-    context = {"user_id": user_id, "store": runtime.store, "embedder": runtime.embedder}
+    context = {
+        "agent_id": runtime.agent_id,
+        "user_id": user_id,
+        "store": runtime.store,
+        "embedder": runtime.embedder,
+    }
 
     messages = _prepare_messages(window)
 

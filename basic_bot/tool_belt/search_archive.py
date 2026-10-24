@@ -13,9 +13,12 @@ from basic_bot.rag import search_memory
 TOOL = {
     "name": "search_archive",
     "description": (
-        "Search the archive for specific past conversations by topic. "
-        "Use this when the user asks about something you discussed before "
-        "that isn't visible in your current conversation window or summary. "
+        "Search your archive of past conversations with this user, by topic. "
+        "Use this when the user asks about something the two of you discussed "
+        "that isn't in your recent messages or summary. The archive holds only "
+        "your conversations, never facts about the world, so don't search it "
+        "to check a name, date, or fact: answer those from what you know, or "
+        "with a reference tool if you have one. "
         "Returns verbatim excerpts from past turns with their sequence numbers. "
         "For looking up a specific message number or date, use recall_message instead."
     ),
