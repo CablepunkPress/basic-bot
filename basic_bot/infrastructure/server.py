@@ -39,10 +39,19 @@ exception that is shutting the program down.
 Failures raise ServerError with a message meant for the user. A
 server can start because of a click, not only at launch, so a failed
 start must be reportable instead of ending the process.
+
+Every start writes a new log, so a restart never erases an earlier
+run's: a fold restarts the chat server, and its timings used to be
+lost with the old log. The session says where the logs go, the
+agent's logs/server/ folder, since a server runs for one agent at a
+time; without that, they go in ~/.bountiful/logs/. Each log is named
+for when its server started, in UTC, and what it ran, and begins with
+the exact command. The newest LOGS_KEPT of each role are kept.
 """
 
 import logging
 import os
+import shlex
 import signal
 import socket
 import subprocess
@@ -50,6 +59,7 @@ import sys
 import time
 import urllib.error
 import urllib.request
+from datetime import datetime, timezone
 from pathlib import Path
 
 import basic_bot.config as config
@@ -73,11 +83,47 @@ EMBEDDING = "embedding"
 SUMMARY = "summary"
 CHAT = "chat"
 
-LOG_FILES = {
-    EMBEDDING: BOUNTIFUL_HOME / "llama-embedding.log",
-    SUMMARY: BOUNTIFUL_HOME / "llama-summary.log",
-    CHAT: BOUNTIFUL_HOME / "llama-chat.log",
-}
+# Where server logs go when no session has said: the machine's own
+LOG_DIR_DEFAULT = BOUNTIFUL_HOME / "logs"
+
+# How many of each role's logs to keep. A fold starts three servers,
+# so this covers several folds' worth.
+LOGS_KEPT = 20
+
+_log_dir: Path | None = None
+
+
+def set_log_dir(directory: Path) -> None:
+    """Send server logs to this folder, such as an agent's logs/server/."""
+    global _log_dir
+    _log_dir = Path(directory)
+
+
+def _new_log_path(role: str, entry: dict) -> Path:
+    """A new log for one server run, named for its time, role, and model.
+
+    Older logs of the same role beyond LOGS_KEPT are deleted.
+    """
+    directory = _log_dir or LOG_DIR_DEFAULT
+    directory.mkdir(parents=True, exist_ok=True)
+
+    stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d-%H%M%SZ")
+    name = f"{stamp}-{role}"
+    if role == CHAT and entry.get("alias"):
+        name += f"-{entry['alias']}"
+
+    # Sorted by name is sorted by time, since every name starts with it
+    earlier = sorted(
+        p for p in directory.glob("*.log")
+        if p.stem.split("Z-", 1)[-1].split("-", 1)[0] == role
+    )
+    for old in earlier[:max(0, len(earlier) - (LOGS_KEPT - 1))]:
+        try:
+            old.unlink()
+        except OSError:
+            pass
+
+    return directory / f"{name}.log"
 
 # Generous on purpose: start() returns as soon as the server is healthy,
 # so this only limits how long a broken start takes to fail. The first
@@ -136,6 +182,12 @@ def _build_launch_args(entry: dict) -> list[str]:
         args += ["--alias", entry["alias"]]
     if entry.get("embeddings", False):
         args += ["--embeddings"]
+    # llama-server keeps copies of earlier prompts' states in ordinary
+    # memory, up to 8 GB by default, in case a request returns to one.
+    # A single conversation rarely does, and on a Mac that memory is
+    # what the model needs, so a profile can lower it or turn it off (0).
+    if "cache_ram_mib" in entry:
+        args += ["--cache-ram", str(entry["cache_ram_mib"])]
 
     # Speculative decoding: a drafter proposes tokens the model checks
     # in one pass. Speeds up generation without changing the output.
@@ -297,8 +349,11 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
     # close_fds keeps each watchdog from inheriting another's link.
     # The children keep their own handle to the log, so ours can close.
     cmd = [sys.executable, str(WATCHDOG), "--"] + server_cmd
-    log_path = LOG_FILES[role]
+    log_path = _new_log_path(role, entry)
     with open(log_path, "w") as log_file:
+        started = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        log_file.write(f"# {label} started {started}\n# {shlex.join(server_cmd)}\n")
+        log_file.flush()
         process = subprocess.Popen(
             cmd,
             stdin=subprocess.PIPE,

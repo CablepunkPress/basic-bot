@@ -202,9 +202,9 @@ class LocalProvider:
                         for tc in m["tool_calls"]
                     ],
                 }
-                # The reasoning that led to the calls earlier in this
+                # The reasoning that led to the calls, earlier in this
                 # turn. A template that preserves reasoning puts it back
-                # in the prompt so the model keeps its plan and the
+                # in the prompt, so the model keeps its plan and the
                 # server's cache still matches; one that doesn't drops it.
                 if m.get("reasoning"):
                     call["reasoning_content"] = m["reasoning"]
@@ -269,15 +269,7 @@ class LocalProvider:
                 budget,
             )
 
-        # Token usage
-        usage = data.get("usage", {})
-        if usage:
-            logger.info(
-                "Tokens — prompt: %d, completion: %d, total: %d",
-                usage.get("prompt_tokens", 0),
-                usage.get("completion_tokens", 0),
-                usage.get("total_tokens", 0),
-            )
+        self._log_timing(data)
 
         finish_reason = choice.get("finish_reason")
         if finish_reason == "length":
@@ -292,6 +284,41 @@ class LocalProvider:
             tool_calls=tool_calls,
             reasoning=reasoning or "",
         )
+
+    def _log_timing(self, data: dict) -> None:
+        """One line per request: what the server reused, read, and wrote.
+
+        llama-server returns its timings with every reply. Logging them
+        here puts them in the agent's own log, beside the step they
+        belong to, where a server restart can't erase them.
+        """
+        t = data.get("timings") or {}
+        if not t:
+            usage = data.get("usage") or {}
+            logger.info(
+                "Tokens (%s): prompt %d, completion %d",
+                self._model_info.display_name,
+                usage.get("prompt_tokens", 0),
+                usage.get("completion_tokens", 0),
+            )
+            return
+
+        def rate(n: float, ms: float) -> str:
+            return f"{n / (ms / 1000):.0f}/s" if ms else "-"
+
+        cached = t.get("cache_n", 0)
+        read, read_ms = t.get("prompt_n", 0), t.get("prompt_ms", 0.0)
+        made, made_ms = t.get("predicted_n", 0), t.get("predicted_ms", 0.0)
+        line = (
+            f"Timing ({self._model_info.display_name}): "
+            f"{cached:,} cached, {read:,} read in {read_ms / 1000:.1f} s "
+            f"({rate(read, read_ms)}), {made:,} generated in "
+            f"{made_ms / 1000:.1f} s ({rate(made, made_ms)})"
+        )
+        drafted = t.get("draft_n", 0)
+        if drafted:
+            line += f", drafter {t.get('draft_n_accepted', 0) / drafted:.2f}"
+        logger.info(line)
 
     # --- HTTP ---
 

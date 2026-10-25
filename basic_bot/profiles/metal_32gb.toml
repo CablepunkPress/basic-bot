@@ -55,6 +55,13 @@
 #   gpu_layers     drafter layers to run on the GPU
 # or both, for a drafter file whose type llama.cpp can't read from
 # it, such as Gemma 4's MTP assistants.
+#
+# cache_ram_mib
+# llama-server keeps copies of earlier prompts' states in ordinary
+# memory, up to 8192 MiB unless told otherwise, in case a request
+# returns to one. One conversation rarely does, and on this Mac that
+# memory is what the models need: on October 25 the copies reached
+# about 6 GB and turned memory pressure yellow. 0 turns them off.
 
 format = 1
 
@@ -161,6 +168,7 @@ gpu_layers = -1
 flash_attn = "on"
 ctx_size = 131072
 max_tokens = 16384
+cache_ram_mib = 0
 
 [chat."muse-glimmer-30b-q4_k_xl".reasoning]
 mode = "always"
@@ -223,6 +231,7 @@ gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
+cache_ram_mib = 0
 
 [chat."gemma-4-31b-it-q4_k_m".reasoning]
 mode = "optional"
@@ -279,6 +288,7 @@ gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
+cache_ram_mib = 0
 
 [chat."gemma-4-26b-a4b-it-qat-q4_0".reasoning]
 mode = "optional"
@@ -328,6 +338,7 @@ gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
+cache_ram_mib = 0
 
 [chat."qwen3.8-27b-q5_k_m".reasoning]
 mode = "optional"

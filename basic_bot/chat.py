@@ -21,6 +21,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
+import basic_bot.config as config
 from basic_bot.memory import load_window
 from basic_bot.providers.protocol import (
     ChatResponse,
@@ -31,6 +32,10 @@ from basic_bot.runtime import BotRuntime
 from basic_bot.shutdown import shutting_down
 
 logger = logging.getLogger(__name__)
+
+# Rounds past MAX_TOOL_ROUNDS in which calls are refused before the
+# turn is ended for the model
+REFUSED_ROUNDS = 2
 
 
 def _execute_tool(
@@ -287,7 +292,17 @@ def _chat_loop(
     effort: str | None,
     thinking: bool,
 ) -> ChatResponse:
-    """Call the provider in a loop, executing tools until no more are requested."""
+    """Call the provider in a loop, executing tools until no more are requested.
+
+    A guard against chains that never end: after config.MAX_TOOL_ROUNDS
+    rounds of tool calls, further calls aren't run, and each gets a
+    result telling the model to answer with what it has. The tools stay
+    in the request, since removing them would change the start of the
+    prompt and the server would reread all of it. If the model still
+    won't answer after a few more rounds, the loop ends with a reply
+    that says so.
+    """
+    rounds = 0
     while True:
         response = provider.chat(
             messages=messages,
@@ -301,8 +316,24 @@ def _chat_loop(
         if not response.tool_calls:
             return response
 
-        # Append the assistant's tool calls with the reasoning that led
-        # to them so the model keeps its plan for the rest of the turn.
+        rounds += 1
+        limit = config.MAX_TOOL_ROUNDS
+        if rounds > limit + REFUSED_ROUNDS:
+            logger.warning(
+                "Tool calls still coming after %d rounds; ending the turn", rounds - 1,
+            )
+            return ChatResponse(
+                text=(
+                    f"I stopped after {limit} rounds of looking things up "
+                    f"without settling on an answer. Could you narrow the "
+                    f"question, or tell me what you already know?"
+                ),
+                model_used=response.model_used,
+                thinking=response.thinking,
+            )
+
+        # Append the assistant's tool calls, with the reasoning that led
+        # to them, so the model keeps its plan for the rest of the turn.
         # These messages live only for this turn; the turn saves only
         # the final reply.
         messages.append({
@@ -312,11 +343,23 @@ def _chat_loop(
             "reasoning": response.reasoning,
         })
 
-        # Execute tools and append results
+        # Execute tools and append results, or past the limit, refuse them
         results = []
-        for tc in response.tool_calls:
-            logger.info("Executing tool: %s", tc.name)
-            result = _execute_tool(tool_registry, tc.name, context, tc.input)
-            results.append({"tool_call_id": tc.id, "content": result})
+        if rounds > limit:
+            if rounds == limit + 1:
+                logger.warning("Tool round limit reached (%d); asking for an answer", limit)
+            refusal = json.dumps({
+                "error": f"You've reached this turn's limit of {limit} rounds "
+                         f"of tool calls. Don't call more tools: answer now "
+                         f"with what you've found, and say what you couldn't "
+                         f"confirm.",
+            })
+            for tc in response.tool_calls:
+                results.append({"tool_call_id": tc.id, "content": refusal})
+        else:
+            for tc in response.tool_calls:
+                logger.info("Executing tool: %s", tc.name)
+                result = _execute_tool(tool_registry, tc.name, context, tc.input)
+                results.append({"tool_call_id": tc.id, "content": result})
 
         messages.append({"role": "tool_result", "results": results})

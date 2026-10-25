@@ -35,6 +35,11 @@ TOOL_BOX_ENABLED = True
 # Log model reasoning/thinking content to the agent's log file
 LOG_REASONING = False
 
+# Rounds of tool calls one turn may make before the model is told to
+# answer with what it has. A guard against chains that never end; a
+# hard question rarely needs more than a few searches and reads.
+MAX_TOOL_ROUNDS = 8
+
 
 def apply_overrides(overrides: dict) -> None:
     """Override defaults from the agent's config.toml.

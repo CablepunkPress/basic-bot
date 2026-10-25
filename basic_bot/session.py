@@ -28,15 +28,18 @@ to local time for display.
 
 An agent is a folder, agent_path, holding its identity, persona,
 config, context, and tools. Its data, the conversation database and
-the engine log, goes in data_dir, which the front end chooses: for
+the logs, goes in data_dir, which the front end chooses: for
 Bountiful, a data folder inside the agent's folder. The engine opens
 the database where it's told.
 
-Engine logs always go to {agent-id}.log in data_dir, beside the
-conversation database, and rotate so they never grow past a fixed
-size. A front end can also echo them to its terminal. The log
-records each session's start, with versions, its end, and every
-settings change, so it reads as a complete account of what happened.
+Logs go in data_dir/logs/, in two kinds. The agent log,
+logs/agent/{agent-id}.log, is what the agent did: each session's
+start, with versions, its end, every settings change, tool calls,
+folds, and each request's timings, so it reads as a complete account
+of what happened. It rotates so it never grows past a fixed size. A
+front end can also echo it to its terminal. The server logs, in
+logs/server/, are what the agent's llama-servers did, one file per
+run (see basic_bot.infrastructure.server).
 
 Every polite way of stopping ends in close(), so llama-server is
 stopped rather than left running: Ctrl-C raises KeyboardInterrupt,
@@ -70,7 +73,7 @@ from basic_bot.factory import create_runtime
 from basic_bot.fold import build_metadata, should_fold
 from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT, LLAMA_VERSION
 from basic_bot.infrastructure.orchestration import fold_sequential
-from basic_bot.infrastructure.server import ServerError, stop_all
+from basic_bot.infrastructure.server import ServerError, set_log_dir, stop_all
 from basic_bot.memory import get_messages
 from basic_bot.profile import ProfileError, profile_name
 from basic_bot.providers.protocol import (
@@ -241,11 +244,11 @@ class Session:
         """Apply config, start logging, and build the runtime.
 
         agent_path is the agent's folder; data_dir is where its
-        database and log go, created if needed. Nothing is started
-        yet; call start() for that. Logs always go to {agent-id}.log
-        in data_dir. With log_to_terminal, they also go to the
-        terminal, for front ends that run in one, like the web
-        launcher.
+        database and logs go, created if needed. Nothing is started
+        yet; call start() for that. The agent log always goes to
+        logs/agent/{agent-id}.log in data_dir. With log_to_terminal,
+        it also goes to the terminal, for front ends that run in one,
+        like the web launcher.
         """
         agent_path = Path(agent_path).resolve()
         data_dir = Path(data_dir).expanduser().resolve()
@@ -258,8 +261,10 @@ class Session:
         agent_config = _read_config(agent_path)
         config.apply_overrides(agent_config)
 
-        log_path = data_dir / f"{agent_id}.log"
+        logs_dir = data_dir / "logs"
+        log_path = logs_dir / "agent" / f"{agent_id}.log"
         _configure_logging(agent_id, log_path, log_to_terminal)
+        set_log_dir(logs_dir / "server")
 
         # From here on, closing the window shuts down through close()
         _handle_shutdown_signals()
