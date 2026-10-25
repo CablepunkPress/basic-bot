@@ -35,7 +35,7 @@ from basic_bot.providers.protocol import (
 from basic_bot.providers.router import HOST_LOCAL, ChatRouter
 from basic_bot.runtime import BotRuntime
 from basic_bot.store_sqlite import SQLiteMessageStore
-from basic_bot.tools import build_registry
+from basic_bot.tools import build_tools
 
 logger = logging.getLogger(__name__)
 
@@ -201,9 +201,13 @@ def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
     dashboard = load_agent(agent_path)
     agent_id = dashboard["id"]
 
+    # Tools, first, since their groups' instructions join the prompt
+    tool_registry, tool_instructions = build_tools(agent_path)
+
     # Stable prompt prefix, assembled once at startup. Order runs from
-    # the user's own words to engine instructions to optional domain
-    # knowledge. chat.py appends the TOOLS and MEMORY sections.
+    # the user's own words to engine instructions, the instructions of
+    # the tool groups the agent has on, and optional domain knowledge.
+    # chat.py appends the TOOLS and MEMORY sections.
 
     # Persona — user-authored, in the agent directory
     persona_text = (agent_path / "persona.md").read_text().strip()
@@ -213,6 +217,9 @@ def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
     # Instructions — engine-owned, every .md file in instructions/
     instructions_dir = Path(__file__).parent / "instructions"
     sections.extend(_read_markdown_dir(instructions_dir))
+
+    # Instructions from the agent's tool groups, such as Wikipedia's
+    sections.extend(tool_instructions)
 
     # Context — user-added domain knowledge, only if files exist
     context_parts = _read_markdown_dir(agent_path / "context")
@@ -224,9 +231,6 @@ def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
 
     # Storage
     store = _build_store(agent_id, data_dir)
-
-    # Tools
-    tool_registry = build_registry(agent_path)
 
     # Providers — router first, embedder needs the reference
     summary_provider = _build_summary_provider()

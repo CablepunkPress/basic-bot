@@ -25,6 +25,19 @@ templates; for one it can't, such as Muse's, the table names them
 (budget_start_tag and budget_end_tag) and they're sent with the
 request. Each model's budget is checked once by hand (models.md).
 
+The [reasoning] table can also give a prefill: the opening words of
+the model's reasoning, written for it at the start of each turn. A
+model that decides for itself whether a question deserves reasoning,
+as Muse does, skips it on turns it judges easy, and without reasoning
+it never considers its tools. With a prefill, llama-server opens the
+model's reasoning with these words (an assistant message carrying
+reasoning_content, continued with continue_final_message "reasoning"),
+so every turn begins by reasoning. The words should end in an open
+question, so the model has something to work through rather than a
+finished thought to close. It goes at the very end of the prompt, so
+the cache isn't touched. config.FORCE_REASONING turns it off, for an
+agent or for comparison.
+
 stdlib urllib only — no SDK for localhost HTTP.
 """
 
@@ -80,6 +93,7 @@ class LocalProvider:
             "reasoning_budget_start_tag": reasoning.get("budget_start_tag"),
             "reasoning_budget_end_tag": reasoning.get("budget_end_tag"),
         }
+        self._prefill = reasoning.get("prefill")
 
         logger.info(
             "Local provider configured: %s → %s", model_id, self._endpoint,
@@ -117,6 +131,20 @@ class LocalProvider:
             "messages": self._build_messages(system, messages),
             "max_tokens": self._max_tokens,
         }
+
+        # Open the model's reasoning for it, at the start of a turn only:
+        # after a tool result it's already in the middle of its work.
+        if (
+            self._prefill and reasoning_on and config.FORCE_REASONING
+            and messages and messages[-1]["role"] == "user"
+        ):
+            payload["messages"].append({
+                "role": "assistant",
+                "content": "",
+                "reasoning_content": self._prefill,
+            })
+            payload["continue_final_message"] = "reasoning"
+            payload["add_generation_prompt"] = False
 
         if tools:
             payload["tools"] = [self._translate_tool(t) for t in tools]

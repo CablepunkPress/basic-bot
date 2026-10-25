@@ -219,8 +219,20 @@ def _check_format(profile: dict) -> list[str]:
 REASONING_KEYS = (
     "mode", "default", "switch_key", "effort_levels", "effort_default",
     "effort_key", "effort_needs_reasoning", "budget",
-    "budget_start_tag", "budget_end_tag",
+    "budget_start_tag", "budget_end_tag", "prefill",
 )
+
+# The KV cache types llama-server accepts (common/arg.cpp, kv_cache_types)
+CACHE_TYPES = ("f32", "f16", "bf16", "q8_0", "q4_0", "q4_1", "iq4_nl", "q5_0", "q5_1")
+
+
+def _check_cache_types(name: str, table: dict) -> list[str]:
+    """Check cache_type_k and cache_type_v, wherever they appear."""
+    return [
+        f"{name}: {key} must be one of {', '.join(CACHE_TYPES)}"
+        for key in ("cache_type_k", "cache_type_v")
+        if key in table and table[key] not in CACHE_TYPES
+    ]
 
 
 def _is_count(value) -> bool:
@@ -315,6 +327,10 @@ def _check_reasoning(name: str, table: dict) -> list[str]:
                 f"{name}.reasoning: budget_start_tag and budget_end_tag need a budget"
             )
 
+    prefill = table.get("prefill")
+    if prefill is not None and not (isinstance(prefill, str) and prefill.strip()):
+        problems.append(f"{name}.reasoning: prefill must be text")
+
     return problems
 
 
@@ -357,6 +373,12 @@ def _check_draft(name: str, table: dict) -> list[str]:
         if "url" not in table:
             problems.append(f"{draft_name}: missing url")
         problems += _check_pin(draft_name, table)
+    elif "cache_type_k" in table or "cache_type_v" in table:
+        problems.append(
+            f"{draft_name}: cache types apply only to a drafter file, which "
+            f"keeps its own cache"
+        )
+    problems += _check_cache_types(draft_name, table)
     return problems
 
 
@@ -373,6 +395,7 @@ def _check_entry(name: str, entry: dict, required: tuple) -> list[str]:
             isinstance(entry["display_name"], str) and entry["display_name"]):
         problems.append(f"{name}: display_name must be text")
     problems += _check_pin(name, entry)
+    problems += _check_cache_types(name, entry)
     reasoning = entry.get("reasoning")
     if reasoning is not None:
         problems += _check_reasoning(name, reasoning)

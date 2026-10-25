@@ -40,6 +40,11 @@ LOG_REASONING = False
 # hard question rarely needs more than a few searches and reads.
 MAX_TOOL_ROUNDS = 8
 
+# Open the model's reasoning for it at the start of every turn, for a
+# model whose profile gives a reasoning prefill (see
+# basic_bot.providers.local). False lets the model decide.
+FORCE_REASONING = True
+
 
 def apply_overrides(overrides: dict) -> None:
     """Override defaults from the agent's config.toml.

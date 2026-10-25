@@ -32,7 +32,13 @@ group serves every agent with that agent's own settings and keys. A
 description can name a setting as {{ name }}, filled in when the tools
 load, so the model sees, for example, the GitHub account it works in.
 
-The factory calls build_registry() once at startup.
+A group may also carry an instructions.md: guidance for using its
+tools, such as when to check a fact, that goes into the system prompt
+of every agent that has the group on, and of no other. It plugs into
+the prompt the way the tools plug into the registry. The system prompt
+changes only at startup, so it costs nothing in cache.
+
+The factory calls build_tools() once at startup.
 """
 
 import importlib
@@ -53,6 +59,7 @@ BELT_PACKAGE = "basic_bot.tool_belt"
 TOOL_BOX_ENTRY_POINT = "basic_bot.tool_box"
 MANIFEST = "tool.json"
 SETTINGS_SUFFIX = ".toml"
+INSTRUCTIONS = "instructions.md"
 
 _PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
@@ -240,16 +247,17 @@ def _load_group(group_dir: Path, settings: dict) -> dict:
     return registry
 
 
-def load_box(tools_dir: Path) -> dict:
+def load_box(tools_dir: Path) -> tuple[dict, list[str]]:
     """Load the agent's tool box: curated groups it uses, and its own.
 
     A curated group is used when tools/<group>.toml exists. Every
     group folder in tools/ with a manifest is the agent's own. Returns
-    an empty dict if the tool box is disabled.
+    the tools, and the instructions of the groups that carry them, in
+    the groups' order. Both are empty if the tool box is disabled.
     """
     if not config.TOOL_BOX_ENABLED:
         logger.info("Tool box disabled")
-        return {}
+        return {}, []
 
     own = own_groups(tools_dir)
     curated = curated_groups()
@@ -275,6 +283,7 @@ def load_box(tools_dir: Path) -> dict:
         chosen[group] = folder
 
     registry: dict = {}
+    instructions: list[str] = []
     for group, folder in sorted(chosen.items()):
         tools = _load_group(folder, read_settings(tools_dir, group))
         for name in tools:
@@ -284,28 +293,50 @@ def load_box(tools_dir: Path) -> dict:
                     name, group, registry[name]["group"],
                 )
         registry.update(tools)
+        text = _read_instructions(folder)
+        if text and tools:
+            instructions.append(text)
 
     logger.info("Box tools loaded: %s", list(registry.keys()) or "none")
-    return registry
+    return registry, instructions
+
+
+def _read_instructions(folder: Path) -> str:
+    """A group's instructions.md, or "" if it has none or it can't be read."""
+    path = folder / INSTRUCTIONS
+    if not path.exists():
+        return ""
+    try:
+        return path.read_text().strip()
+    except OSError as e:
+        logger.error("Couldn't read %s: %s", path, e)
+        return ""
 
 
 # ---------------------------------------------------------------------------
 # Assembly
 # ---------------------------------------------------------------------------
 
-def build_registry(agent_path: Path) -> dict:
-    """Assemble the complete tool registry for an agent.
+def build_tools(agent_path: Path) -> tuple[dict, list[str]]:
+    """Assemble an agent's tools, and its tool groups' instructions.
 
     Belt tools load first. Box tools overlay — a box tool with the same
-    name as a belt tool replaces it.
+    name as a belt tool replaces it. The instructions go into the
+    system prompt.
     """
     registry = {}
     registry.update(load_belt())
-    registry.update(load_box(agent_path / "tools"))
+    box, instructions = load_box(agent_path / "tools")
+    registry.update(box)
 
     logger.info(
         "Tool registry: %d tools [%s]",
         len(registry),
         ", ".join(registry.keys()) or "none",
     )
-    return registry
+    return registry, instructions
+
+
+def build_registry(agent_path: Path) -> dict:
+    """The agent's tools alone, for callers that don't need instructions."""
+    return build_tools(agent_path)[0]

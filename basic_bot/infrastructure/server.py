@@ -188,6 +188,14 @@ def _build_launch_args(entry: dict) -> list[str]:
     # what the model needs, so a profile can lower it or turn it off (0).
     if "cache_ram_mib" in entry:
         args += ["--cache-ram", str(entry["cache_ram_mib"])]
+    # The KV cache holds every token of the current prompt, so the
+    # server's memory follows the longest prompt of a session. Storing
+    # it at 8 bits (q8_0) instead of 16 roughly halves that. A
+    # quantized V cache needs flash attention.
+    if "cache_type_k" in entry:
+        args += ["--cache-type-k", entry["cache_type_k"]]
+    if "cache_type_v" in entry:
+        args += ["--cache-type-v", entry["cache_type_v"]]
 
     # Speculative decoding: a drafter proposes tokens the model checks
     # in one pass. Speeds up generation without changing the output.
@@ -204,6 +212,11 @@ def _build_launch_args(entry: dict) -> list[str]:
                 args += ["-md", str(draft_path)] + spec_type
                 if "gpu_layers" in draft:
                     args += ["-ngld", str(draft["gpu_layers"])]
+                # A drafter file keeps its own KV cache
+                if "cache_type_k" in draft:
+                    args += ["--cache-type-k-draft", draft["cache_type_k"]]
+                if "cache_type_v" in draft:
+                    args += ["--cache-type-v-draft", draft["cache_type_v"]]
             else:
                 logger.warning(
                     "Draft model %s not found — starting without it. "

@@ -60,8 +60,22 @@
 # llama-server keeps copies of earlier prompts' states in ordinary
 # memory, up to 8192 MiB unless told otherwise, in case a request
 # returns to one. One conversation rarely does, and on this Mac that
-# memory is what the models need: on October 25 the copies reached
-# about 6 GB and turned memory pressure yellow. 0 turns them off.
+# memory is what the models need. 0 turns them off.
+#
+# cache_type_k, cache_type_v (on a model, and on a drafter file)
+# The KV cache holds every token of the current prompt, for the model
+# and separately for its drafter, so llama-server's memory follows the
+# longest prompt of a session and comes down only on a restart. On
+# October 25 a Wikipedia chain reached about 10,100 tokens and 6.5 GB,
+# and with about 23.8 GB of wired weights, memory pressure turned
+# yellow. q8_0 stores the cache at 8 bits instead of 16, roughly
+# halving it; a quantized V cache needs flash attention.
+#
+# prefill (in a [reasoning] table)
+# The opening words of the model's reasoning, written for it at the
+# start of each turn, so a model that would skip reasoning on turns it
+# judges easy reasons anyway. End it in an open question. An agent's
+# config.toml can turn it off with force_reasoning = false.
 
 format = 1
 
@@ -169,6 +183,8 @@ flash_attn = "on"
 ctx_size = 131072
 max_tokens = 16384
 cache_ram_mib = 0
+cache_type_k = "q8_0"
+cache_type_v = "q8_0"
 
 [chat."muse-glimmer-30b-q4_k_xl".reasoning]
 mode = "always"
@@ -183,6 +199,11 @@ budget = { low = 512, medium = 768, high = 1024, xhigh = 2048 }
 # The leading space is part of the tag. Tested October 24.
 budget_start_tag = " to=self<|message|>"
 budget_end_tag = "<|eom|>"
+# Muse skips reasoning on turns it judges easy, and on those turns it
+# never considers its tools: on October 25 every answer it gave
+# without reasoning came from memory, and most were wrong. This opens
+# its reasoning for it on every turn (see the header).
+prefill = "Before I answer: is there a specific name, date, number, or detail here that I should check with a tool rather than give from memory? Let me work it out:"
 
 [chat."muse-glimmer-30b-q4_k_xl".draft]
 file = "dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
@@ -190,6 +211,8 @@ url = "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/resolve/70bf1b61
 sha256 = "b2e808bf656086fe86bd0d0bd990f01d33e377537a07c02d45371517c8b264ef"
 size = 1631208128
 gpu_layers = 99   # as in Meta's example
+cache_type_k = "q8_0"
+cache_type_v = "q8_0"
 
 [chat."muse-glimmer-30b-q4_k_xl".sampling]
 temperature = 1.0
@@ -232,10 +255,12 @@ flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
 cache_ram_mib = 0
+cache_type_k = "q8_0"
+cache_type_v = "q8_0"
 
 [chat."gemma-4-31b-it-q4_k_m".reasoning]
 mode = "optional"
-default = false
+default = true
 switch_key = "enable_thinking"
 budget = 1024
 
@@ -245,6 +270,8 @@ file = "mtp-google_gemma-4-31B-it-Q8_0.gguf"
 url = "https://huggingface.co/bartowski/google_gemma-4-31B-it-GGUF/resolve/619aca7589c72be65dd968de8602ad23d68b5c14/mtp-google_gemma-4-31B-it-Q8_0.gguf"
 sha256 = "743b2b719e448f9a06e774b4f33dd7a391a73e94d32297c7590256484562eb52"
 size = 514705920
+cache_type_k = "q8_0"
+cache_type_v = "q8_0"
 
 [chat."gemma-4-31b-it-q4_k_m".sampling]
 temperature = 1.0
@@ -289,6 +316,8 @@ flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
 cache_ram_mib = 0
+cache_type_k = "q8_0"
+cache_type_v = "q8_0"
 
 [chat."gemma-4-26b-a4b-it-qat-q4_0".reasoning]
 mode = "optional"
@@ -339,10 +368,12 @@ flash_attn = "on"
 ctx_size = 32768
 max_tokens = 16384
 cache_ram_mib = 0
+cache_type_k = "q8_0"
+cache_type_v = "q8_0"
 
 [chat."qwen3.8-27b-q5_k_m".reasoning]
 mode = "optional"
-default = false
+default = true
 switch_key = "enable_thinking"
 effort_levels = ["low", "medium", "xhigh"]
 effort_default = "medium"
