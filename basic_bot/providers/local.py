@@ -187,7 +187,7 @@ class LocalProvider:
                     })
 
             elif role == "assistant" and m.get("tool_calls"):
-                out.append({
+                call: dict = {
                     "role": "assistant",
                     "content": m["content"] or None,
                     "tool_calls": [
@@ -201,7 +201,14 @@ class LocalProvider:
                         }
                         for tc in m["tool_calls"]
                     ],
-                })
+                }
+                # The reasoning that led to the calls earlier in this
+                # turn. A template that preserves reasoning puts it back
+                # in the prompt so the model keeps its plan and the
+                # server's cache still matches; one that doesn't drops it.
+                if m.get("reasoning"):
+                    call["reasoning_content"] = m["reasoning"]
+                out.append(call)
 
             else:
                 out.append({"role": role, "content": m["content"]})
@@ -283,6 +290,7 @@ class LocalProvider:
             model_used=model_used,
             thinking=thinking,
             tool_calls=tool_calls,
+            reasoning=reasoning or "",
         )
 
     # --- HTTP ---

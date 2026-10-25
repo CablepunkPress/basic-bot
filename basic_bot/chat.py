@@ -301,11 +301,15 @@ def _chat_loop(
         if not response.tool_calls:
             return response
 
-        # Append assistant message with tool calls
+        # Append the assistant's tool calls with the reasoning that led
+        # to them so the model keeps its plan for the rest of the turn.
+        # These messages live only for this turn; the turn saves only
+        # the final reply.
         messages.append({
             "role": "assistant",
             "content": response.text,
             "tool_calls": response.tool_calls,
+            "reasoning": response.reasoning,
         })
 
         # Execute tools and append results

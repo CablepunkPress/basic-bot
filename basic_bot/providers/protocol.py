@@ -36,7 +36,7 @@ class ModelInfo:
     publisher: str                            # "Meta", "Google": who made it, not who runs it
     family: str                               # "Muse", "Gemma": groups models in the UI
     host: str                                 # where it runs: "local", or a connector's host
-    rank: int = 0                             # display order
+    rank: int = 0                             # display order: lower = smaller/cheaper
     reasoning: str = REASONING_NONE           # "none", "optional", or "always"
     reasoning_default: bool = False           # on or off when nothing is chosen
     effort_levels: list[str] | None = None    # lowest to highest
@@ -96,6 +96,10 @@ class ChatResponse:
     model_used: str
     thinking: bool = False
     tool_calls: list[ToolCall] = field(default_factory=list)
+    # The reasoning itself. Sent back with the tool calls it led to,
+    # for the rest of the turn, so the model keeps its plan across a
+    # chain of tool calls; never stored.
+    reasoning: str = ""
 
 
 class InferenceProvider(Protocol):
@@ -128,8 +132,14 @@ class InferenceProvider(Protocol):
 
         Messages are in engine format:
             {"role": "user", "content": "..."}
-            {"role": "assistant", "content": "...", "tool_calls": [...]}
+            {"role": "assistant", "content": "...", "tool_calls": [...],
+             "reasoning": "..."}
             {"role": "tool_result", "results": [{"tool_call_id": "...", "content": "..."}]}
+
+        An assistant message with tool calls may carry the reasoning
+        that led to them, from earlier in the same turn. A provider
+        passes it to the model if the model takes it back, and
+        otherwise drops it.
 
         Tools are JSON Schema definitions (name, description, input_schema).
         The provider translates to its own API format internally.
