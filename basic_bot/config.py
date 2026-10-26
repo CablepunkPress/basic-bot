@@ -45,6 +45,13 @@ MAX_TOOL_ROUNDS = 8
 # basic_bot.providers.local). False lets the model decide.
 FORCE_REASONING = True
 
+# Context checkpoints for this agent's chat model: copies of the cache
+# llama-server keeps so it can return to an earlier point, for models
+# whose cache can't otherwise be cut back, such as the Gemmas. None
+# uses the hardware profile's ctx_checkpoints for each model; a number
+# here overrides it, to try another while tuning it.
+CTX_CHECKPOINTS = None
+
 
 def apply_overrides(overrides: dict) -> None:
     """Override defaults from the agent's config.toml.
