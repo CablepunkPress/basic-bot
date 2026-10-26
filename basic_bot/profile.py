@@ -235,6 +235,15 @@ def _check_cache_types(name: str, table: dict) -> list[str]:
     ]
 
 
+def _check_checkpoints(name: str, entry: dict) -> list[str]:
+    """Check ctx_checkpoints: how many context checkpoints llama-server keeps."""
+    value = entry.get("ctx_checkpoints")
+    if "ctx_checkpoints" in entry and not (
+            isinstance(value, int) and not isinstance(value, bool) and value >= 0):
+        return [f"{name}: ctx_checkpoints must be a whole number, 0 or more"]
+    return []
+
+
 def _is_count(value) -> bool:
     """A positive whole number, not a bool (which Python counts as one)."""
     return isinstance(value, int) and not isinstance(value, bool) and value > 0
@@ -396,6 +405,7 @@ def _check_entry(name: str, entry: dict, required: tuple) -> list[str]:
         problems.append(f"{name}: display_name must be text")
     problems += _check_pin(name, entry)
     problems += _check_cache_types(name, entry)
+    problems += _check_checkpoints(name, entry)
     reasoning = entry.get("reasoning")
     if reasoning is not None:
         problems += _check_reasoning(name, reasoning)
