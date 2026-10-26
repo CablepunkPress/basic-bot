@@ -65,12 +65,26 @@
 # cache_type_k, cache_type_v (on a model, and on a drafter file)
 # The KV cache holds every token of the current prompt, for the model
 # and separately for its drafter, so llama-server's memory follows the
-# longest prompt of a session and comes down only on a restart. On
-# October 25 a Wikipedia chain reached about 10,100 tokens and 6.5 GB,
-# and with about 23.8 GB of wired weights, memory pressure turned
-# yellow. q8_0 stores the cache at 8 bits instead of 16, roughly
-# halving it; a quantized V cache needs flash attention.
+# longest prompt of a session. On October 25 a Wikipedia chain reached
+# about 10,100 tokens and 6.5 GB with Muse, and with about 23.8 GB of
+# wired weights, memory pressure turned yellow. q8_0 stores the cache
+# at 8 bits instead of 16, roughly halving it (Muse then peaked at
+# about 3 GB); a quantized V cache needs flash attention.
 #
+# ctx_checkpoints
+# For a model whose cache can't be cut back to an earlier point
+# (sliding-window attention, as in the Gemmas, or a recurrent state,
+# as in Qwen3.8), llama-server saves copies of the cache, context
+# checkpoints, so it can return to an earlier point in a conversation:
+# up to 32 by default, about 425 MiB each for the Gemma 4 31B, made
+# silently two or three per request. With none, memory stays flat, but
+# a turn that goes back rereads the whole conversation (most turns,
+# since earlier turns' reasoning and tool steps aren't sent again).
+# 0 is the starting point (October 26); the number is raised as it's
+# tested, after warming and slot save and restore. Setting
+# LLAMA_ARG_CTX_CHECKPOINTS when starting an agent overrides it.
+# Muse doesn't need it: its cache can be cut back anywhere.
+
 # prefill (in a [reasoning] table)
 # The opening words of the model's reasoning, written for it at the
 # start of each turn, so a model that would skip reasoning on turns it
@@ -122,6 +136,7 @@ gpu_layers = -1
 flash_attn = "on"
 ctx_size = 16384
 max_tokens = 8192
+ctx_checkpoints = 0   # one request per fold never goes back
 
 [summary.reasoning]
 mode = "optional"
@@ -166,18 +181,21 @@ presence_penalty = 0.0
 #   system message, defaulting to high. Changing effort therefore
 #   invalidates the prompt cache: the whole conversation is re-read.
 #   Choose a default you rarely need to change.
+# Optional since October 25, when the Gemma 4 31B became the default:
+# in the head-to-head it answered broad questions from memory and
+# got details wrong, and argued with itself where Gemma planned.
 
 [chat."muse-glimmer-30b-q4_k_xl"]
 file = "Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
 url = "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/resolve/70bf1b61ac09f91b24d39038091b41c582bc5d7a/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
 sha256 = "ac7023d6a4c704eb9af54ab53e476a66b7f5b6c0ef2fc4a8dde5253c291a6c38"
 size = 19653960832
-default = true
+default = false
 alias = "muse-glimmer-30b-q4_k_xl"
 display_name = "Muse Glimmer 30B Q4_K_XL"
 publisher = "Meta"
 family = "Muse"
-rank = 1
+rank = 2
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 131072
@@ -238,18 +256,25 @@ top_k = 64
 #   can't tell its type from the file, so the draft table states it.
 #   Google claims up to 3x faster generation; on the M6's bandwidth
 #   this dense model is slow without it.
+# The default chat model since October 25: in the head-to-head it was
+# right on every question, read every turn correctly, and planned its
+# reasoning step by step, following its persona and instructions.
+# Memory: most of its layers use sliding-window attention, so
+# llama-server keeps context checkpoints (see the header). With the
+# default of 32, nine short turns took llama-server from 2.2 to 14 GB;
+# with none, it stayed near 2.4 GB.
 
 [chat."gemma-4-31b-it-q4_k_m"]
 file = "google_gemma-4-31B-it-Q4_K_M.gguf"
 url = "https://huggingface.co/bartowski/google_gemma-4-31B-it-GGUF/resolve/619aca7589c72be65dd968de8602ad23d68b5c14/google_gemma-4-31B-it-Q4_K_M.gguf"
 sha256 = "2959c1b0a4f792493bb0092846ea06aec54547e47be979c282634d938d501b75"
 size = 19598489952
-default = false
+default = true
 alias = "gemma-4-31b-it-q4_k_m"
 display_name = "Gemma 4 31B Q4_K_M"
 publisher = "Google"
 family = "Gemma"
-rank = 2
+rank = 1
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
@@ -257,6 +282,7 @@ max_tokens = 16384
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"
+ctx_checkpoints = 0
 
 [chat."gemma-4-31b-it-q4_k_m".reasoning]
 mode = "optional"
@@ -318,6 +344,7 @@ max_tokens = 16384
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"
+ctx_checkpoints = 0
 
 [chat."gemma-4-26b-a4b-it-qat-q4_0".reasoning]
 mode = "optional"
@@ -370,6 +397,7 @@ max_tokens = 16384
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"
+ctx_checkpoints = 0
 
 [chat."qwen3.8-27b-q5_k_m".reasoning]
 mode = "optional"
