@@ -81,8 +81,9 @@
 # a turn that goes back rereads the whole conversation (most turns,
 # since earlier turns' reasoning and tool steps aren't sent again).
 # 0 is the starting point (October 26); the number is raised as it's
-# tested, after warming and slot save and restore. Setting
-# LLAMA_ARG_CTX_CHECKPOINTS when starting an agent overrides it.
+# tested, after warming and slot save and restore. An agent's
+# config.toml can set ctx_checkpoints for its chat model, to try
+# another number.
 # Muse doesn't need it: its cache can be cut back anywhere.
 
 # prefill (in a [reasoning] table)
