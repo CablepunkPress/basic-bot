@@ -196,6 +196,17 @@ def _build_launch_args(entry: dict) -> list[str]:
         args += ["--cache-type-k", entry["cache_type_k"]]
     if "cache_type_v" in entry:
         args += ["--cache-type-v", entry["cache_type_v"]]
+    # Context checkpoints. A model whose cache can't be cut back to an
+    # earlier point (sliding-window attention, as in Gemma 4, or a
+    # recurrent state, as in Qwen3.8) gets copies of its cache saved, so
+    # the server can return to an earlier point; up to 32 by default.
+    # Gemma 4 31B's are about 425 MiB each, two or three per request, and
+    # v0.5.0 doesn't log making them: llama-server grew to 14 GB in nine
+    # short turns. With none, a turn that goes back rereads the whole
+    # conversation. LLAMA_ARG_CTX_CHECKPOINTS, if set, overrides the
+    # profile, for trying other numbers without editing it.
+    if "ctx_checkpoints" in entry and "LLAMA_ARG_CTX_CHECKPOINTS" not in os.environ:
+        args += ["--ctx-checkpoints", str(entry["ctx_checkpoints"])]
 
     # Speculative decoding: a drafter proposes tokens the model checks
     # in one pass. Speeds up generation without changing the output.
