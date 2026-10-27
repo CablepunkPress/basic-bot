@@ -148,3 +148,22 @@ class InferenceProvider(Protocol):
         Providers resolve them with ModelInfo.resolve().
         """
         ...
+
+    def warm(
+        self,
+        *,
+        messages: list[dict],
+        system: str,
+        tools: list[dict] | None = None,
+        model_id: str,
+        effort: str | None = None,
+        thinking: bool | None = None,
+    ) -> None:
+        """Prepare the server's cache for a prompt, generating nothing.
+
+        The prompt is what chat() would build from the same arguments,
+        ending with the last reply as a finished message, so the next
+        request, which adds a new message, only extends it. A provider
+        with nothing to prepare does nothing.
+        """
+        ...

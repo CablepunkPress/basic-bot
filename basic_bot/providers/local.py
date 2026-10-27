@@ -38,6 +38,15 @@ finished thought to close. It goes at the very end of the prompt, so
 the cache isn't touched. config.FORCE_REASONING turns it off, for an
 agent or for comparison.
 
+warm() reads a prompt into the server's cache without generating
+(max_tokens 0, which llama-server documents as evaluating the prompt
+into the cache). It builds the prompt exactly as chat() does, through
+_payload(), so the cache it prepares is the start of the next request.
+The prompt ends with the last reply, rendered as a finished message,
+which needs llama-server started with --no-prefill-assistant (see
+basic_bot.infrastructure.server); otherwise the server would leave the
+reply open, to be continued, and the next request wouldn't match.
+
 stdlib urllib only — no SDK for localhost HTTP.
 """
 
@@ -126,14 +135,13 @@ class LocalProvider:
     ) -> ChatResponse:
         reasoning_on, level = self._model_info.resolve(thinking, effort)
 
-        payload: dict = {
-            "model": self._model_id,
-            "messages": self._build_messages(system, messages),
-            "max_tokens": self._max_tokens,
-        }
+        payload = self._payload(system, messages, tools, reasoning_on, level)
+        payload["max_tokens"] = self._max_tokens
 
         # Open the model's reasoning for it, at the start of a turn only:
         # after a tool result it's already in the middle of its work.
+        # "reasoning_content" is the name llama-server accepts; v0.7.0
+        # rejects anything else, where v0.5.0 quietly ignored it.
         if (
             self._prefill and reasoning_on and config.FORCE_REASONING
             and messages and messages[-1]["role"] == "user"
@@ -143,20 +151,8 @@ class LocalProvider:
                 "content": "",
                 "reasoning_content": self._prefill,
             })
-            payload["continue_final_message"] = "reasoning"
+            payload["continue_final_message"] = "reasoning_content"
             payload["add_generation_prompt"] = False
-
-        if tools:
-            payload["tools"] = [self._translate_tool(t) for t in tools]
-
-        # Reasoning and effort, in this model's template vocabulary
-        template_kwargs: dict = {}
-        if self._model_info.reasoning == REASONING_OPTIONAL and self._switch_key:
-            template_kwargs[self._switch_key] = reasoning_on
-        if level and self._effort_key:
-            template_kwargs[self._effort_key] = level
-        if template_kwargs:
-            payload["chat_template_kwargs"] = template_kwargs
 
         # Reasoning budget, a guard against reasoning that never ends
         budget = self._budget_for(reasoning_on, level)
@@ -173,6 +169,55 @@ class LocalProvider:
 
         data = self._post(payload)
         return self._parse_response(data, budget)
+
+    def warm(
+        self,
+        *,
+        messages: list[dict],
+        system: str,
+        tools: list[dict] | None = None,
+        model_id: str | None = None,
+        effort: str | None = None,
+        thinking: bool | None = None,
+    ) -> None:
+        """Read this prompt into the server's cache, generating nothing."""
+        reasoning_on, level = self._model_info.resolve(thinking, effort)
+        payload = self._payload(system, messages, tools, reasoning_on, level)
+        payload["max_tokens"] = 0
+        payload["add_generation_prompt"] = False
+        self._log_timing(self._post(payload), "Warmed")
+
+    def _payload(
+        self,
+        system: str,
+        messages: list[dict],
+        tools: list[dict] | None,
+        reasoning_on: bool,
+        level: str | None,
+    ) -> dict:
+        """Everything in a request that shapes the prompt.
+
+        chat() and warm() both start from this, so the prompt warm()
+        reads is the one chat() will send.
+        """
+        payload: dict = {
+            "model": self._model_id,
+            "messages": self._build_messages(system, messages),
+        }
+
+        if tools:
+            payload["tools"] = [self._translate_tool(t) for t in tools]
+
+        # Reasoning and effort, in this model's template vocabulary
+        template_kwargs: dict = {}
+        if self._model_info.reasoning == REASONING_OPTIONAL and self._switch_key:
+            template_kwargs[self._switch_key] = reasoning_on
+        if level and self._effort_key:
+            template_kwargs[self._effort_key] = level
+        if template_kwargs:
+            payload["chat_template_kwargs"] = template_kwargs
+
+        return payload
 
     def _budget_for(self, reasoning_on: bool, level: str | None) -> int | None:
         """The reasoning budget for this request, or None for no limit.
@@ -313,7 +358,7 @@ class LocalProvider:
             reasoning=reasoning or "",
         )
 
-    def _log_timing(self, data: dict) -> None:
+    def _log_timing(self, data: dict, what: str = "Timing") -> None:
         """One line per request: what the server reused, read, and wrote.
 
         llama-server returns its timings with every reply. Logging them
@@ -324,8 +369,8 @@ class LocalProvider:
         if not t:
             usage = data.get("usage") or {}
             logger.info(
-                "Tokens (%s): prompt %d, completion %d",
-                self._model_info.display_name,
+                "%s (%s): prompt %d, completion %d",
+                what, self._model_info.display_name,
                 usage.get("prompt_tokens", 0),
                 usage.get("completion_tokens", 0),
             )
@@ -338,7 +383,7 @@ class LocalProvider:
         read, read_ms = t.get("prompt_n", 0), t.get("prompt_ms", 0.0)
         made, made_ms = t.get("predicted_n", 0), t.get("predicted_ms", 0.0)
         line = (
-            f"Timing ({self._model_info.display_name}): "
+            f"{what} ({self._model_info.display_name}): "
             f"{cached:,} cached, {read:,} read in {read_ms / 1000:.1f} s "
             f"({rate(read, read_ms)}), {made:,} generated in "
             f"{made_ms / 1000:.1f} s ({rate(made, made_ms)})"

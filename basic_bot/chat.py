@@ -22,7 +22,7 @@ import logging
 from datetime import datetime, timezone
 
 import basic_bot.config as config
-from basic_bot.memory import load_window
+from basic_bot.memory import load_history, load_window
 from basic_bot.providers.protocol import (
     ChatResponse,
     InferenceProvider,
@@ -279,6 +279,41 @@ def chat_with_model(
             "fallback": True,
             "model_mismatch": response.model_used != fallback_id,
         }
+
+
+def warm_request(
+    runtime: BotRuntime,
+    user_id: str,
+    model_id: str,
+    effort: str | None = None,
+    thinking: bool | None = None,
+) -> dict:
+    """The arguments for warming the cache for the next turn.
+
+    The prompt is built as chat_with_model() will build it for the
+    next message, minus that message: the same system prompt, tools,
+    and settings, and the stored conversation ending with the last
+    reply. Reading it into the cache now means the next request only
+    adds the new message, and nothing has to be reread.
+
+    The session calls this while it holds the store, and sends the
+    request in the background (see basic_bot.session).
+    """
+    provider = runtime.chat_provider
+    info = provider.get_models()[model_id]
+    reasoning_on, level = info.resolve(thinking, effort)
+
+    window, summary, state = load_history(runtime.store, user_id)
+    return {
+        "messages": _prepare_messages(window),
+        "system": build_system_prompt(
+            runtime, summary, state["summarized_through"],
+        ),
+        "tools": [e["schema"] for e in runtime.tool_registry.values()] or None,
+        "model_id": model_id,
+        "effort": level,
+        "thinking": reasoning_on,
+    }
 
 
 def _chat_loop(

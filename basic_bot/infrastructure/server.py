@@ -278,6 +278,13 @@ def _build_launch_args(entry: dict) -> list[str]:
     # llama-server divides --ctx-size across slots.
     args += ["--parallel", "1"]
 
+    # A request ending with the assistant's reply is warming the cache
+    # (basic_bot.session), and the reply must be read as a finished
+    # message, as the next request will have it. By default llama-server
+    # leaves a trailing reply open to be continued. Muse's prefill, which
+    # does want continuing, asks for it explicitly.
+    args += ["--no-prefill-assistant"]
+
     return args
 
 
@@ -360,7 +367,7 @@ def _slot_file(alias: str, server_cmd: list[str]) -> str:
     key = hashlib.sha256(
         (LLAMA_COMMIT + "\n" + shlex.join(server_cmd)).encode("utf-8")
     ).hexdigest()[:12]
-    return f"{alias}-{key}.bin"
+    return f"{alias}-{key}.slot"
 
 
 def _slot_request(port: int, action: str, filename: str) -> dict:
@@ -396,10 +403,15 @@ def _save_slot(role: str) -> None:
         result.get("timings", {}).get("save_ms", 0) / 1000,
     )
 
-    # Older files for the same model, from an earlier setup
+    # Older files for the same model, from an earlier setup (named .bin
+    # before October 27)
     alias = filename.rsplit("-", 1)[0]
-    for old in _slot_dir.glob(f"{alias}-*.bin"):
-        if old.name != filename and old.stem.rsplit("-", 1)[0] == alias:
+    for old in _slot_dir.glob(f"{alias}-*"):
+        if (
+            old.name != filename
+            and old.suffix in (".slot", ".bin")
+            and old.stem.rsplit("-", 1)[0] == alias
+        ):
             old.unlink(missing_ok=True)
 
 

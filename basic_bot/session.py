@@ -47,6 +47,17 @@ so a restart, a model switch, an archive search, or the next session
 doesn't reread the whole conversation (see
 basic_bot.infrastructure.server).
 
+Between turns, the session warms the cache: right after a reply is
+saved, after a memory update, after a model is selected, and when the
+session starts, it has the server read the conversation as the next
+message will find it, ending with the last reply. The next request
+then only adds the new message. Without it, a model with a sliding
+window, such as the Gemmas, rereads everything whenever the last turn
+reasoned at length or used a tool, since the engine doesn't send that
+reasoning back and the server can rewind only a short way. Warming
+runs in the background, so the session stays free: a message sent
+before it finishes waits at the server for it, losing nothing.
+
 Every polite way of stopping ends in close(), so llama-server is
 stopped rather than left running: Ctrl-C raises KeyboardInterrupt,
 and open() turns a closed terminal window (SIGHUP) or a logout or
@@ -74,7 +85,7 @@ from pathlib import Path
 
 import basic_bot.config as config
 from basic_bot.agent import AgentError, load_agent
-from basic_bot.chat import chat_with_model
+from basic_bot.chat import chat_with_model, warm_request
 from basic_bot.factory import create_runtime
 from basic_bot.fold import build_metadata, should_fold
 from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT, LLAMA_VERSION
@@ -296,6 +307,7 @@ class Session:
         """Start the default model."""
         with self._busy():
             self._select(self._router.get_default_model())
+            self._warm()
 
     def close(self) -> None:
         """Stop every server this session started.
@@ -360,6 +372,7 @@ class Session:
 
         with self._busy():
             self._select(self._router.default_for(host))
+            self._warm()
 
     def select_model(self, model_id: str) -> None:
         """Switch model, right away. Settings reset to its defaults."""
@@ -367,6 +380,7 @@ class Session:
             raise SessionError(f"Unknown model '{model_id}'.")
         with self._busy():
             self._select(model_id)
+            self._warm()
 
     def set_reasoning(self, on: bool) -> None:
         info = self.controls().model
@@ -470,6 +484,11 @@ class Session:
             )
             logger.info("Saved turn (seq %d–%d)", seq, seq + 1)
 
+            # A fold rewrites the prompt, so warming waits for it
+            memory_update_due = bool(should_fold(store, DEFAULT_USER))
+            if not memory_update_due:
+                self._warm()
+
             return Reply(
                 text=result["reply"],
                 seq=seq,
@@ -480,7 +499,7 @@ class Session:
                 fallback=result["fallback"],
                 sent_at=sent_at,
                 replied_at=replied_at,
-                memory_update_due=bool(should_fold(store, DEFAULT_USER)),
+                memory_update_due=memory_update_due,
             )
 
     def update_memory(self) -> bool:
@@ -494,7 +513,11 @@ class Session:
         next message is answered.
         """
         with self._busy():
-            return self._fold_if_due()
+            due = bool(should_fold(self._runtime.store, DEFAULT_USER))
+            done = self._fold_if_due()
+            if due and done:
+                self._warm()
+            return done
 
     def _fold_if_due(self) -> bool:
         """Run a fold if one is due. Caller holds the lock.
@@ -517,6 +540,38 @@ class Session:
                 logger.exception("Fold failed — will retry before the next reply")
             return False
         return True
+
+    # --- Warming ---
+
+    def _warm(self) -> None:
+        """Ready the cache for the next message, in the background.
+
+        Caller holds the lock. The request is built now, while nothing
+        else is using the store, and sent on its own thread, so the
+        session is free again at once.
+        """
+        if shutting_down():
+            return
+        model_id = self._model_id or self._router.get_default_model()
+        try:
+            request = warm_request(
+                self._runtime, DEFAULT_USER, model_id,
+                self._effort, self._thinking,
+            )
+        except Exception:
+            logger.exception("Couldn't prepare to warm the cache")
+            return
+        threading.Thread(
+            target=self._send_warm, args=(request,), name="warm", daemon=True,
+        ).start()
+
+    def _send_warm(self, request: dict) -> None:
+        """Send a warming request. A failure costs only the head start."""
+        try:
+            self._router.warm(**request)
+        except Exception as e:
+            if not shutting_down():
+                logger.info("Warming the cache didn't finish: %s", e)
 
     def history(self, limit: int | None = None) -> list[dict]:
         """Recent messages, oldest first: role, content, seq, metadata,

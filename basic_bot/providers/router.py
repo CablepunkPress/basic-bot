@@ -174,6 +174,38 @@ class ChatRouter:
             self._stop_local()
             self._server_up = False
 
+    # --- Protocol: warming ---
+
+    def warm(
+        self,
+        *,
+        messages: list[dict],
+        system: str,
+        tools: list[dict] | None = None,
+        model_id: str,
+        effort: str | None = None,
+        thinking: bool | None = None,
+    ) -> None:
+        """Prepare the running model's cache for the next request.
+
+        Only for the model already running: warming never starts,
+        stops, or switches a server, and does nothing while suspended.
+        """
+        if (
+            model_id != self._active_local_model
+            or not self._server_up
+            or self._suspended
+        ):
+            return
+        self._providers[model_id].warm(
+            messages=messages,
+            system=system,
+            tools=tools,
+            model_id=model_id,
+            effort=effort,
+            thinking=thinking,
+        )
+
     # --- Protocol: chat ---
 
     def chat(

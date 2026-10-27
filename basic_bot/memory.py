@@ -32,6 +32,33 @@ def get_messages(
     return store.get_messages(user_id, limit)
 
 
+def load_history(
+    store: MessageStore,
+    user_id: str,
+) -> tuple[list[dict[str, str]], str, dict]:
+    """The stored conversation as the model sees it, before a new message.
+
+    Returns (messages, summary, state): everything after the summary
+    boundary, stripped to role/content and each prefixed with its
+    annotation, exactly as load_window begins the next turn's prompt.
+    Warming reads this, so the cache it prepares matches that prompt
+    token for token.
+    """
+    state = store.get_state(user_id)
+    window = store.get_messages_after(user_id, state["summarized_through"])
+    messages = [
+        {
+            "role": m["role"],
+            "content": (
+                annotate(m["seq"], m.get("created_at"))
+                + strip_annotations(m["content"]).strip()
+            ),
+        }
+        for m in window
+    ]
+    return messages, state["summary"], state
+
+
 def load_window(
     store: MessageStore,
     user_id: str,
