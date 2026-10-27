@@ -395,11 +395,17 @@ presence_penalty = 1.5
 # --- Gemma 4 26B A4B ---
 # Base: https://huggingface.co/google/gemma-4-26B-A4B
 #   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-26B-A4B-it
-#       └─ Quantization: https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf
+#       └─ QAT: https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-unquantized
+#           └─ Quantization: https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF
 # Mixture of experts: 25.2B parameters, 3.8B active per token (8 of
-# 128 experts plus one shared), 30 layers. ~14.4 GB.
-# Google's quantization-aware training (QAT) Q4_0: trained to be cut
-# to 4 bits, so it keeps more quality than an ordinary 4-bit file.
+# 128 experts plus one shared), 30 layers, mostly sliding-window
+# attention like the 31B. ~14.2 GB, plus the MTP drafter, ~0.25 GB.
+# Google's quantization-aware training (QAT): trained to be cut to
+# 4 bits, so it keeps more quality than an ordinary 4-bit file.
+# Unsloth's Dynamic 4-bit (UD-Q4_K_XL) of Google's unquantized QAT
+# checkpoint, and the drafter from the same repo, derived from the QAT
+# model at 4 bits. Google's card says a QAT model's drafter must be a
+# QAT checkpoint of the same precision; this one is.
 # From the Gemma 4 model cards:
 # - Thinking is off unless switched on per request with
 #   chat_template_kwargs {"enable_thinking": true}. No effort levels.
@@ -408,37 +414,52 @@ presence_penalty = 1.5
 # - Earlier turns should carry only final answers, not thinking; the
 #   chat template embedded in the GGUF handles this.
 # - Vision needs the separate mmproj file, which isn't downloaded yet.
-# - No drafter: Google's card says one must be a QAT checkpoint of the
-#   same precision, and none is published as a GGUF.
-# - On the Mac it fits whole in memory; with only 3.8B parameters read
-#   per token, it should generate much faster than the dense models.
+# - Google's benchmarks put it a little behind the 31B on most tests,
+#   and well behind on Tau2, agentic tool use (68.2% against 76.9%),
+#   and long-context retrieval (MRCR v2 128k, 44.1% against 66.4%).
+# - With only 3.8B parameters read per token, it should generate
+#   several times faster than the 31B on the M6's bandwidth.
+# Under test from October 27 against the 31B, for the default.
 
-[chat."gemma-4-26b-a4b-it-qat-q4_0"]
-file = "gemma-4-26B_q4_0-it.gguf"
-url = "https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-gguf/resolve/d1c082be9cf3c8a514acf63b8761f4b41935842e/gemma-4-26B_q4_0-it.gguf"
-sha256 = "3eca3b8f6d7baf218a7dd6bba5fb59a56ee25fe2d567b6f5f589b4f697eca51d"
-size = 14439363584
+[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl"]
+file = "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf"
+url = "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/7b92b5b28818151e8669af2e45e88d6086f490dd/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf"
+sha256 = "a7c5bc715f5ff8e99a3e8901ce7d2b42b402c669bf24f7c5250747633d0f5891"
+size = 14249047104
 default = false
-alias = "gemma-4-26b-a4b-it-qat-q4_0"
-display_name = "Gemma 4 26B A4B QAT Q4_0"
+alias = "gemma-4-26b-a4b-it-qat-ud-q4_k_xl"
+display_name = "Gemma 4 26B A4B QAT UD-Q4_K_XL"
 publisher = "Google"
 family = "Gemma"
 rank = 3
 gpu_layers = -1
 flash_attn = "on"
-ctx_size = 32768
+# As the 31B, so a long recall_message result fits.
+ctx_size = 65536
 max_tokens = 16384
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"
-ctx_checkpoints = 0
+# The 31B's value to start; this model's checkpoints should be about
+# half the size, with half the layers. Its slot file will tell.
+ctx_checkpoints = 4
 
-[chat."gemma-4-26b-a4b-it-qat-q4_0".reasoning]
+[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".reasoning]
 mode = "optional"
-default = false
+default = true
 switch_key = "enable_thinking"
+budget = 1024
 
-[chat."gemma-4-26b-a4b-it-qat-q4_0".sampling]
+[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".draft]
+type = "mtp"
+file = "mtp-gemma-4-26B-A4B-it.gguf"
+url = "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/7b92b5b28818151e8669af2e45e88d6086f490dd/mtp-gemma-4-26B-A4B-it.gguf"
+sha256 = "7272d97595f0d4c74bd7b623492b7dbdaafd8b7c72f329a8270ba4eca68f768a"
+size = 251939328
+cache_type_k = "q8_0"
+cache_type_v = "q8_0"
+
+[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".sampling]
 temperature = 1.0
 top_p = 0.95
 top_k = 64
