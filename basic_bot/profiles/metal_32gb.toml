@@ -83,8 +83,11 @@
 # 0 is the starting point (October 26); the number is raised as it's
 # tested, after warming and slot save and restore. An agent's
 # config.toml can set ctx_checkpoints for its chat model, to try
-# another number.
-# Muse doesn't need it: its cache can be cut back anywhere.
+# another number. Warming showed 0 isn't enough: after a lookup turn
+# or a long reply, Gemma rereads everything, and Qwen3.8 rereads after
+# every turn, since a recurrent state can't go back even one token.
+# Muse sets none, so it keeps the default of 32: its checkpoints are
+# about 63 MiB each (October 26), and they're how its cache goes back.
 
 # prefill (in a [reasoning] table)
 # The opening words of the model's reasoning, written for it at the

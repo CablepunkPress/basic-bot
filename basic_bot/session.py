@@ -48,15 +48,17 @@ doesn't reread the whole conversation (see
 basic_bot.infrastructure.server).
 
 Between turns, the session warms the cache: right after a reply is
-saved, after a memory update, after a model is selected, and when the
-session starts, it has the server read the conversation as the next
-message will find it, ending with the last reply. The next request
-then only adds the new message. Without it, a model with a sliding
-window, such as the Gemmas, rereads everything whenever the last turn
+saved, after a memory update, after a model is selected or its effort
+or Deep Reasoning is changed, and when the session starts, it has the
+server read the conversation as the next message will find it, ending
+with the last reply. The next request then only adds the new message.
+Without it, a model that can't rewind far (the Gemmas' sliding window,
+Qwen's recurrent state) rereads everything whenever the last turn
 reasoned at length or used a tool, since the engine doesn't send that
-reasoning back and the server can rewind only a short way. Warming
-runs in the background, so the session stays free: a message sent
-before it finishes waits at the server for it, losing nothing.
+reasoning back; with context checkpoints, warming makes that reread
+short and moves it out of the user's way. Warming runs in the
+background, so the session stays free: a message sent before it
+finishes waits at the server for it, losing nothing.
 
 Every polite way of stopping ends in close(), so llama-server is
 stopped rather than left running: Ctrl-C raises KeyboardInterrupt,
@@ -393,6 +395,7 @@ class Session:
             raise SessionError(f"{info.display_name} doesn't use Deep Reasoning.")
         self._thinking = on
         logger.info("Deep Reasoning turned %s", "on" if on else "off")
+        self._warm_if_idle()
 
     def set_effort(self, level: str) -> None:
         controls = self.controls()
@@ -411,6 +414,7 @@ class Session:
             )
         self._effort = level
         logger.info("Effort set to %s", level)
+        self._warm_if_idle()
 
     def _select(self, model_id: str) -> None:
         """Select a model and reset settings. Caller holds the lock."""
@@ -564,6 +568,22 @@ class Session:
         threading.Thread(
             target=self._send_warm, args=(request,), name="warm", daemon=True,
         ).start()
+
+    def _warm_if_idle(self) -> None:
+        """Warm after a setting changes the prompt, unless work is under way.
+
+        Effort and Deep Reasoning change the start of the prompt for
+        some models (Muse's strength, Gemma's thinking switch, Qwen's
+        effort), so the next message would reread everything. A turn or
+        memory update in progress warms when it finishes, with the new
+        setting, so nothing is lost by skipping here.
+        """
+        if not self._lock.acquire(blocking=False):
+            return
+        try:
+            self._warm()
+        finally:
+            self._lock.release()
 
     def _send_warm(self, request: dict) -> None:
         """Send a warming request. A failure costs only the head start."""

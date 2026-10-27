@@ -74,6 +74,24 @@ BUDGET_MESSAGE = (
     "and if I'm not sure, I'll say so plainly and ask.\n"
 )
 
+# llama-server's endpoints: chat for replies; the other two for warming
+CHAT_PATH = "/v1/chat/completions"
+TEMPLATE_PATH = "/apply-template"
+COMPLETION_PATH = "/completion"
+
+
+def _error_text(e: urllib.error.HTTPError) -> str:
+    """The server's own explanation of an error, or the HTTP reason.
+
+    llama-server answers an error with {"error": {"message": ...}}.
+    """
+    try:
+        body = json.loads(e.read().decode("utf-8"))
+        message = body["error"]["message"]
+    except Exception:
+        return str(e.reason)
+    return str(message)[:300]
+
 
 class LocalProvider:
     """InferenceProvider implementation for a local llama-server."""
@@ -88,7 +106,8 @@ class LocalProvider:
         sampling: dict | None = None,
     ):
         self._model_id = model_id
-        self._endpoint = base_url.rstrip("/") + "/v1/chat/completions"
+        self._base_url = base_url.rstrip("/")
+        self._endpoint = self._base_url + CHAT_PATH
         self._max_tokens = max_tokens
         self._model_info = model_info
         self._sampling = sampling or {}
@@ -180,12 +199,26 @@ class LocalProvider:
         effort: str | None = None,
         thinking: bool | None = None,
     ) -> None:
-        """Read this prompt into the server's cache, generating nothing."""
+        """Read this prompt into the server's cache, generating nothing.
+
+        Two requests, and neither is a chat request. /apply-template
+        renders the prompt from the same payload chat() sends, through
+        the same code in llama-server; /completion then reads that text
+        into the cache with n_predict 0, tokenizing it as a chat request
+        does. A chat request would also sample a token and parse it as
+        a reply, and a model's parser can reject the token a finished
+        reply leads to: Muse's is <|start|>, and its parser answered
+        HTTP 500 (October 26).
+        """
         reasoning_on, level = self._model_info.resolve(thinking, effort)
         payload = self._payload(system, messages, tools, reasoning_on, level)
-        payload["max_tokens"] = 0
         payload["add_generation_prompt"] = False
-        self._log_timing(self._post(payload), "Warmed")
+        rendered = self._post(payload, TEMPLATE_PATH)
+        data = self._post(
+            {"prompt": rendered["prompt"], "n_predict": 0, "cache_prompt": True},
+            COMPLETION_PATH,
+        )
+        self._log_timing(data, "Warmed", generated=False)
 
     def _payload(
         self,
@@ -358,7 +391,9 @@ class LocalProvider:
             reasoning=reasoning or "",
         )
 
-    def _log_timing(self, data: dict, what: str = "Timing") -> None:
+    def _log_timing(
+        self, data: dict, what: str = "Timing", generated: bool = True,
+    ) -> None:
         """One line per request: what the server reused, read, and wrote.
 
         llama-server returns its timings with every reply. Logging them
@@ -385,9 +420,13 @@ class LocalProvider:
         line = (
             f"{what} ({self._model_info.display_name}): "
             f"{cached:,} cached, {read:,} read in {read_ms / 1000:.1f} s "
-            f"({rate(read, read_ms)}), {made:,} generated in "
-            f"{made_ms / 1000:.1f} s ({rate(made, made_ms)})"
+            f"({rate(read, read_ms)})"
         )
+        if generated:
+            line += (
+                f", {made:,} generated in "
+                f"{made_ms / 1000:.1f} s ({rate(made, made_ms)})"
+            )
         drafted = t.get("draft_n", 0)
         if drafted:
             line += f", drafter {t.get('draft_n_accepted', 0) / drafted:.2f}"
@@ -395,10 +434,11 @@ class LocalProvider:
 
     # --- HTTP ---
 
-    def _post(self, payload: dict) -> dict:
+    def _post(self, payload: dict, path: str = CHAT_PATH) -> dict:
+        url = self._base_url + path
         body = json.dumps(payload).encode("utf-8")
         req = urllib.request.Request(
-            self._endpoint,
+            url,
             data=body,
             headers={"Content-Type": "application/json"},
         )
@@ -408,15 +448,15 @@ class LocalProvider:
         except urllib.error.HTTPError as e:
             if e.code == 400:
                 raise RuntimeError(
-                    f"Local inference server rejected request (HTTP 400) — "
-                    f"context may exceed model's max context length"
+                    f"Local inference server rejected the request "
+                    f"(HTTP 400): {_error_text(e)}"
                 ) from e
             raise RuntimeError(
-                f"Local inference server error at {self._endpoint} — "
-                f"HTTP {e.code}: {e.reason}"
+                f"Local inference server error at {url} — "
+                f"HTTP {e.code}: {_error_text(e)}"
             ) from e
         except urllib.error.URLError as e:
             raise RuntimeError(
-                f"Local inference server unreachable at {self._endpoint} — "
+                f"Local inference server unreachable at {url} — "
                 f"is llama-server running? ({e})"
             ) from e
