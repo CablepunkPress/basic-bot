@@ -236,8 +236,7 @@ def _build_launch_args(entry: dict) -> list[str]:
     # Gemma 4 31B's are about 425 MiB each, two or three per request, and
     # llama.cpp doesn't log making them: llama-server grew to 14 GB in nine
     # short turns. With none, a turn that goes back rereads the whole
-    # conversation. For chat, an agent's config.toml can override the
-    # profile (CTX_CHECKPOINTS in config.py; see start()).
+    # conversation. Each model's number is set in its profile entry.
     if "ctx_checkpoints" in entry:
         args += ["--ctx-checkpoints", str(entry["ctx_checkpoints"])]
 
@@ -446,18 +445,6 @@ def _restore_slot(role: str) -> None:
     )
 
 
-def _checkpoints_override() -> int:
-    """The agent's own context checkpoint count for its chat model."""
-    value = config.CTX_CHECKPOINTS
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ServerError(
-            f"ctx_checkpoints in this agent's config.toml is {value!r}. "
-            f"It must be a whole number, 0 or more, or left out to use "
-            f"the profile's."
-        )
-    return value
-
-
 # --- Lifecycle ---
 
 def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
@@ -485,8 +472,6 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
         stop(role)
 
     entry = _profile_entry(role, model_id)
-    if role == CHAT and config.CTX_CHECKPOINTS is not None:
-        entry = {**entry, "ctx_checkpoints": _checkpoints_override()}
     port = _role_port(role)
     model_path = MODELS_DIR / entry["file"]
     label = f"{role.capitalize()} server"
