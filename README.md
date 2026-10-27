@@ -1,5 +1,5 @@
 # Basic Bot
 
-Local-first AI agent engine: chat, memory, tools, and provider abstraction.
+Local-first AI agent harness.
 
 Part of [Bountiful](https://github.com/CablepunkPress/bountiful).
