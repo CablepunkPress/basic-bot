@@ -41,6 +41,12 @@ front end can also echo it to its terminal. The server logs, in
 logs/server/, are what the agent's llama-servers did, one file per
 run (see basic_bot.infrastructure.server).
 
+The chat server's cache is saved in data_dir/slots/ whenever the
+server stops, and restored when it starts again with the same setup,
+so a restart, a model switch, an archive search, or the next session
+doesn't reread the whole conversation (see
+basic_bot.infrastructure.server).
+
 Every polite way of stopping ends in close(), so llama-server is
 stopped rather than left running: Ctrl-C raises KeyboardInterrupt,
 and open() turns a closed terminal window (SIGHUP) or a logout or
@@ -73,7 +79,12 @@ from basic_bot.factory import create_runtime
 from basic_bot.fold import build_metadata, should_fold
 from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT, LLAMA_VERSION
 from basic_bot.infrastructure.orchestration import fold_sequential
-from basic_bot.infrastructure.server import ServerError, set_log_dir, stop_all
+from basic_bot.infrastructure.server import (
+    ServerError,
+    set_log_dir,
+    set_slot_dir,
+    stop_all,
+)
 from basic_bot.memory import get_messages
 from basic_bot.profile import ProfileError, profile_name
 from basic_bot.providers.protocol import (
@@ -265,6 +276,7 @@ class Session:
         log_path = logs_dir / "agent" / f"{agent_id}.log"
         _configure_logging(agent_id, log_path, log_to_terminal)
         set_log_dir(logs_dir / "server")
+        set_slot_dir(data_dir / "slots")
 
         # From here on, closing the window shuts down through close()
         _handle_shutdown_signals()

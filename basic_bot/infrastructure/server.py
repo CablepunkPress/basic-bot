@@ -47,8 +47,24 @@ agent's logs/server/ folder, since a server runs for one agent at a
 time; without that, they go in ~/.bountiful/logs/. Each log is named
 for when its server started, in UTC, and what it ran, and begins with
 the exact command. The newest LOGS_KEPT of each role are kept.
+
+The chat server's cache is saved and restored across restarts, so a
+conversation isn't reread from the start every time the server stops.
+The session says where the files go, the agent's slots/ folder; without
+that, nothing is saved. Before the chat server stops (a model switch,
+an archive search or a fold needing its memory, or the session
+closing), its cache is saved there with llama-server's slot save, which
+in llama.cpp v0.7.0 also keeps the drafter's state and any context
+checkpoints. Right after a chat server starts, a file saved by that
+same server setup is restored, so the next request reads only what's
+new. A file is named for the model and a short hash of everything it
+depends on (the llama.cpp commit and the exact command), so a cache is
+never restored into a different setup. Saving or restoring can fail
+without harm: the server then reads the conversation as before.
 """
 
+import hashlib
+import json
 import logging
 import os
 import shlex
@@ -63,6 +79,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 import basic_bot.config as config
+from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT
 from basic_bot.paths import BOUNTIFUL_HOME, MODELS_DIR, SERVER_BIN
 from basic_bot.profile import (
     get_chat_models,
@@ -91,12 +108,20 @@ LOG_DIR_DEFAULT = BOUNTIFUL_HOME / "logs"
 LOGS_KEPT = 20
 
 _log_dir: Path | None = None
+_slot_dir: Path | None = None
 
 
 def set_log_dir(directory: Path) -> None:
     """Send server logs to this folder, such as an agent's logs/server/."""
     global _log_dir
     _log_dir = Path(directory)
+
+
+def set_slot_dir(directory: Path) -> None:
+    """Save and restore the chat server's cache in this folder, such as
+    an agent's slots/. Without one, nothing is saved."""
+    global _slot_dir
+    _slot_dir = Path(directory)
 
 
 def _new_log_path(role: str, entry: dict) -> Path:
@@ -134,6 +159,11 @@ HEALTH_TIMEOUT = 180
 # watchdog's own GRACE, so the watchdog normally finishes the stop.
 STOP_TIMEOUT = 10
 
+# How long saving or restoring the chat server's cache may take. A
+# save waits for a request in progress to finish, so this also limits
+# how long a stop can be held up by one.
+SLOT_TIMEOUT = 30
+
 
 class ServerError(RuntimeError):
     """A llama-server could not be started. The message is user-facing."""
@@ -144,6 +174,9 @@ class ServerError(RuntimeError):
 # Each entry is a watchdog process. Keeping it referenced keeps its
 # stdin pipe open, which is what keeps its llama-server running.
 _active: dict[str, subprocess.Popen] = {}
+
+# The cache file for each running server that saves one (chat only)
+_slot_files: dict[str, str] = {}
 
 
 def _role_port(role: str) -> int:
@@ -201,7 +234,7 @@ def _build_launch_args(entry: dict) -> list[str]:
     # recurrent state, as in Qwen3.8) gets copies of its cache saved, so
     # the server can return to an earlier point; up to 32 by default.
     # Gemma 4 31B's are about 425 MiB each, two or three per request, and
-    # v0.5.0 doesn't log making them: llama-server grew to 14 GB in nine
+    # llama.cpp doesn't log making them: llama-server grew to 14 GB in nine
     # short turns. With none, a turn that goes back rereads the whole
     # conversation. For chat, an agent's config.toml can override the
     # profile (CTX_CHECKPOINTS in config.py; see start()).
@@ -314,6 +347,93 @@ def _port_taken_message(port: int) -> str:
     )
 
 
+# --- Saving and restoring the chat server's cache ---
+
+def _slot_file(alias: str, server_cmd: list[str]) -> str:
+    """The cache file's name for this exact server setup.
+
+    A saved cache is only valid for the build and settings that made
+    it, so the name carries a hash of the llama.cpp commit and the
+    command. Changing either starts a new file, and the old one is
+    removed the next time this model's cache is saved.
+    """
+    key = hashlib.sha256(
+        (LLAMA_COMMIT + "\n" + shlex.join(server_cmd)).encode("utf-8")
+    ).hexdigest()[:12]
+    return f"{alias}-{key}.bin"
+
+
+def _slot_request(port: int, action: str, filename: str) -> dict:
+    """Ask llama-server to save or restore slot 0's cache."""
+    request = urllib.request.Request(
+        f"http://localhost:{port}/slots/0?action={action}",
+        data=json.dumps({"filename": filename}).encode("utf-8"),
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(request, timeout=SLOT_TIMEOUT) as response:
+        return json.loads(response.read().decode("utf-8"))
+
+
+def _save_slot(role: str) -> None:
+    """Save a running server's cache, if it keeps one. Never raises."""
+    filename = _slot_files.get(role)
+    if filename is None or _slot_dir is None:
+        return
+    try:
+        result = _slot_request(_role_port(role), "save", filename)
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        logger.warning("Couldn't save the %s server's cache: %s", role, e)
+        return
+
+    saved = result.get("n_saved", 0)
+    if not saved:
+        # Nothing worth keeping, and an older file would now be stale
+        (_slot_dir / filename).unlink(missing_ok=True)
+        return
+    logger.info(
+        "Saved the %s server's cache: %s tokens, %.0f MB in %.1f s",
+        role, f"{saved:,}", result.get("n_written", 0) / 1e6,
+        result.get("timings", {}).get("save_ms", 0) / 1000,
+    )
+
+    # Older files for the same model, from an earlier setup
+    alias = filename.rsplit("-", 1)[0]
+    for old in _slot_dir.glob(f"{alias}-*.bin"):
+        if old.name != filename and old.stem.rsplit("-", 1)[0] == alias:
+            old.unlink(missing_ok=True)
+
+
+def _restore_slot(role: str) -> None:
+    """Restore a just-started server's saved cache, if there is one.
+
+    Never raises: without the cache, the server reads the conversation
+    as it always has. A file it can't load is removed.
+    """
+    filename = _slot_files.get(role)
+    if filename is None or _slot_dir is None:
+        return
+    path = _slot_dir / filename
+    if not path.exists():
+        return
+    try:
+        result = _slot_request(_role_port(role), "restore", filename)
+    except urllib.error.HTTPError as e:
+        logger.warning(
+            "Couldn't restore the %s server's cache (HTTP %d); removing it",
+            role, e.code,
+        )
+        path.unlink(missing_ok=True)
+        return
+    except (urllib.error.URLError, OSError, ValueError) as e:
+        logger.warning("Couldn't restore the %s server's cache: %s", role, e)
+        return
+    logger.info(
+        "Restored the %s server's cache: %s tokens, %.0f MB in %.1f s",
+        role, f"{result.get('n_restored', 0):,}", result.get("n_read", 0) / 1e6,
+        result.get("timings", {}).get("restore_ms", 0) / 1000,
+    )
+
+
 def _checkpoints_override() -> int:
     """The agent's own context checkpoint count for its chat model."""
     value = config.CTX_CHECKPOINTS
@@ -381,6 +501,16 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
         "--port", str(port),
     ] + launch_args
 
+    # The chat server can save and restore its cache (see the module
+    # docstring). llama-server requires the folder to exist.
+    _slot_files.pop(role, None)
+    if role == CHAT and _slot_dir is not None:
+        _slot_dir.mkdir(parents=True, exist_ok=True)
+        server_cmd += ["--slot-save-path", str(_slot_dir)]
+        slot_file = _slot_file(entry["alias"], server_cmd)
+    else:
+        slot_file = None
+
     # Start llama-server under its watchdog, in their own session, so a
     # Ctrl-C in the terminal reaches only the front end. stdin is the
     # watchdog's link to the engine: held open here, never written.
@@ -418,6 +548,9 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
             if _healthy(port):
                 logger.info("%s ready", label)
                 _active[role] = process
+                if slot_file is not None:
+                    _slot_files[role] = slot_file
+                    _restore_slot(role)
                 return process
             time.sleep(0.5)
 
@@ -464,10 +597,15 @@ def _terminate(process: subprocess.Popen) -> None:
 
 
 def stop(role: str) -> None:
-    """Stop a server by role. No-op if not tracked."""
-    process = _active.pop(role, None)
-    if process is None:
+    """Stop a server by role, saving its cache first if it keeps one.
+
+    No-op if not tracked.
+    """
+    if role not in _active:
         return
+    _save_slot(role)
+    _slot_files.pop(role, None)
+    process = _active.pop(role)
     _terminate(process)
     logger.info("%s server stopped", role.capitalize())
 
