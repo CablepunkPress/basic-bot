@@ -81,9 +81,8 @@
 # a turn that goes back rereads the whole conversation (most turns,
 # since earlier turns' reasoning and tool steps aren't sent again).
 # 0 is the starting point (October 26); the number is raised as it's
-# tested, after warming and slot save and restore. An agent's
-# config.toml can set ctx_checkpoints for its chat model, to try
-# another number. Warming showed 0 isn't enough: after a lookup turn
+# tested, one model at a time, here in its own entry: it depends on
+# the model's design, not the agent. Warming showed 0 isn't enough: after a lookup turn
 # or a long reply, Gemma rereads everything, and Qwen3.8 rereads after
 # every turn, since a recurrent state can't go back even one token.
 # Muse sets none, so it keeps the default of 32: its checkpoints are
@@ -283,6 +282,7 @@ max_tokens = 16384
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"
+ctx_checkpoints = 32
 
 [chat."muse-glimmer-30b-q4_k_xl".reasoning]
 mode = "always"
@@ -358,7 +358,7 @@ max_tokens = 16384
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"
-ctx_checkpoints = 0
+ctx_checkpoints = 8
 
 [chat."qwen3.8-27b-q5_k_m".reasoning]
 mode = "optional"
