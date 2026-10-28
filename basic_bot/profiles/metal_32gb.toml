@@ -449,6 +449,11 @@ mode = "optional"
 default = true
 switch_key = "enable_thinking"
 budget = 1024
+# Like Muse, it skips reasoning on turns it judges easy, and then
+# never considers its tools: on October 28 it answered a question
+# about Brazil from memory, wrongly, with thinking=False. This opens
+# its reasoning for it on every turn (see the header).
+prefill = "Let me read the user's latest message carefully. What is it asking, and is there a name, date, number, or detail I should check with a tool rather than give from memory?"
 
 [chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".draft]
 type = "mtp"
