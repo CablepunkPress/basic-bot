@@ -26,6 +26,17 @@ REQUEST_TIMEOUT = 1200
 # Number of most similar past turn pairs from semantic search
 RAG_RESULT_LIMIT = 5
 
+# The archive tools, recall_message and search_archive. A message
+# longer than ARCHIVE_MESSAGE_CHARS is shown cut, with a note saying
+# how long it is; it stays whole in the store. A result shows messages
+# until ARCHIVE_RESULT_CHARS, then says what's left and how to ask for
+# it. Both are limits for anomalies, like the runaway reply of October
+# 28 (62,229 characters): The test agent's longest ordinary message was 2,276.
+# Characters, not tokens, so a message is cut the same way whichever
+# chat model asks.
+ARCHIVE_MESSAGE_CHARS = 8000
+ARCHIVE_RESULT_CHARS = 24000
+
 # History (UI loads last N messages at startup)
 HISTORY_LIMIT = 10
 

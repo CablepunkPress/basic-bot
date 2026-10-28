@@ -14,6 +14,10 @@ machine.
 Reasoning and effort are the engine's own vocabulary. ModelInfo says
 what the user can control for each model. How each control reaches
 the model is the provider's private business.
+
+TokenizingProvider is an InferenceProvider that can also measure text
+in its model's tokens, for the summary, which must fit its prompt to
+the summary model's context exactly.
 """
 
 import logging
@@ -166,4 +170,35 @@ class InferenceProvider(Protocol):
         request, which adds a new message, only extends it. A provider
         with nothing to prepare does nothing.
         """
+        ...
+
+
+class TokenizingProvider(InferenceProvider, Protocol):
+    """A provider that can also measure text in its model's tokens.
+
+    The summary needs one. Its prompt must fit the summary model's
+    context, and only the model's own tokenizer says exactly how many
+    tokens a text is. The chat router doesn't need these, so they're
+    a protocol of their own rather than part of every provider.
+    """
+
+    def count_prompt(
+        self,
+        *,
+        messages: list[dict],
+        system: str,
+        tools: list[dict] | None = None,
+        model_id: str | None = None,
+        effort: str | None = None,
+        thinking: bool | None = None,
+    ) -> int:
+        """How many tokens the prompt chat() would send is, exactly."""
+        ...
+
+    def tokenize(self, text: str) -> list[int]:
+        """The model's tokens for text that sits inside a prompt."""
+        ...
+
+    def detokenize(self, tokens: list[int]) -> str:
+        """The text of a list of the model's tokens."""
         ...

@@ -26,8 +26,8 @@ def fold_sequential(
 ) -> None:
     """Full fold with sequential server lifecycle.
 
-    Chat always resumes, even if a phase fails. A failure still
-    propagates once chat is back.
+    Chat always resumes, even if a phase fails. A failure then
+    propagates, so the session can say memory wasn't updated.
     """
     router = runtime.chat_provider
     existing_summary = state["summary"]
@@ -39,13 +39,9 @@ def fold_sequential(
         # --- Embedding phase ---
         chunk = fold_rag(store, user_id, state, runtime.embedder)
 
-        if chunk is None:
-            logger.warning("RAG failed — skipping summary")
-            return
-
         # --- Summary phase ---
-        # fold_summary handles its own failures. The try covers the
-        # server: if it fails to start, the boundary stays put.
+        # The summary server is stopped whether the summary succeeds
+        # or not; a failure goes on to the caller once chat is back.
         try:
             start(SUMMARY)
             fold_summary(
@@ -55,6 +51,8 @@ def fold_sequential(
                 existing_summary,
                 chunk,
                 runtime.summary_sampling,
+                prompt_tokens=runtime.summary_prompt_tokens,
+                message_tokens=runtime.summary_message_tokens,
             )
         finally:
             stop(SUMMARY)

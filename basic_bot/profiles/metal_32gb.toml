@@ -138,7 +138,16 @@ family = "Gemma"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 16384
-max_tokens = 8192
+# The longest summary it may write: four paragraphs of four sentences
+# run to about 600 tokens (the October 28 summary was 286). Lower than
+# the 8,192 it was, so a summary that loops stops within about three
+# minutes, and the prompt has more room (ctx_size - max_tokens - 1).
+max_tokens = 2048
+# The most of any one message the summary model sees. Longer is an
+# anomaly, like the runaway reply of October 28 (seq 398, about 15,000
+# tokens), shown cut with a note. Test agent's longest ordinary message was
+# about 550 tokens.
+message_tokens = 2048
 ctx_checkpoints = 0   # one request per fold never goes back
 
 [summary.reasoning]
@@ -207,7 +216,7 @@ flash_attn = "on"
 # whatever it is. Doubled from 32768 on October 26, after one
 # recall_message result filled half of it.
 ctx_size = 65536
-max_tokens = 16384
+max_tokens = 4096
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"
@@ -278,7 +287,7 @@ rank = 2
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 131072
-max_tokens = 16384
+max_tokens = 4096
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"
@@ -354,7 +363,7 @@ rank = 4
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 32768
-max_tokens = 16384
+max_tokens = 4096
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"
@@ -436,7 +445,7 @@ gpu_layers = -1
 flash_attn = "on"
 # As the 31B, so a long recall_message result fits.
 ctx_size = 65536
-max_tokens = 16384
+max_tokens = 4096
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"

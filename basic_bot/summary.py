@@ -15,12 +15,31 @@ and sentences rather than words or tokens, which models can't count
 as they write. Without a limit, a rolling summary grows with every
 fold, and so does the time to rewrite it. The archive keeps every
 message word for word, so the summary only needs the gist.
+
+The prompt always fits the summary model's context, measured in the
+model's own tokens, through its running server. Two limits come from
+the caller, both set with the summary model in the hardware profile:
+
+  message_tokens  the most of any one message the summary model sees.
+                  A longer message is an anomaly, like the runaway
+                  reply of October 28 (seq 398, about 15,000 tokens):
+                  the model sees its first message_tokens tokens and
+                  a note saying how long it was. The message itself
+                  stays whole in the store.
+  prompt_tokens   the most the whole prompt may be, leaving room in
+                  the context for the longest summary the model may
+                  write. If many long messages together still pass
+                  it, they're all held to a lower limit for this
+                  batch, longest first, until the prompt fits.
+
+The same batch always gives the same prompt, so a fold never fails
+for its size, and a retried fold sends exactly what the first one did.
 """
 
 import logging
 
 import basic_bot.config as config
-from basic_bot.providers.protocol import InferenceProvider
+from basic_bot.providers.protocol import TokenizingProvider
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +47,20 @@ logger = logging.getLogger(__name__)
 # see itself keeping to; word and token counts aren't.
 SUMMARY_MAX_PARAGRAPHS = 4
 SUMMARY_MAX_SENTENCES = 4
+
+# Ends a message cut for length. It tells the summary model that the
+# message goes on past what it sees, so it doesn't describe the
+# speaker as stopping mid-sentence, and that the message was abnormal,
+# so a runaway is recorded as one rather than summarized as content.
+CUT_NOTE = (
+    "\n[Cut for length: this message is {total:,} tokens long, far "
+    "longer than a message should be; only its first {shown:,} are "
+    "shown here.]"
+)
+
+
+class SummaryError(RuntimeError):
+    """The summary couldn't be made from this batch."""
 
 
 def _extract_summary(text: str) -> str:
@@ -50,27 +83,138 @@ def _shape(text: str) -> tuple[int, int]:
     return len(text.split()), len(paragraphs)
 
 
+def _cut(provider: TokenizingProvider, content: str, tokens: list[int], limit: int) -> str:
+    """content, or if it's longer than limit tokens, its start with a note.
+
+    The cut falls at the last whitespace within the limit, so a word
+    isn't split.
+    """
+    if len(tokens) <= limit:
+        return content
+    head = provider.detokenize(tokens[:limit])
+    space = max(head.rfind(" "), head.rfind("\n"))
+    if space > 0:
+        head = head[:space]
+    return head.rstrip() + CUT_NOTE.format(total=len(tokens), shown=limit)
+
+
+def _lower_limit(sizes: list[int], limit: int, excess: int) -> int:
+    """The highest limit below limit that removes at least excess tokens.
+
+    sizes are each message's tokens as the prompt now holds them. The
+    longest are cut first: lowering the limit to L removes everything
+    above L from every message longer than L. Returns 0 if no limit
+    removes enough.
+    """
+    for lower in range(limit - 1, 0, -1):
+        removed = sum(size - lower for size in sizes if size > lower)
+        if removed >= excess:
+            return lower
+    return 0
+
+
 def summarize_batch(
-    provider: InferenceProvider,
+    provider: TokenizingProvider,
     existing_summary: str,
-    messages: list[dict[str, str]],
+    messages: list[dict],
     sampling: dict,
+    *,
+    prompt_tokens: int,
+    message_tokens: int,
 ) -> str:
     """Fold a batch of aged-out messages into the rolling summary.
 
     Args:
-        provider: The inference provider to use for summarization.
+        provider: The summary model's provider, with its server running.
         existing_summary: The current rolling summary ("" if first fold).
-        messages: List of {"role": str, "content": str} dicts from the
-            fold batch, in chronological order.
+        messages: {"role", "content", "seq"} dicts from the fold batch,
+            in chronological order.
         sampling: Sampling parameters (temperature, top_p, etc.)
             injected by the caller from the runtime.
+        prompt_tokens: The most tokens the whole prompt may be.
+        message_tokens: The most tokens of any one message the model sees.
 
     Returns:
         The updated summary text, or "" if the result was implausibly short.
-    """
-    transcript = "\n".join(f"{m['role'].capitalize()}: {m['content']}" for m in messages)
 
+    Raises:
+        SummaryError: if even the summary and instructions alone
+            don't fit in prompt_tokens.
+    """
+    model_id = provider.get_fallback_model()
+    tokens = [provider.tokenize(m["content"]) for m in messages]
+
+    for m, t in zip(messages, tokens):
+        if len(t) > message_tokens:
+            logger.warning(
+                "Message %s cut for the summary: %d tokens, %d shown",
+                m.get("seq", "?"), len(t), message_tokens,
+            )
+
+    limit = message_tokens
+    while True:
+        transcript = "\n".join(
+            f"{m['role'].capitalize()}: {_cut(provider, m['content'], t, limit)}"
+            for m, t in zip(messages, tokens)
+        )
+        system, user_content = _prompt(existing_summary, transcript)
+        prompt = [{"role": "user", "content": user_content}]
+        count = provider.count_prompt(
+            messages=prompt, system=system, model_id=model_id, thinking=False,
+        )
+        if count <= prompt_tokens:
+            break
+
+        lower = _lower_limit(
+            [min(len(t), limit) for t in tokens], limit, count - prompt_tokens,
+        )
+        if lower == 0:
+            raise SummaryError(
+                f"The summary prompt is {count} tokens, and no shortening of "
+                f"the messages brings it within {prompt_tokens}."
+            )
+        logger.warning(
+            "Summary prompt %d tokens, over its limit of %d; every message "
+            "held to %d tokens for this batch",
+            count, prompt_tokens, lower,
+        )
+        limit = lower
+
+    logger.info("Summary prompt: %d tokens (limit %d)", count, prompt_tokens)
+
+    response = provider.chat(
+        messages=prompt,
+        system=system,
+        model_id=model_id,
+        thinking=False,
+        sampling=sampling,
+    )
+
+    logger.info(
+        "Summary response: thinking=%s, %d chars, model=%s",
+        response.thinking, len(response.text), response.model_used,
+    )
+
+    result = _extract_summary(response.text)
+
+    if len(result) < config.SUMMARY_MIN_CHARS:
+        logger.warning(
+            "Summary came back implausibly short (%d chars) — returning empty",
+            len(result),
+        )
+        return ""
+
+    words, paragraphs = _shape(result)
+    logger.info(
+        "Summary shape: %d words in %d paragraphs (limit %d paragraphs)",
+        words, paragraphs, SUMMARY_MAX_PARAGRAPHS,
+    )
+
+    return result
+
+
+def _prompt(existing_summary: str, transcript: str) -> tuple[str, str]:
+    """The system prompt and the user message for one summary request."""
     system = (
         "You are a summarization function inside a memory system. Your only job is "
         "to read a conversation transcript and produce an updated running summary of it. "
@@ -115,36 +259,4 @@ def summarize_batch(
         if existing_summary
         else "Write a summary of <transcript>."
     )
-    user_content = "\n\n".join(parts)
-
-    response = provider.chat(
-        messages=[
-            {"role": "user", "content": user_content},
-        ],
-        system=system,
-        model_id=provider.get_fallback_model(),
-        thinking=False,
-        sampling=sampling,
-    )
-
-    logger.info(
-        "Summary response: thinking=%s, %d chars, model=%s",
-        response.thinking, len(response.text), response.model_used,
-    )
-
-    result = _extract_summary(response.text)
-
-    if len(result) < config.SUMMARY_MIN_CHARS:
-        logger.warning(
-            "Summary came back implausibly short (%d chars) — returning empty",
-            len(result),
-        )
-        return ""
-
-    words, paragraphs = _shape(result)
-    logger.info(
-        "Summary shape: %d words in %d paragraphs (limit %d paragraphs)",
-        words, paragraphs, SUMMARY_MAX_PARAGRAPHS,
-    )
-
-    return result
+    return system, "\n\n".join(parts)

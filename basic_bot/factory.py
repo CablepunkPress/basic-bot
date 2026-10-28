@@ -143,6 +143,20 @@ def _build_summary_sampling() -> dict:
     return get_summary_config()["sampling"]
 
 
+def _summary_limits() -> tuple[int, int]:
+    """The summary's prompt and message limits, in its model's tokens.
+
+    llama-server rejects a prompt that fills the context, and with
+    context shift off it stops writing when the context is full
+    (server-context.cpp, v0.7.0). So the prompt may take what's left
+    after max_tokens, less the one token the server keeps free, and
+    the longest summary the model may write always has room.
+    """
+    summary_config = get_summary_config()
+    prompt_tokens = summary_config["ctx_size"] - summary_config["max_tokens"] - 1
+    return prompt_tokens, summary_config["message_tokens"]
+
+
 def _build_local_chat_providers() -> dict:
     """Build a LocalProvider for each available local chat model."""
     providers = {}
@@ -239,8 +253,9 @@ def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
     # Embedder — suspends chat through the router
     embedder = _build_embedder(chat_provider)
 
-    # Sampling — resolved from profile, carried on runtime
+    # Sampling and limits — resolved from profile, carried on runtime
     summary_sampling = _build_summary_sampling()
+    summary_prompt_tokens, summary_message_tokens = _summary_limits()
 
     return BotRuntime(
         agent_id=agent_id,
@@ -251,6 +266,8 @@ def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
         dashboard=dashboard,
         chat_provider=chat_provider,
         summary_provider=summary_provider,
+        summary_prompt_tokens=summary_prompt_tokens,
+        summary_message_tokens=summary_message_tokens,
         summary_sampling=summary_sampling,
         embedder=embedder,
     )

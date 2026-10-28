@@ -176,7 +176,7 @@ BACKENDS = ("metal", "vulkan")
 _REQUIRED = {
     "embedding": ("file", "url", "ctx_size"),
     "summary": ("file", "url", "alias", "publisher", "family",
-                "max_tokens", "sampling"),
+                "ctx_size", "max_tokens", "message_tokens", "sampling"),
     "chat": ("file", "url", "alias", "display_name", "publisher",
              "family", "max_tokens"),
 }
@@ -391,6 +391,29 @@ def _check_draft(name: str, table: dict) -> list[str]:
     return problems
 
 
+def _check_summary_limits(entry: dict) -> list[str]:
+    """Check that the summary's limits leave room for each other.
+
+    The summary's prompt gets what's left of ctx_size after max_tokens
+    and one token llama-server keeps free; one message's share,
+    message_tokens, must be smaller than that (basic_bot.factory).
+    """
+    keys = ("ctx_size", "max_tokens", "message_tokens")
+    problems = [
+        f"summary: {key} must be a positive whole number"
+        for key in keys if key in entry and not _is_count(entry[key])
+    ]
+    if problems or not all(key in entry for key in keys):
+        return problems
+    prompt_tokens = entry["ctx_size"] - entry["max_tokens"] - 1
+    if entry["message_tokens"] >= prompt_tokens:
+        problems.append(
+            f"summary: message_tokens ({entry['message_tokens']}) must be "
+            f"less than ctx_size - max_tokens - 1 ({prompt_tokens})"
+        )
+    return problems
+
+
 def _check_entry(name: str, entry: dict, required: tuple) -> list[str]:
     """Check one model entry: required keys, pin, reasoning, and draft tables."""
     problems = [f"{name}: missing {key}" for key in required if key not in entry]
@@ -424,6 +447,9 @@ def _validate(profile: dict, profile_path: Path) -> None:
             problems.append(f"missing [{role}] section")
         else:
             problems += _check_entry(role, profile[role], _REQUIRED[role])
+
+    if "summary" in profile:
+        problems += _check_summary_limits(profile["summary"])
 
     chat = profile.get("chat", {})
     if not chat:

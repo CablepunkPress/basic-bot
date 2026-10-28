@@ -47,6 +47,12 @@ which needs llama-server started with --no-prefill-assistant (see
 basic_bot.infrastructure.server); otherwise the server would leave the
 reply open, to be continued, and the next request wouldn't match.
 
+count_prompt(), tokenize(), and detokenize() measure text in the
+model's own tokens, through the running server, so a caller can make
+a prompt fit the model's context exactly. The summary does (see
+basic_bot.summary). count_prompt() renders the request chat() would
+send, so it counts the same prompt.
+
 stdlib urllib only — no SDK for localhost HTTP.
 """
 
@@ -74,10 +80,13 @@ BUDGET_MESSAGE = (
     "and if I'm not sure, I'll say so plainly and ask.\n"
 )
 
-# llama-server's endpoints: chat for replies; the other two for warming
+# llama-server's endpoints: chat for replies; the template and
+# completion for warming; the template and the tokenizer for measuring
 CHAT_PATH = "/v1/chat/completions"
 TEMPLATE_PATH = "/apply-template"
 COMPLETION_PATH = "/completion"
+TOKENIZE_PATH = "/tokenize"
+DETOKENIZE_PATH = "/detokenize"
 
 
 def _error_text(e: urllib.error.HTTPError) -> str:
@@ -152,6 +161,26 @@ class LocalProvider:
         thinking: bool | None = None,
         sampling: dict | None = None,
     ) -> ChatResponse:
+        payload, budget = self._chat_payload(
+            messages, system, tools, thinking, effort, sampling,
+        )
+        data = self._post(payload)
+        return self._parse_response(data, budget)
+
+    def _chat_payload(
+        self,
+        messages: list[dict],
+        system: str,
+        tools: list[dict] | None,
+        thinking: bool | None,
+        effort: str | None,
+        sampling: dict | None,
+    ) -> tuple[dict, int | None]:
+        """The whole chat request, and its reasoning budget.
+
+        chat() sends it; count_prompt() renders it, so the count is of
+        the prompt chat() would send.
+        """
         reasoning_on, level = self._model_info.resolve(thinking, effort)
 
         payload = self._payload(system, messages, tools, reasoning_on, level)
@@ -186,8 +215,51 @@ class LocalProvider:
         else:
             payload.update(self._sampling_for(reasoning_on))
 
-        data = self._post(payload)
-        return self._parse_response(data, budget)
+        return payload, budget
+
+    # --- Measuring in tokens ---
+
+    def count_prompt(
+        self,
+        *,
+        messages: list[dict],
+        system: str,
+        tools: list[dict] | None = None,
+        model_id: str | None = None,
+        effort: str | None = None,
+        thinking: bool | None = None,
+    ) -> int:
+        """How many tokens the prompt chat() would send is.
+
+        The request chat() would build is rendered by /apply-template,
+        and the text counted by /tokenize with special tokens added and
+        parsed, which is how llama-server tokenizes a chat prompt
+        (server-context.cpp, v0.7.0). The count is exact.
+        """
+        payload, _ = self._chat_payload(
+            messages, system, tools, thinking, effort, None,
+        )
+        rendered = self._post(payload, TEMPLATE_PATH)
+        return len(self._tokenize(rendered["prompt"], add_special=True))
+
+    def tokenize(self, text: str) -> list[int]:
+        """The model's tokens for text that sits inside a prompt.
+
+        Special tokens are parsed, as they are in a whole prompt, but
+        none are added: the text is a part, not a prompt of its own.
+        """
+        return self._tokenize(text, add_special=False)
+
+    def detokenize(self, tokens: list[int]) -> str:
+        """The text of a list of the model's tokens."""
+        return self._post({"tokens": tokens}, DETOKENIZE_PATH)["content"]
+
+    def _tokenize(self, text: str, *, add_special: bool) -> list[int]:
+        data = self._post(
+            {"content": text, "add_special": add_special, "parse_special": True},
+            TOKENIZE_PATH,
+        )
+        return data["tokens"]
 
     def warm(
         self,
