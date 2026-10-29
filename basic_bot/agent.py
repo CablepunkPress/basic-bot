@@ -30,6 +30,7 @@ already exists.
 import json
 import re
 import shutil
+import unicodedata
 from pathlib import Path
 
 AGENT_FILE = "agent.json"
@@ -48,6 +49,13 @@ RESERVED_IDS = {
     "bountiful": "it is the name of the application",
     "my-agent": "it is the old template's placeholder name",
 }
+
+# Letters that aren't an accent on a plain letter, so dropping accents
+# alone would lose them
+_LETTERS = str.maketrans({
+    "ł": "l", "ø": "o", "đ": "d", "ð": "d",
+    "æ": "ae", "œ": "oe", "þ": "th",
+})
 
 
 class AgentError(ValueError):
@@ -76,13 +84,16 @@ def load_agent(agent_path: str | Path) -> dict:
 
 
 def id_from(name: str) -> str:
-    """Turn a name like 'Leroy Jenkins' into an id like 'leroy-jenkins'."""
-    return re.sub(r"\s+", "-", name.strip().lower())
+    """Turn a name like "Leeroy Jones" or "O'Brien" into an id like
+    'leeroy-jones' or 'o-brien'.
 
-
-def name_from(agent_id: str) -> str:
-    """Turn an id like 'leroy-jenkins' into a name like 'Leroy Jenkins'."""
-    return agent_id.replace("-", " ").replace("_", " ").title()
+    Accents are dropped, so Zoë becomes zoe, and anything else that
+    isn't a letter or number becomes a single hyphen. A name with no
+    Latin letters or numbers, such as 小明, gives an empty id.
+    """
+    text = name.casefold().translate(_LETTERS)
+    text = unicodedata.normalize("NFKD", text).encode("ascii", "ignore").decode()
+    return re.sub(r"[^a-z0-9]+", "-", text).strip("-")
 
 
 def id_problem(agent_id: str) -> str | None:
