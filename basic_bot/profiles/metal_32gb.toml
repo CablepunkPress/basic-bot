@@ -310,7 +310,7 @@ budget_end_tag = "<|eom|>"
 # never considers its tools: on October 25 every answer it gave
 # without reasoning came from memory, and most were wrong. This opens
 # its reasoning for it on every turn (see the header).
-prefill = "Before I answer: is there a specific name, date, number, or detail here that I should check with a tool rather than give from memory? Let me work it out:"
+prefill = "Before I answer: is there a specific name, date, number, or detail here that I should check with a tool rather than give from memory, or is the user telling me something they already looked up? Let me work it out:"
 
 [chat."muse-glimmer-30b-q4_k_xl".draft]
 file = "dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
@@ -462,7 +462,7 @@ budget = 1024
 # never considers its tools: on October 28 it answered a question
 # about Brazil from memory, wrongly, with thinking=False. This opens
 # its reasoning for it on every turn (see the header).
-prefill = "Let me read the user's latest message carefully. What is it asking, and is there a name, date, number, or detail I should check with a tool rather than give from memory?"
+prefill = "Let me read the user's latest message carefully. What is it asking? Is there a name, date, number, or detail I should check with a tool rather than give from memory, or is the user telling me something they already looked up?"
 
 [chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".draft]
 type = "mtp"
