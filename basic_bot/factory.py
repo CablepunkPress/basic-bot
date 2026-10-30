@@ -203,9 +203,9 @@ def _build_store(agent_id: str, data_dir: Path):
 def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
     """Build a fully configured bot runtime from an agent's folder.
 
-    agent_path holds the agent: agent.json, persona.md, config.toml,
-    context, and tools. data_dir is where its database goes, chosen
-    by the front end.
+    agent_path holds the agent: agent.json, persona.md, context, tools,
+    and a config.toml if the user made one. data_dir is where its
+    database goes, chosen by the front end.
     """
 
     agent_path = Path(agent_path).resolve()
