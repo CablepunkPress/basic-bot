@@ -1,17 +1,18 @@
-"""Where Bountiful keeps its shared files on this machine.
+"""Where Bountiful keeps things on this machine.
 
-Everything the engine keeps outside an agent's own folder lives under
-~/.bountiful and is shared by every agent on the machine: the models
-and the llama.cpp build. Those paths are defined here once, and every
-module that needs one imports it from here.
-
-Each agent's own data, its conversation database and engine log, lives
-in ~/.{agent-id} instead, which the session sets up.
-
-machine.toml records the hardware profile the build chose.
+Every agent lives in the home folder, at ~/ID, with its conversation
+database, logs, and backups in its data folder. Everything else the
+engine keeps lives under ~/.bountiful and is shared by every agent on
+the machine: the models, the llama.cpp build, the hardware profile the
+build chose (machine.toml), and the registered agents (agents.json).
+These paths are defined here once, and every module that needs one
+imports it from here.
 """
 
 from pathlib import Path
+
+# Where every agent's folder is: AGENTS_HOME / ID
+AGENTS_HOME = Path.home()
 
 BOUNTIFUL_HOME = Path.home() / ".bountiful"
 MODELS_DIR = BOUNTIFUL_HOME / "models"

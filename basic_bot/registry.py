@@ -14,7 +14,7 @@ import tempfile
 from pathlib import Path
 
 from basic_bot.agent import AGENT_FILE, AgentError, load_agent
-from basic_bot.paths import AGENTS_REGISTRY
+from basic_bot.paths import AGENTS_HOME, AGENTS_REGISTRY
 
 
 class RegistryError(ValueError):
@@ -23,7 +23,7 @@ class RegistryError(ValueError):
 
 def folder(agent_id: str) -> Path:
     """The folder of the agent with this id: always ~/ID."""
-    return Path.home() / agent_id
+    return AGENTS_HOME / agent_id
 
 
 def _read() -> list[str]:
