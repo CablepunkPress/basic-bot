@@ -12,10 +12,9 @@ and downloads the models it requires.
 
 The build keeps the models this machine uses: the embedding model,
 the summary model, and the default chat model with its drafter, plus
-any optional chat model already accepted with 'bountiful models' or
-already on disk. It never offers or lists the others; that's
-'bountiful models'. An interrupted download keeps its partial file and
-resumes on the next run.
+any optional chat model already accepted or already on disk. It never
+offers or lists the others. An interrupted download keeps its partial
+file and resumes on the next run.
 """
 
 import json
@@ -39,15 +38,16 @@ def _fail(message: str) -> NoReturn:
 # --- Agents' tool dependencies ---
 
 def _install_tool_dependencies() -> None:
-    """Install what every recorded agent's tool groups declare.
+    """Install what every registered agent's tool groups declare.
 
     Tool groups live in each agent's tools/ folder, but their
     dependencies live in this venv, which a rebuild starts empty.
     pip skips anything already installed. Nothing is printed when no
-    agent has any, as on a first install.
+    agent has any, as on a first install. An agent whose folder is
+    gone is skipped.
     """
     try:
-        found = registry.entries()
+        agent_ids = registry.ids()
     except registry.RegistryError as e:
         # Only tools are affected, so the rest of the build goes on
         print(f"\nAgents' tools\n    skipping them: {e}")
@@ -55,10 +55,11 @@ def _install_tool_dependencies() -> None:
 
     deps: set[str] = set()
     problems: list[str] = []
-    for entry in found:
-        if not entry.present:
+    for agent_id in agent_ids:
+        folder = registry.folder(agent_id)
+        if not (folder / "agent.json").is_file():
             continue
-        for manifest_path in sorted((entry.folder / "tools").glob("*/tool.json")):
+        for manifest_path in sorted((folder / "tools").glob("*/tool.json")):
             try:
                 manifest = json.loads(manifest_path.read_text())
             except (OSError, ValueError) as e:

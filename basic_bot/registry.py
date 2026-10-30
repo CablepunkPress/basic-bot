@@ -1,110 +1,93 @@
-"""The agents on this machine."""
+"""The agents on this machine.
+
+An agent lives in the home folder, in a folder named by its id, and
+nowhere else: the id, the folder's name, and the database's name are
+one word. The registry records only ids, in agents.json, since the
+folder always follows from the id. Registering an id makes it
+something 'bountiful ID' can start; forgetting it touches nothing
+but this list.
+"""
 
 import json
 import os
 import tempfile
-from dataclasses import dataclass
 from pathlib import Path
 
-from basic_bot.agent import AgentError, load_agent
+from basic_bot.agent import AGENT_FILE, AgentError, load_agent
 from basic_bot.paths import AGENTS_REGISTRY
 
 
 class RegistryError(ValueError):
-    """An agent can't be recorded or found. The message is user-facing."""
+    """An agent can't be registered or found. The message is user-facing."""
 
 
-@dataclass(frozen=True)
-class Entry:
-    """One recorded agent."""
-    agent_id: str
-    folder: Path
-
-    @property
-    def present(self) -> bool:
-        """True if the folder is still there and still an agent."""
-        return (self.folder / "agent.json").is_file()
+def folder(agent_id: str) -> Path:
+    """The folder of the agent with this id: always ~/ID."""
+    return Path.home() / agent_id
 
 
-def _read() -> dict:
+def _read() -> list[str]:
     try:
         data = json.loads(AGENTS_REGISTRY.read_text())
     except FileNotFoundError:
-        return {"agents": {}}
+        return []
     except (OSError, ValueError) as e:
         raise RegistryError(f"{AGENTS_REGISTRY} couldn't be read: {e}") from e
     agents = data.get("agents") if isinstance(data, dict) else None
-    return {"agents": dict(agents) if isinstance(agents, dict) else {}}
+    if not isinstance(agents, list):
+        raise RegistryError(f"{AGENTS_REGISTRY} isn't a list of ids.")
+    return [a for a in agents if isinstance(a, str)]
 
 
-def _write(data: dict) -> None:
+def _write(agent_ids: list[str]) -> None:
     """Write the list whole, so a crash never leaves it half written."""
     AGENTS_REGISTRY.parent.mkdir(parents=True, exist_ok=True)
     fd, temp = tempfile.mkstemp(dir=AGENTS_REGISTRY.parent, suffix=".tmp")
     with os.fdopen(fd, "w") as f:
-        f.write(json.dumps(data, indent=2) + "\n")
+        f.write(json.dumps({"agents": sorted(agent_ids)}, indent=2) + "\n")
     os.replace(temp, AGENTS_REGISTRY)
 
 
-def entries() -> list[Entry]:
-    """Every recorded agent, by id."""
-    return [
-        Entry(agent_id, Path(folder))
-        for agent_id, folder in sorted(_read()["agents"].items())
-    ]
+def ids() -> list[str]:
+    """Every registered id, sorted."""
+    return sorted(_read())
 
 
-def find(agent_id: str) -> Entry | None:
-    """The recorded agent with this id, or None."""
-    for entry in entries():
-        if entry.agent_id == agent_id:
-            return entry
-    return None
+def registered(agent_id: str) -> bool:
+    return agent_id in _read()
 
 
-def id_taken(agent_id: str) -> Path | None:
-    """The folder of another agent already using this id, or None.
+def register(agent_id: str) -> None:
+    """Register the agent in ~/ID, once it's checked to be that agent.
 
-    A recorded folder that's gone doesn't count; recording the id
-    again replaces it.
+    The folder must exist, hold agent.json, and that file's id must be
+    this id. The database isn't checked: the session finds it, or
+    creates it, when the agent starts.
     """
-    entry = find(agent_id)
-    if entry and entry.present:
-        return entry.folder
-    return None
+    found = _read()
+    if agent_id in found:
+        raise RegistryError(f"'{agent_id}' is already registered.")
 
-
-def record(folder: str | Path) -> Entry:
-    """Record an agent folder, reading its id from its agent.json."""
-    folder = Path(folder).expanduser().resolve()
+    place = folder(agent_id)
+    shown = f"~/{agent_id}"
+    if not place.is_dir():
+        raise RegistryError(f"{shown} doesn't exist.")
+    if not (place / AGENT_FILE).is_file():
+        raise RegistryError(f"{shown} has no {AGENT_FILE}.")
     try:
-        agent_id = load_agent(folder)["id"]
+        file_id = load_agent(place)["id"]
     except AgentError as e:
         raise RegistryError(str(e)) from e
+    if file_id != agent_id:
+        raise RegistryError(f"{shown}/{AGENT_FILE} has the id '{file_id}'.")
 
-    data = _read()
-    existing = data["agents"].get(agent_id)
-    if existing and Path(existing) != folder and (Path(existing) / "agent.json").is_file():
-        raise RegistryError(
-            f"An agent with the id '{agent_id}' is already recorded at "
-            f"{existing}. Two agents can't share an id. If {folder} is a "
-            f"copy, keep one; if it moved, run 'bountiful forget "
-            f"{agent_id}' and import it again."
-        )
-
-    data["agents"][agent_id] = str(folder)
-    _write(data)
-    return Entry(agent_id, folder)
+    _write([*found, agent_id])
 
 
-def forget(agent_id: str) -> Path:
-    """Remove an agent from the list. Its folder is never touched.
-
-    Returns the folder that was recorded.
-    """
-    data = _read()
-    if agent_id not in data["agents"]:
-        raise RegistryError(f"No agent with the id '{agent_id}' is recorded.")
-    folder = Path(data["agents"].pop(agent_id))
-    _write(data)
-    return folder
+def forget(agent_id: str) -> None:
+    """Unregister an agent. Its folder is never touched."""
+    found = _read()
+    if agent_id not in found:
+        raise RegistryError(f"'{agent_id}' isn't registered.")
+    found.remove(agent_id)
+    _write(found)
