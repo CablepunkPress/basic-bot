@@ -12,12 +12,17 @@ stays whole in the store. A result shows messages in order until
 config.ARCHIVE_RESULT_CHARS, then says where to pick up. search_archive
 shows its messages through fit_messages() here too, so both tools
 show a message the same way.
+
+A reply's tools are shown as the annotations show them (see
+basic_bot.annotations), "search_web(\"query\") → example.com" or "none",
+rather than the stored record, whose whole addresses the model doesn't
+need. A reply saved before tools were recorded shows no tools.
 """
 
 import json
 
 import basic_bot.config as config
-from basic_bot.annotations import to_seconds
+from basic_bot.annotations import render_tools, to_seconds
 
 TOOL = {
     "name": "recall_message",
@@ -100,8 +105,12 @@ def _format_message(msg: dict) -> tuple[dict, int]:
         "role": msg["role"],
         "content": content,
     }
-    if msg.get("metadata"):
-        formatted["metadata"] = msg["metadata"]
+    metadata = dict(msg.get("metadata") or {})
+    tools = metadata.pop("tools", None)
+    if metadata:
+        formatted["metadata"] = metadata
+    if tools is not None:
+        formatted["tools"] = render_tools(tools)
     if msg.get("created_at"):
         formatted["created_at"] = to_seconds(msg["created_at"])
     return formatted, shown
