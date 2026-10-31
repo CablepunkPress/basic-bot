@@ -23,6 +23,7 @@ to sequence the fold.
 import logging
 
 import basic_bot.config as config
+from basic_bot.memory import tools_of
 from basic_bot.providers.protocol import TokenizingProvider
 from basic_bot.rag import store_turns
 from basic_bot.store import MessageStore
@@ -79,7 +80,10 @@ def fold_summary(
     """
     new_through = chunk[-1]["seq"]
     batch = [
-        {"role": m["role"], "content": m["content"], "seq": m["seq"]}
+        {
+            "role": m["role"], "content": m["content"], "seq": m["seq"],
+            "tools": tools_of(m),
+        }
         for m in chunk
     ]
 
@@ -100,11 +104,15 @@ def fold_summary(
 
 
 def build_metadata(result: dict) -> dict:
-    """Extract the metadata to persist from a chat result."""
+    """Extract the metadata to persist from a chat result.
+
+    tools is the turn's record of tool calls, [] when it made none.
+    """
     return {
         "model_used": result["model_used"],
         "display_name": result["display_name"],
         "effort": result["effort"],
         "thinking": result["thinking"],
         "fallback": result["fallback"],
+        "tools": result.get("tools"),
     }

@@ -91,10 +91,20 @@ class MessageStore(Protocol):
         because only it knows when the message arrived: the turn is
         saved after the reply is written, which can be minutes later.
 
-        Metadata (model_used, display_name, effort, thinking, fallback) is
-        stored on the assistant message only. The values should reflect what
-        the API actually returned, not what was requested. The API does not
-        return actual effort level used, so requested effort is stored instead.
+        Metadata (model_used, display_name, effort, thinking, fallback,
+        tools) is stored on the assistant message only. The values should
+        reflect what the API actually returned, not what was requested. The
+        API does not return actual effort level used, so requested effort is
+        stored instead.
+
+        thinking means the model reasoned at any step of the turn. tools is
+        the turn's tool calls, in order, each
+        {"tool", "input", "outcome", "sources"}: outcome is "ok", "error",
+        "nothing found", or "refused", and sources is a list of
+        {"title", "url"} dicts, with "section" for part of a page. A turn
+        with no calls stores []. A reply read back gives tools as that
+        list, or leaves it out if the reply was saved before tools were
+        recorded.
 
         Returns:
             The user message's sequence number.

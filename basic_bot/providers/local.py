@@ -447,7 +447,7 @@ class LocalProvider:
                 budget,
             )
 
-        self._log_timing(data)
+        self._log_timing(data, reasoned=thinking)
 
         finish_reason = choice.get("finish_reason")
         if finish_reason == "length":
@@ -465,21 +465,26 @@ class LocalProvider:
 
     def _log_timing(
         self, data: dict, what: str = "Timing", generated: bool = True,
+        reasoned: bool | None = None,
     ) -> None:
         """One line per request: what the server reused, read, and wrote.
 
         llama-server returns its timings with every reply. Logging them
         here puts them in the agent's own log, beside the step they
-        belong to, where a server restart can't erase them.
+        belong to, where a server restart can't erase them. reasoned,
+        when given, says whether the model reasoned in this step; a turn
+        with tool calls has one line per step.
         """
+        said = "" if reasoned is None else f", reasoning {'yes' if reasoned else 'no'}"
         t = data.get("timings") or {}
         if not t:
             usage = data.get("usage") or {}
             logger.info(
-                "%s (%s): prompt %d, completion %d",
+                "%s (%s): prompt %d, completion %d%s",
                 what, self._model_info.display_name,
                 usage.get("prompt_tokens", 0),
                 usage.get("completion_tokens", 0),
+                said,
             )
             return
 
@@ -502,7 +507,7 @@ class LocalProvider:
         drafted = t.get("draft_n", 0)
         if drafted:
             line += f", drafter {t.get('draft_n_accepted', 0) / drafted:.2f}"
-        logger.info(line)
+        logger.info(line + said)
 
     # --- HTTP ---
 

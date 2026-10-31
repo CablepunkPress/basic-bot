@@ -7,10 +7,11 @@ anything else.
 
 Messages from storage carry seq, created_at, and metadata. This module
 strips them down to role/content for the context window, but prefixes
-each message with an annotation of its seq and created_at (see
-basic_bot.annotations), so the model can refer to messages by number
-and knows when each was written. The richer data is available to
-callers that need it (history endpoint, UI).
+each message with an annotation of its seq and created_at, and for a
+reply, the tools used to write it (see basic_bot.annotations). So the
+model can refer to messages by number, knows when each was written,
+and knows which of its past replies came from a lookup. The richer
+data is available to callers that need it (history endpoint, UI).
 """
 
 import basic_bot.config as config
@@ -32,6 +33,30 @@ def get_messages(
     return store.get_messages(user_id, limit)
 
 
+def tools_of(message: dict) -> list[dict] | None:
+    """A stored message's tool record, or None if it has none.
+
+    None for a user's message, and for a reply saved before tools were
+    recorded; [] for a reply that used no tools.
+    """
+    return (message.get("metadata") or {}).get("tools")
+
+
+def _as_seen(message: dict) -> dict[str, str]:
+    """One stored message as the model sees it, annotation first.
+
+    load_history and load_window both use this, so warming and the
+    turn it warms for build the same text, token for token.
+    """
+    return {
+        "role": message["role"],
+        "content": (
+            annotate(message["seq"], message.get("created_at"), tools_of(message))
+            + strip_annotations(message["content"]).strip()
+        ),
+    }
+
+
 def load_history(
     store: MessageStore,
     user_id: str,
@@ -46,16 +71,7 @@ def load_history(
     """
     state = store.get_state(user_id)
     window = store.get_messages_after(user_id, state["summarized_through"])
-    messages = [
-        {
-            "role": m["role"],
-            "content": (
-                annotate(m["seq"], m.get("created_at"))
-                + strip_annotations(m["content"]).strip()
-            ),
-        }
-        for m in window
-    ]
+    messages = [_as_seen(m) for m in window]
     return messages, state["summary"], state
 
 
@@ -79,16 +95,7 @@ def load_window(
     after = state["summarized_through"]
     window = store.get_messages_after(user_id, after)
 
-    messages = [
-        {
-            "role": m["role"],
-            "content": (
-                annotate(m["seq"], m.get("created_at"))
-                + strip_annotations(m["content"]).strip()
-            ),
-        }
-        for m in window
-    ]
+    messages = [_as_seen(m) for m in window]
 
     current_seq = state["next_seq"]
     messages.append({

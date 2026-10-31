@@ -15,6 +15,19 @@ provider: as API parameters, or through the model's own chat
 template. The reply's metadata records them for the user. The
 current time reaches the model through the newest message's
 annotation, which records when that message arrived.
+
+Each turn keeps a record of its tool calls, saved with the reply (see
+basic_bot.store): the tool, its input, how it went, and the sources
+its result named. A tool names its sources with a "sources" list at
+the top of its result. The record keeps them, and they're taken out of
+the result before the model reads it, since the model already sees
+the same addresses in the result itself. On later turns the reply's
+annotation shows the record (see basic_bot.annotations), so the model
+knows which of its past answers came from a lookup.
+
+The reply's thinking means the model reasoned at any step of the
+turn, not only the last. A turn that reasons, calls a tool, and then
+answers straight from the result still reasoned.
 """
 
 import json
@@ -37,6 +50,9 @@ logger = logging.getLogger(__name__)
 # turn is ended for the model
 REFUSED_ROUNDS = 2
 
+# The parts of a source the record keeps
+SOURCE_FIELDS = ("title", "url", "section")
+
 
 def _execute_tool(
     registry: dict, name: str, context: dict, tool_input: dict,
@@ -56,6 +72,58 @@ def _execute_tool(
     except Exception as e:
         logger.exception("Tool '%s' failed", name)
         return json.dumps({"error": str(e)})
+
+
+def _outcome(result) -> str:
+    """How a call went, from its parsed result.
+
+    "error" if the result carries one, "nothing found" if its results
+    are an empty list, and "ok" otherwise.
+    """
+    if isinstance(result, dict):
+        if result.get("error"):
+            return "error"
+        if "results" in result and result["results"] == []:
+            return "nothing found"
+    return "ok"
+
+
+def _sources(value) -> list[dict]:
+    """The sources a result named, keeping only their text fields."""
+    if not isinstance(value, list):
+        return []
+    kept = []
+    for source in value:
+        if not isinstance(source, dict):
+            continue
+        entry = {
+            k: source[k] for k in SOURCE_FIELDS
+            if isinstance(source.get(k), str) and source[k]
+        }
+        if entry.get("url"):
+            kept.append(entry)
+    return kept
+
+
+def _record_call(name: str, tool_input: dict, content: str) -> tuple[dict, str]:
+    """A call's record, and its result as the model will read it.
+
+    The result's "sources" go into the record and out of the result.
+    A result without sources reaches the model exactly as the tool
+    wrote it.
+    """
+    try:
+        parsed = json.loads(content)
+    except (TypeError, ValueError):
+        parsed = None
+
+    record = {"tool": name, "input": tool_input, "outcome": _outcome(parsed)}
+    if isinstance(parsed, dict) and "sources" in parsed:
+        record["sources"] = _sources(parsed.pop("sources"))
+        content = json.dumps(parsed)
+    else:
+        record["sources"] = []
+    return record, content
 
 
 # ---------------------------------------------------------------------------
@@ -197,7 +265,7 @@ def chat_with_model(
     )
 
     try:
-        response = _chat_loop(
+        response, calls, reasoned = _chat_loop(
             provider, messages, system_prompt,
             tool_schemas, context, runtime.tool_registry,
             model_id, level, reasoning_on,
@@ -212,8 +280,8 @@ def chat_with_model(
         used_info = models.get(response.model_used, model_info)
 
         logger.info(
-            "Response from %s (%d chars, thinking=%s)",
-            used_info.display_name, len(response.text), response.thinking,
+            "Response from %s (%d chars, thinking=%s, %d tool calls)",
+            used_info.display_name, len(response.text), reasoned, len(calls),
         )
 
         return {
@@ -221,9 +289,10 @@ def chat_with_model(
             "model_used": response.model_used,
             "display_name": used_info.display_name,
             "effort": level,
-            "thinking": response.thinking,
+            "thinking": reasoned,
             "fallback": False,
             "model_mismatch": response.model_used != model_id,
+            "tools": calls,
         }
 
     except Exception:
@@ -254,7 +323,7 @@ def chat_with_model(
             )
 
         try:
-            response = _chat_loop(
+            response, calls, reasoned = _chat_loop(
                 provider, _prepare_messages(window), system_prompt,
                 tool_schemas, context, runtime.tool_registry,
                 fallback_id, fb_level, fb_reasoning,
@@ -266,8 +335,8 @@ def chat_with_model(
         used_info = models.get(response.model_used, fallback_info)
 
         logger.info(
-            "Fallback to %s succeeded (%d chars, thinking=%s)",
-            used_info.display_name, len(response.text), response.thinking,
+            "Fallback to %s succeeded (%d chars, thinking=%s, %d tool calls)",
+            used_info.display_name, len(response.text), reasoned, len(calls),
         )
 
         return {
@@ -275,9 +344,10 @@ def chat_with_model(
             "model_used": response.model_used,
             "display_name": used_info.display_name,
             "effort": fb_level,
-            "thinking": response.thinking,
+            "thinking": reasoned,
             "fallback": True,
             "model_mismatch": response.model_used != fallback_id,
+            "tools": calls,
         }
 
 
@@ -326,8 +396,12 @@ def _chat_loop(
     model_id: str,
     effort: str | None,
     thinking: bool,
-) -> ChatResponse:
+) -> tuple[ChatResponse, list[dict], bool]:
     """Call the provider in a loop, executing tools until no more are requested.
+
+    Returns (response, calls, reasoned): the final response, the
+    record of every call the model made, in order, refused ones too,
+    and whether the model reasoned at any step.
 
     A guard against chains that never end: after config.MAX_TOOL_ROUNDS
     rounds of tool calls, further calls aren't run, and each gets a
@@ -338,6 +412,8 @@ def _chat_loop(
     that says so.
     """
     rounds = 0
+    calls: list[dict] = []
+    reasoned = False
     while True:
         response = provider.chat(
             messages=messages,
@@ -347,9 +423,10 @@ def _chat_loop(
             effort=effort,
             thinking=thinking,
         )
+        reasoned = reasoned or response.thinking
 
         if not response.tool_calls:
-            return response
+            return response, calls, reasoned
 
         rounds += 1
         limit = config.MAX_TOOL_ROUNDS
@@ -357,7 +434,7 @@ def _chat_loop(
             logger.warning(
                 "Tool calls still coming after %d rounds; ending the turn", rounds - 1,
             )
-            return ChatResponse(
+            ended = ChatResponse(
                 text=(
                     f"I stopped after {limit} rounds of looking things up "
                     f"without settling on an answer. Could you narrow the "
@@ -366,6 +443,7 @@ def _chat_loop(
                 model_used=response.model_used,
                 thinking=response.thinking,
             )
+            return ended, calls, reasoned
 
         # Append the assistant's tool calls, with the reasoning that led
         # to them, so the model keeps its plan for the rest of the turn.
@@ -390,11 +468,17 @@ def _chat_loop(
                          f"confirm.",
             })
             for tc in response.tool_calls:
+                calls.append({
+                    "tool": tc.name, "input": tc.input,
+                    "outcome": "refused", "sources": [],
+                })
                 results.append({"tool_call_id": tc.id, "content": refusal})
         else:
             for tc in response.tool_calls:
                 logger.info("Executing tool: %s", tc.name)
                 result = _execute_tool(tool_registry, tc.name, context, tc.input)
+                record, result = _record_call(tc.name, tc.input, result)
+                calls.append(record)
                 results.append({"tool_call_id": tc.id, "content": result})
 
         messages.append({"role": "tool_result", "results": results})

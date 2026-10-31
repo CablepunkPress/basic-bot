@@ -34,11 +34,20 @@ the caller, both set with the summary model in the hardware profile:
 
 The same batch always gives the same prompt, so a fold never fails
 for its size, and a retried fold sends exactly what the first one did.
+
+A reply's line shows the tools used to write it, as the chat model
+saw them in its annotations (see basic_bot.annotations):
+
+    Assistant [tools: search_web("Sierra AI founders") → sierra.ai]: …
+
+so the summary can tell what was looked up from what the assistant
+said on its own. A reply saved before tools were recorded shows none.
 """
 
 import logging
 
 import basic_bot.config as config
+from basic_bot.annotations import render_tools
 from basic_bot.providers.protocol import TokenizingProvider
 
 logger = logging.getLogger(__name__)
@@ -98,6 +107,19 @@ def _cut(provider: TokenizingProvider, content: str, tokens: list[int], limit: i
     return head.rstrip() + CUT_NOTE.format(total=len(tokens), shown=limit)
 
 
+def _speaker(message: dict) -> str:
+    """Who wrote a message, with the tools a reply used.
+
+    "User", "Assistant", or "Assistant [tools: …]" for a reply whose
+    tools were recorded.
+    """
+    label = message["role"].capitalize()
+    tools = message.get("tools")
+    if message["role"] == "assistant" and tools is not None:
+        label += f" [tools: {render_tools(tools)}]"
+    return label
+
+
 def _lower_limit(sizes: list[int], limit: int, excess: int) -> int:
     """The highest limit below limit that removes at least excess tokens.
 
@@ -127,8 +149,9 @@ def summarize_batch(
     Args:
         provider: The summary model's provider, with its server running.
         existing_summary: The current rolling summary ("" if first fold).
-        messages: {"role", "content", "seq"} dicts from the fold batch,
-            in chronological order.
+        messages: {"role", "content", "seq", "tools"} dicts from the
+            fold batch, in chronological order. tools is a reply's tool
+            record, or None if it has none.
         sampling: Sampling parameters (temperature, top_p, etc.)
             injected by the caller from the runtime.
         prompt_tokens: The most tokens the whole prompt may be.
@@ -154,7 +177,7 @@ def summarize_batch(
     limit = message_tokens
     while True:
         transcript = "\n".join(
-            f"{m['role'].capitalize()}: {_cut(provider, m['content'], t, limit)}"
+            f"{_speaker(m)}: {_cut(provider, m['content'], t, limit)}"
             for m, t in zip(messages, tokens)
         )
         system, user_content = _prompt(existing_summary, transcript)
@@ -225,6 +248,9 @@ def _prompt(existing_summary: str, transcript: str) -> tuple[str, str]:
         "Preserve durable facts: names, preferences, decisions, and ongoing topics. "
         "Attribute each statement, question, and decision to whoever actually made it, "
         "the user or the assistant. "
+        "A bracket after Assistant lists the tools the assistant used to write that "
+        "reply, and the sites its answer came from; \"none\" means it answered from "
+        "its own knowledge. Use it to tell what was looked up from what was not. "
         f"Keep the summary short enough to read at a glance: at most "
         f"{SUMMARY_MAX_PARAGRAPHS} paragraphs, one per subject, with no more than "
         f"{SUMMARY_MAX_SENTENCES} sentences each. When the conversation covers more "

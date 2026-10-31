@@ -13,9 +13,16 @@ A turn's vector is replaced, not duplicated, when it's stored again.
 A fold that fails after embedding retries the same batch next time,
 so storing must be safe to repeat.
 
+A reply's tools column holds its turn's tool calls as JSON: a list of
+{"tool", "input", "outcome", "sources"}, "[]" for a reply that used no
+tools. It's NULL for a user's message, and for a reply saved before
+the column was added, whose tools aren't known. A database from before
+then gains the column when it's opened.
+
 All timestamps are UTC ISO strings.
 """
 
+import json
 import logging
 import sqlite3
 import struct
@@ -24,7 +31,13 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-METADATA_FIELDS = ("model_used", "display_name", "effort", "thinking", "fallback")
+METADATA_FIELDS = (
+    "model_used", "display_name", "effort", "thinking", "fallback", "tools",
+)
+
+# Columns added since the first release, with their types. Each is
+# added to an older database when it's opened.
+ADDED_COLUMNS = {"messages": {"tools": "TEXT"}}
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS state (
@@ -46,6 +59,7 @@ CREATE TABLE IF NOT EXISTS messages (
     effort TEXT,
     thinking INTEGER,
     fallback INTEGER,
+    tools TEXT,
     UNIQUE(session_id, seq)
 );
 
@@ -90,8 +104,16 @@ def _extract_metadata(row: sqlite3.Row) -> dict | None:
     """Pull metadata fields from a database row.
 
     Returns a metadata dict if any fields are present, None otherwise.
+    tools comes back as a list; "[]", a reply that used no tools, is
+    kept as [], which isn't the same as having no record.
     """
     meta = {k: row[k] for k in METADATA_FIELDS if row[k] is not None}
+    if "tools" in meta:
+        try:
+            meta["tools"] = json.loads(meta["tools"])
+        except ValueError:
+            logger.warning("Message %s has an unreadable tools record", row["seq"])
+            del meta["tools"]
     return meta or None
 
 
@@ -137,9 +159,19 @@ class SQLiteMessageStore:
         return conn
 
     def _init_schema(self) -> None:
-        """Create tables and indexes if they don't exist."""
+        """Create tables and indexes if they don't exist, and add any
+        column an older database is missing."""
         conn = self._connect()
         try:
+            # Columns first: the schema's indexes may name new ones
+            for table, columns in ADDED_COLUMNS.items():
+                have = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})")}
+                if not have:
+                    continue  # a new database; the schema creates it whole
+                for name, kind in columns.items():
+                    if name not in have:
+                        conn.execute(f"ALTER TABLE {table} ADD COLUMN {name} {kind}")
+                        logger.info("Added column %s.%s", table, name)
             conn.executescript(SCHEMA)
             conn.commit()
         finally:
@@ -247,18 +279,21 @@ class SQLiteMessageStore:
             )
 
             # Save assistant message with metadata
+            meta = metadata or {}
+            tools = meta.get("tools")
             conn.execute(
                 "INSERT INTO messages "
                 "(session_id, seq, role, content, created_at, "
-                "model_used, display_name, effort, thinking, fallback) "
-                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "model_used, display_name, effort, thinking, fallback, tools) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     user_id, next_seq + 1, "assistant", assistant_msg, assistant_time,
-                    metadata.get("model_used") if metadata else None,
-                    metadata.get("display_name") if metadata else None,
-                    metadata.get("effort") if metadata else None,
-                    metadata.get("thinking") if metadata else None,
-                    metadata.get("fallback") if metadata else None,
+                    meta.get("model_used"),
+                    meta.get("display_name"),
+                    meta.get("effort"),
+                    meta.get("thinking"),
+                    meta.get("fallback"),
+                    json.dumps(tools, ensure_ascii=False) if tools is not None else None,
                 ),
             )
 
