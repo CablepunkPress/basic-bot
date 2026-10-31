@@ -1,39 +1,47 @@
 """An agent: its folder, its identity, and creating one.
 
-An agent is a folder holding everything that is its own:
+An agent is a folder in the home folder, at ~/ID, holding everything
+that is its own:
 
-    agent.json      identity, written once when the agent is created
+    agent.json      its identity, and the tool groups it has added
     persona.md      from the template, then the user's
-    config.toml
-    context/
-    tools/
-    data/           its database, log, and backups
+    context/        Markdown the agent keeps in mind
+    data/           its database, logs, and backups
     .gitignore      keeps data/ out of git, if the user chooses git
 
-agent.json is the agent's license: issued once, when the agent is
-created, in the folder created for it. Creating an agent writes only
-id, name, and description, and nothing else ever writes them.
-Everything else is read here with a default, so a field added later
-works for agents created before it, without anyone editing their
-files. A front end that keeps its own fields in agent.json, such as
-an icon or colors, reads them with its own defaults.
+and, only if the user makes them, config.toml (overrides of the
+engine's settings) and tools/ (the user's own tool groups).
+
+agent.json is the agent's license. Creating an agent writes its id,
+name, and description; the id never changes, and the name may be
+changed by hand, since only display reads it. Its "tools" section
+records the tool groups the agent has added beyond the default ones,
+each with its settings, and is the one part written afterward, by
+'bountiful add' and 'bountiful remove' through write_tools(). Every
+field is read here with a default, so a field added later works for
+agents created before it, without anyone editing their files. A front
+end that keeps its own fields in agent.json, such as an icon or
+colors, reads them with its own defaults.
 
 The other files come from templates in basic_bot/templates/agent/.
 They are copied once, when the agent is created, and then belong to
 the user; later versions never overwrite them.
 
-Where an agent's folder goes is the front end's choice. This module
-only creates the folder it is given, and never inside one that
+Where an agent's folder goes is the registry's rule (~/ID). This
+module only creates the folder it is given, and never inside one that
 already exists.
 """
 
 import json
+import os
 import re
 import shutil
+import tempfile
 import unicodedata
 from pathlib import Path
 
 AGENT_FILE = "agent.json"
+TOOLS = "tools"
 DATA_DIR = "data"
 TEMPLATES = Path(__file__).parent / "templates" / "agent"
 
@@ -81,6 +89,48 @@ def load_agent(agent_path: str | Path) -> dict:
     agent.setdefault("name", agent_id)
     agent.setdefault("description", "A Bountiful agent")
     return agent
+
+
+def tool_groups(agent: dict) -> dict[str, dict]:
+    """The tool groups an agent has added, each with its settings.
+
+    Takes agent.json as load_agent() returns it. Anything malformed is
+    left out rather than stopping the agent.
+    """
+    groups = agent.get(TOOLS)
+    if not isinstance(groups, dict):
+        return {}
+    return {
+        name: settings if isinstance(settings, dict) else {}
+        for name, settings in groups.items()
+        if isinstance(name, str)
+    }
+
+
+def write_tools(agent_path: str | Path, groups: dict[str, dict]) -> None:
+    """Write agent.json's tool groups, leaving every other field as it is.
+
+    The file is written whole through a temporary file, so a crash
+    never leaves it half written. With no groups, the section is
+    removed rather than left empty.
+    """
+    path = Path(agent_path) / AGENT_FILE
+    try:
+        agent = json.loads(path.read_text())
+    except (OSError, ValueError) as e:
+        raise AgentError(f"{path} couldn't be read: {e}") from e
+    if not isinstance(agent, dict):
+        raise AgentError(f"{path} has no id.")
+
+    if groups:
+        agent[TOOLS] = {name: groups[name] for name in sorted(groups)}
+    else:
+        agent.pop(TOOLS, None)
+
+    fd, temp = tempfile.mkstemp(dir=path.parent, suffix=".tmp")
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(agent, indent=4) + "\n")
+    os.replace(temp, path)
 
 
 def id_from(name: str) -> str:

@@ -40,7 +40,8 @@ ARCHIVE_RESULT_CHARS = 24000
 # History (UI loads last N messages at startup)
 HISTORY_LIMIT = 10
 
-# Tools: agent ships with tool_belt; plugin tools are the tool_box; auto-detects plugin agent tools/ when true
+# Plugin and custom tools. False loads only the default tools, whatever
+# the agent's agent.json has added.
 TOOL_BOX_ENABLED = True
 
 # Log model reasoning/thinking content to the agent's log file
