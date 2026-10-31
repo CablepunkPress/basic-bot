@@ -14,7 +14,7 @@ shows its messages through fit_messages() here too, so both tools
 show a message the same way.
 
 A reply's tools are shown as the annotations show them (see
-basic_bot.annotations), "search_web(\"query\") → example.com" or "none",
+basic_bot.annotations), 'search_web(query="…") → example.com' or "none",
 rather than the stored record, whose whole addresses the model doesn't
 need. A reply saved before tools were recorded shows no tools.
 """

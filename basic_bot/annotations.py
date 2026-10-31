@@ -11,11 +11,14 @@ results all use one vocabulary.
 A reply also says which tools were used to write it, from the tools
 column saved with it:
 
-    <!-- seq:108 created_at:… tools:search_web("Sierra AI founders") → sierra.ai, techcrunch.com -->
+    <!-- seq:108 created_at:… tools:search_web(query="Sierra AI founders") → sierra.ai, techcrunch.com -->
     <!-- seq:110 created_at:… tools:none -->
 
-Each call shows its input and, when the tool gave them, the sites its
-answer came from. A call that failed, found nothing, or was refused
+Each call shows its inputs, each with its name, and when the tool gave
+them, the sites its answer came from. The names keep inputs from being
+mistaken for one another: a model may send them in any order, and
+read_wikipedia("Cast", title="Brazil") read as if "Cast" were the
+title (October 31, #494). A call that failed, found nothing, or was refused
 says so. "tools:none" means the reply was written without a tool. A
 reply saved before tools were recorded has no tools part at all,
 because nobody knows what it used. The full record, with whole
@@ -87,12 +90,9 @@ def _site(url: str) -> str:
 
 
 def _render_call(record: dict) -> str:
-    """One call: search_web("query") → example.com, other.org"""
+    """One call: search_web(query="…") → example.com, other.org"""
     inputs = record.get("input") or {}
-    args = []
-    for i, (key, value) in enumerate(inputs.items()):
-        shown = f'"{_clean(value)}"'
-        args.append(shown if i == 0 else f"{_clean(key)}={shown}")
+    args = [f'{_clean(key)}="{_clean(value)}"' for key, value in inputs.items()]
     text = f"{_clean(record.get('tool', '?'))}({', '.join(args)})"
 
     text += OUTCOME_NOTES.get(record.get("outcome", "ok"), "")
