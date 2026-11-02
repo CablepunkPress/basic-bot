@@ -168,6 +168,87 @@ presence_penalty = 0.0
 # --- Chat Models ---
 
 #------------
+#   MoE
+#------------
+
+# --- Gemma 4 26B A4B ---
+# Base: https://huggingface.co/google/gemma-4-26B-A4B
+#   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-26B-A4B-it
+#       └─ QAT: https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-unquantized
+#           └─ Quantization: https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF
+# Mixture of experts: 25.2B parameters, 3.8B active per token (8 of
+# 128 experts plus one shared), 30 layers, mostly sliding-window
+# attention like the 31B. ~14.2 GB, plus the MTP drafter, ~0.25 GB.
+# Google's quantization-aware training (QAT): trained to be cut to
+# 4 bits, so it keeps more quality than an ordinary 4-bit file.
+# Unsloth's Dynamic 4-bit (UD-Q4_K_XL) of Google's unquantized QAT
+# checkpoint, and the drafter from the same repo, derived from the QAT
+# model at 4 bits. Google's card says a QAT model's drafter must be a
+# QAT checkpoint of the same precision; this one is.
+# From the Gemma 4 model cards:
+# - Thinking is off unless switched on per request with
+#   chat_template_kwargs {"enable_thinking": true}. No effort levels.
+# - Google recommends temperature 1.0, top_p 0.95, top_k 64 for all
+#   uses, with or without thinking.
+# - Earlier turns should carry only final answers, not thinking; the
+#   chat template embedded in the GGUF handles this.
+# - Vision needs the separate mmproj file, which isn't downloaded yet.
+# - Google's benchmarks put it a little behind the 31B on most tests,
+#   and well behind on Tau2, agentic tool use (68.2% against 76.9%),
+#   and long-context retrieval (MRCR v2 128k, 44.1% against 66.4%).
+# - With only 3.8B parameters read per token, it should generate
+#   several times faster than the 31B on the M6's bandwidth.
+# Under test from October 27 against the 31B, for the default.
+
+[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl"]
+file = "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf"
+url = "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/7b92b5b28818151e8669af2e45e88d6086f490dd/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf"
+sha256 = "a7c5bc715f5ff8e99a3e8901ce7d2b42b402c669bf24f7c5250747633d0f5891"
+size = 14249047104
+default = true
+alias = "gemma-4-26b-a4b-it-qat-ud-q4_k_xl"
+display_name = "Gemma 4 26B A4B QAT UD-Q4_K_XL"
+publisher = "Google"
+family = "Gemma"
+rank = 1
+gpu_layers = -1
+flash_attn = "on"
+# As the 31B, so a long recall_message result fits.
+ctx_size = 65536
+max_tokens = 4096
+cache_ram_mib = 0
+cache_type_k = "q8_0"
+cache_type_v = "q8_0"
+# The 31B's value to start; this model's checkpoints should be about
+# half the size, with half the layers. Its slot file will tell.
+ctx_checkpoints = 4
+
+[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".reasoning]
+mode = "optional"
+default = true
+switch_key = "enable_thinking"
+budget = 1024
+# Like Muse, it skips reasoning on turns it judges easy, and then
+# never considers its tools: on October 28 it answered a question
+# about Brazil from memory, wrongly, with thinking=False. This opens
+# its reasoning for it on every turn (see the header).
+prefill = "Let me read the user's latest message carefully. What is it asking? Is there a name, date, number, or detail I should check with a tool rather than give from memory, or is the user telling me something they already looked up?"
+
+[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".draft]
+type = "mtp"
+file = "mtp-gemma-4-26B-A4B-it.gguf"
+url = "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/7b92b5b28818151e8669af2e45e88d6086f490dd/mtp-gemma-4-26B-A4B-it.gguf"
+sha256 = "7272d97595f0d4c74bd7b623492b7dbdaafd8b7c72f329a8270ba4eca68f768a"
+size = 251939328
+cache_type_k = "q8_0"
+cache_type_v = "q8_0"
+
+[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".sampling]
+temperature = 1.0
+top_p = 0.95
+top_k = 64
+
+#------------
 #   Dense
 #------------
 
@@ -395,85 +476,3 @@ top_p = 0.80
 top_k = 20
 min_p = 0.0
 presence_penalty = 1.5
-
-
-#------------
-#   MoE
-#------------
-
-# --- Gemma 4 26B A4B ---
-# Base: https://huggingface.co/google/gemma-4-26B-A4B
-#   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-26B-A4B-it
-#       └─ QAT: https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-unquantized
-#           └─ Quantization: https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF
-# Mixture of experts: 25.2B parameters, 3.8B active per token (8 of
-# 128 experts plus one shared), 30 layers, mostly sliding-window
-# attention like the 31B. ~14.2 GB, plus the MTP drafter, ~0.25 GB.
-# Google's quantization-aware training (QAT): trained to be cut to
-# 4 bits, so it keeps more quality than an ordinary 4-bit file.
-# Unsloth's Dynamic 4-bit (UD-Q4_K_XL) of Google's unquantized QAT
-# checkpoint, and the drafter from the same repo, derived from the QAT
-# model at 4 bits. Google's card says a QAT model's drafter must be a
-# QAT checkpoint of the same precision; this one is.
-# From the Gemma 4 model cards:
-# - Thinking is off unless switched on per request with
-#   chat_template_kwargs {"enable_thinking": true}. No effort levels.
-# - Google recommends temperature 1.0, top_p 0.95, top_k 64 for all
-#   uses, with or without thinking.
-# - Earlier turns should carry only final answers, not thinking; the
-#   chat template embedded in the GGUF handles this.
-# - Vision needs the separate mmproj file, which isn't downloaded yet.
-# - Google's benchmarks put it a little behind the 31B on most tests,
-#   and well behind on Tau2, agentic tool use (68.2% against 76.9%),
-#   and long-context retrieval (MRCR v2 128k, 44.1% against 66.4%).
-# - With only 3.8B parameters read per token, it should generate
-#   several times faster than the 31B on the M6's bandwidth.
-# Under test from October 27 against the 31B, for the default.
-
-[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl"]
-file = "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf"
-url = "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/7b92b5b28818151e8669af2e45e88d6086f490dd/gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf"
-sha256 = "a7c5bc715f5ff8e99a3e8901ce7d2b42b402c669bf24f7c5250747633d0f5891"
-size = 14249047104
-default = true
-alias = "gemma-4-26b-a4b-it-qat-ud-q4_k_xl"
-display_name = "Gemma 4 26B A4B QAT UD-Q4_K_XL"
-publisher = "Google"
-family = "Gemma"
-rank = 1
-gpu_layers = -1
-flash_attn = "on"
-# As the 31B, so a long recall_message result fits.
-ctx_size = 65536
-max_tokens = 4096
-cache_ram_mib = 0
-cache_type_k = "q8_0"
-cache_type_v = "q8_0"
-# The 31B's value to start; this model's checkpoints should be about
-# half the size, with half the layers. Its slot file will tell.
-ctx_checkpoints = 4
-
-[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".reasoning]
-mode = "optional"
-default = true
-switch_key = "enable_thinking"
-budget = 1024
-# Like Muse, it skips reasoning on turns it judges easy, and then
-# never considers its tools: on October 28 it answered a question
-# about Brazil from memory, wrongly, with thinking=False. This opens
-# its reasoning for it on every turn (see the header).
-prefill = "Let me read the user's latest message carefully. What is it asking? Is there a name, date, number, or detail I should check with a tool rather than give from memory, or is the user telling me something they already looked up?"
-
-[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".draft]
-type = "mtp"
-file = "mtp-gemma-4-26B-A4B-it.gguf"
-url = "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/7b92b5b28818151e8669af2e45e88d6086f490dd/mtp-gemma-4-26B-A4B-it.gguf"
-sha256 = "7272d97595f0d4c74bd7b623492b7dbdaafd8b7c72f329a8270ba4eca68f768a"
-size = 251939328
-cache_type_k = "q8_0"
-cache_type_v = "q8_0"
-
-[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".sampling]
-temperature = 1.0
-top_p = 0.95
-top_k = 64
