@@ -122,7 +122,9 @@ family = "Gemma"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 16384
-max_tokens = 8192
+max_tokens = 2048
+message_tokens = 2048
+ctx_checkpoints = 0
 
 [summary.reasoning]
 mode = "optional"
@@ -130,7 +132,7 @@ default = false
 switch_key = "enable_thinking"
 
 [summary.sampling]
-temperature = 1.0
+temperature = 0.6
 top_p = 0.95
 top_k = 64
 presence_penalty = 0.0
