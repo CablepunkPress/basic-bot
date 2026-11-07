@@ -19,7 +19,7 @@ from pathlib import Path
 import basic_bot.config as config
 from basic_bot.agent import load_agent
 from basic_bot.embeddings import LocalEmbedder, ManagedEmbedder
-from basic_bot.infrastructure.server import CHAT, EMBEDDING, start, stop
+from basic_bot.infrastructure.server import API_KEY, CHAT, EMBEDDING, start, stop
 from basic_bot.profile import (
     get_available_chat_models,
     get_default_chat_model,
@@ -116,6 +116,7 @@ def _build_embedder(chat_router):
         query_prefix=embedding_config.get("query_prefix", ""),
         passage_prefix=embedding_config.get("passage_prefix", ""),
         model_name=embedding_config.get("alias", ""),
+        api_key=API_KEY,
     )
     return ManagedEmbedder(
         embedder,
@@ -135,6 +136,7 @@ def _build_summary_provider():
         max_tokens=summary_config["max_tokens"],
         model_info=_local_model_info(model_id, summary_config, model_id),
         reasoning=summary_config.get("reasoning"),
+        api_key=API_KEY,
     )
 
 
@@ -170,6 +172,7 @@ def _build_local_chat_providers() -> dict:
             ),
             reasoning=model_config.get("reasoning"),
             sampling=model_config.get("sampling", {}),
+            api_key=API_KEY,
         )
     return providers
 

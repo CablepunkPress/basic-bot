@@ -113,8 +113,10 @@ class LocalProvider:
         model_info: ModelInfo,
         reasoning: dict | None = None,
         sampling: dict | None = None,
+        api_key: str = "",
     ):
         self._model_id = model_id
+        self._api_key = api_key
         self._base_url = base_url.rstrip("/")
         self._endpoint = self._base_url + CHAT_PATH
         self._max_tokens = max_tokens
@@ -517,7 +519,10 @@ class LocalProvider:
         req = urllib.request.Request(
             url,
             data=body,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self._api_key}",
+            },
         )
         try:
             with urllib.request.urlopen(req, timeout=config.REQUEST_TIMEOUT) as resp:

@@ -67,6 +67,7 @@ import hashlib
 import json
 import logging
 import os
+import secrets
 import shlex
 import signal
 import socket
@@ -90,6 +91,8 @@ from basic_bot.profile import (
 from basic_bot.shutdown import shutting_down
 
 logger = logging.getLogger(__name__)
+
+API_KEY = secrets.token_urlsafe(32)
 
 # Run as a file with the agent's own Python, never imported
 WATCHDOG = Path(__file__).with_name("watchdog.py")
@@ -284,6 +287,8 @@ def _build_launch_args(entry: dict) -> list[str]:
     # does want continuing, asks for it explicitly.
     args += ["--no-prefill-assistant"]
 
+    args += ["--no-slots"]
+
     return args
 
 
@@ -374,7 +379,10 @@ def _slot_request(port: int, action: str, filename: str) -> dict:
     request = urllib.request.Request(
         f"http://localhost:{port}/slots/0?action={action}",
         data=json.dumps({"filename": filename}).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {API_KEY}",
+        },
     )
     with urllib.request.urlopen(request, timeout=SLOT_TIMEOUT) as response:
         return json.loads(response.read().decode("utf-8"))
@@ -526,6 +534,7 @@ def start(role: str, model_id: str | None = None) -> subprocess.Popen | None:
             stderr=subprocess.STDOUT,
             start_new_session=True,
             close_fds=True,
+            env={**os.environ, "LLAMA_API_KEY": API_KEY},
         )
     logger.info("%s starting on port %d (log: %s)", label, port, log_path)
 

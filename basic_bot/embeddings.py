@@ -33,8 +33,9 @@ class Embedder(Protocol):
 class LocalEmbedder:
     """Local embedding model via llama-server."""
 
-    def __init__(self, base_url: str, ctx_size: int, query_prefix: str = "", passage_prefix: str = "", model_name: str = ""):
+    def __init__(self, base_url: str, ctx_size: int, query_prefix: str = "", passage_prefix: str = "", model_name: str = "", api_key: str = ""):
         self._endpoint = base_url.rstrip("/") + "/v1/embeddings"
+        self._api_key = api_key
         self.ctx_size = ctx_size
         self._query_prefix = query_prefix
         self._passage_prefix = passage_prefix
@@ -51,7 +52,10 @@ class LocalEmbedder:
         request = urllib.request.Request(
             self._endpoint,
             data=payload,
-            headers={"Content-Type": "application/json"},
+            headers={
+                "Content-Type": "application/json",
+                "Authorization": f"Bearer {self._api_key}",
+            },
         )
         with urllib.request.urlopen(request, timeout=60) as response:
             data = json.loads(response.read().decode("utf-8"))
