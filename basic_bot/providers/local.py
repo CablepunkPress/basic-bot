@@ -74,10 +74,12 @@ logger = logging.getLogger(__name__)
 
 # Written into the model's reasoning, in its own voice, when the
 # reasoning budget runs out. llama-server adds the end-of-reasoning
-# tag after it, so the next thing the model writes is its answer.
+# tag after it, so the next thing the model writes is its answer or a
+# tool call.
 BUDGET_MESSAGE = (
-    "\n\nI've thought about this long enough. I'll answer now, "
-    "and if I'm not sure, I'll say so plainly and ask.\n"
+    "\n\nI've thought about this long enough. If I need a tool, I'll "
+    "call it now; otherwise I'll answer, and if I'm not sure, I'll say "
+    "so plainly.\n"
 )
 
 # llama-server's endpoints: chat for replies; the template and
