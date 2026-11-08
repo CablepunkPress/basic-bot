@@ -1,28 +1,9 @@
-"""Universal tool: recall specific messages by sequence number or date.
-
-Always available to every bot (belt tool). Provides deterministic
-lookup of past messages — by exact sequence number, sequence range,
-or date range. Complements search_archive's semantic search with
-precise, addressable retrieval.
-
-What a result can hold is limited, since it goes into the chat
-model's prompt. A message longer than config.ARCHIVE_MESSAGE_CHARS is
-shown as its beginning and a note saying how long it is; the message
-stays whole in the store. A result shows messages in order until
-config.ARCHIVE_RESULT_CHARS, then says where to pick up. search_archive
-shows its messages through fit_messages() here too, so both tools
-show a message the same way.
-
-A reply's tools are shown as the annotations show them (see
-basic_bot.annotations), 'search_web(query="…") → example.com' or "none",
-rather than the stored record, whose whole addresses the model doesn't
-need. A reply saved before tools were recorded shows no tools.
-"""
+"""Look up past messages by number, by a range of numbers, or by dates."""
 
 import json
 
 import basic_bot.config as config
-from basic_bot.annotations import render_tools, to_seconds
+from _archive import fit_messages
 
 TOOL = {
     "name": "recall_message",
@@ -65,74 +46,6 @@ SEQ_CONTEXT = 2
 # Maximum range span to prevent unbounded queries
 MAX_SEQ_RANGE = 50
 MAX_DATE_RESULTS = 50
-
-# Ends a message cut for length. It tells the model that it isn't
-# seeing the whole message, so it doesn't quote it as complete, and
-# that the message itself was abnormal, so it doesn't go looking for
-# the rest: the tools never show more of it.
-CUT_NOTE = (
-    "\n[Cut for length: this message is {total:,} characters long, far "
-    "longer than a message should be; only its first {shown:,} are "
-    "shown here.]"
-)
-
-
-def _cut(content: str) -> tuple[str, int]:
-    """A message's content as the tools show it, and how many of its
-    characters that is.
-
-    Within config.ARCHIVE_MESSAGE_CHARS, the content is whole.
-    Otherwise it's cut at the last whitespace within the limit, so a
-    word isn't split, and the note is added.
-    """
-    limit = config.ARCHIVE_MESSAGE_CHARS
-    if len(content) <= limit:
-        return content, len(content)
-    head = content[:limit]
-    space = max(head.rfind(" "), head.rfind("\n"))
-    if space > 0:
-        head = head[:space]
-    head = head.rstrip()
-    return head + CUT_NOTE.format(total=len(content), shown=len(head)), len(head)
-
-
-def _format_message(msg: dict) -> tuple[dict, int]:
-    """Format a message for tool output; also returns the characters
-    of it shown."""
-    content, shown = _cut(msg["content"])
-    formatted = {
-        "seq": msg["seq"],
-        "role": msg["role"],
-        "content": content,
-    }
-    metadata = dict(msg.get("metadata") or {})
-    tools = metadata.pop("tools", None)
-    if metadata:
-        formatted["metadata"] = metadata
-    if tools is not None:
-        formatted["tools"] = render_tools(tools)
-    if msg.get("created_at"):
-        formatted["created_at"] = to_seconds(msg["created_at"])
-    return formatted, shown
-
-
-def fit_messages(messages: list[dict], room: int) -> tuple[list[dict], int]:
-    """Format messages in order while what they show fits in room.
-
-    Returns the formatted messages and the characters they show. The
-    first message is always included, so a lookup never comes back
-    empty.
-    """
-    formatted: list[dict] = []
-    used = 0
-    for msg in messages:
-        item, shown = _format_message(msg)
-        if formatted and used + shown > room:
-            break
-        formatted.append(item)
-        used += shown
-    return formatted, used
-
 
 def _stopped_note(shown: list[dict], messages: list[dict]) -> str | None:
     """Where to pick up, if the result stopped before the last message."""

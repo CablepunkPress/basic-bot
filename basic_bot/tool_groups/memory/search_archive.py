@@ -1,23 +1,10 @@
-"""Universal tool: search long-term conversation memory via RAG.
-
-Always available to every bot (belt tool). Lets the agent retrieve
-verbatim past exchanges that have left the sliding window and been
-folded into the summary. Results include sequence number ranges for
-cross-referencing with recall_message.
-
-The archive finds the turns by their stored vectors; the messages are
-then read from the conversation itself and shown as recall_message
-shows them, through its fit_messages(): a message too long is cut with
-a note, and the result holds matches, best first, until
-config.ARCHIVE_RESULT_CHARS, then names the turns left out. The text
-stored beside each vector is a copy, used only to make the vector.
-"""
+"""Search the archive of past conversations by meaning."""
 
 import json
 
 import basic_bot.config as config
+from _archive import fit_messages
 from basic_bot.rag import search_memory
-from basic_bot.tool_belt.recall_message import fit_messages
 
 TOOL = {
     "name": "search_archive",

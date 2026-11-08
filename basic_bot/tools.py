@@ -4,8 +4,8 @@ The engine's tools jack has one shape: a tool is a name, a schema, and
 a handler. Tools come in three kinds, and the engine knows none of the
 plugins or custom groups by name.
 
-Default tools (the tool belt) ship with the engine, in
-basic_bot.tool_belt, and every agent has them.
+Default tools ship with the engine as its memory group, in
+basic_bot/tool_groups/memory, and every agent has them.
 
 Plugin tools (the tool box) come from installed packages. A package
 offers its groups by declaring a folder under the basic_bot.tool_box
@@ -40,11 +40,9 @@ changes only at startup, so it costs nothing in cache.
 The factory calls build_tools() once at startup.
 """
 
-import importlib
 import importlib.metadata
 import importlib.util
 import logging
-import pkgutil
 import re
 import sys
 from pathlib import Path
@@ -54,7 +52,7 @@ from basic_bot.agent import AgentError, load_agent, tool_groups
 
 logger = logging.getLogger(__name__)
 
-BELT_PACKAGE = "basic_bot.tool_belt"
+MEMORY_GROUP = Path(__file__).parent / "tool_groups" / "memory"
 TOOL_BOX_ENTRY_POINT = "basic_bot.tool_box"
 MANIFEST = "tool.json"
 CUSTOM_DIR = "tools"
@@ -63,39 +61,9 @@ INSTRUCTIONS = "instructions.md"
 _PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
 
-# ---------------------------------------------------------------------------
-# Tool Belt: package-based discovery (engine-internal)
-# ---------------------------------------------------------------------------
-
-def _discover_package(package_name: str) -> dict:
-    """Scan a Python package for tool modules. Skips _ prefixed names."""
-    try:
-        package = importlib.import_module(package_name)
-    except ImportError:
-        logger.debug("Tool package '%s' not found — skipping", package_name)
-        return {}
-
-    registry: dict = {}
-    for _, modname, ispkg in pkgutil.iter_modules(package.__path__):
-        if modname.startswith("_"):
-            continue
-        if ispkg:
-            registry.update(_discover_package(f"{package_name}.{modname}"))
-        else:
-            module = importlib.import_module(f"{package_name}.{modname}")
-            if hasattr(module, "TOOL") and hasattr(module, "handler"):
-                registry[module.TOOL["name"]] = {
-                    "schema": module.TOOL,
-                    "handler": module.handler,
-                    "group": "default",
-                    "settings": {},
-                }
-    return registry
-
-
 def load_belt() -> dict:
-    """Load all belt tools from the engine package."""
-    tools = _discover_package(BELT_PACKAGE)
+    """Load the engine's own memory group."""
+    tools = _load_group(MEMORY_GROUP, {})
     logger.info("Default tools loaded: %s", list(tools.keys()) or "none")
     return tools
 

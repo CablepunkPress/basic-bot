@@ -17,10 +17,12 @@ version = {attr = "basic_bot.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["basic_bot*"]
+namespaces = true
 
 [tool.setuptools.package-data]
 basic_bot = [
     "instructions/*.md",
     "profiles/*.toml",
     "templates/**/*",
+    "tool_groups/*/tool.json",
 ]

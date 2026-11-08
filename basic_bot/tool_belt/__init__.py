@@ -1,1 +1,0 @@
-"""Belt tools — universal tools inherited by every bot."""
