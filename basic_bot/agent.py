@@ -9,8 +9,8 @@ that is its own:
     data/           its database, logs, and backups
     .gitignore      keeps data/ out of git, if the user chooses git
 
-and, only if the user makes them, config.toml (overrides of the
-engine's settings) and tools/ (the user's own tool groups).
+and, only if the user makes it, config.toml (overrides of the
+engine's settings).
 
 agent.json is the agent's license. Creating an agent writes its id,
 name, and description; the id never changes, and the name may be

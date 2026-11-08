@@ -17,12 +17,9 @@ offers or lists the others. An interrupted download keeps its partial
 file and resumes on the next run.
 """
 
-import json
-import subprocess
 import sys
 from typing import NoReturn
 
-from basic_bot import registry
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
 from basic_bot.profile import ProfileError, choose_profile, platform_backend
 from basic_bot.setup.downloads import install, load_verified, profile_models
@@ -33,61 +30,6 @@ RERUN = "Run 'python3 build.py' again"
 
 def _fail(message: str) -> NoReturn:
     sys.exit(f"\nERROR: {message}")
-
-
-# --- Agents' tool dependencies ---
-
-def _install_tool_dependencies() -> None:
-    """Install what every registered agent's tool groups declare.
-
-    Tool groups live in each agent's tools/ folder, but their
-    dependencies live in this venv, which a rebuild starts empty.
-    pip skips anything already installed. Nothing is printed when no
-    agent has any, as on a first install. An agent whose folder is
-    gone is skipped.
-    """
-    try:
-        agent_ids = registry.ids()
-    except registry.RegistryError as e:
-        # Only tools are affected, so the rest of the build goes on
-        print(f"\nAgents' tools\n    skipping them: {e}")
-        return
-
-    deps: set[str] = set()
-    problems: list[str] = []
-    for agent_id in agent_ids:
-        folder = registry.folder(agent_id)
-        if not (folder / "agent.json").is_file():
-            continue
-        for manifest_path in sorted((folder / "tools").glob("*/tool.json")):
-            try:
-                manifest = json.loads(manifest_path.read_text())
-            except (OSError, ValueError) as e:
-                problems.append(f"skipping {manifest_path}: {e}")
-                continue
-            deps.update(manifest.get("dependencies", []))
-
-    if not deps and not problems:
-        return
-
-    print("\nAgents' tools")
-    for problem in problems:
-        print(f"    {problem}")
-    if not deps:
-        return
-
-    print(f"    installing their dependencies: {', '.join(sorted(deps))}")
-    result = subprocess.run(
-        [
-            sys.executable, "-m", "pip", "install", "--quiet",
-            "--disable-pip-version-check", *sorted(deps),
-        ],
-    )
-    if result.returncode != 0:
-        _fail(
-            "installing tool dependencies failed — see output above.\n\n"
-            f"Check your connection. {RERUN}."
-        )
 
 
 # --- Build ---
@@ -112,8 +54,6 @@ def _build_config(backend: str) -> tuple[list[str], str]:
 
 
 def main() -> None:
-    _install_tool_dependencies()
-
     try:
         backend = platform_backend()
     except ProfileError as e:

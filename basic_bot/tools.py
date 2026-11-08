@@ -37,29 +37,35 @@ INSTRUCTIONS = "instructions.md"
 _PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
 
-def installed_groups() -> dict[str, Path]:
-    """Return every tool group offered by an installed package, by name."""
-    groups: dict[str, Path] = {}
+def offered_groups() -> dict[str, tuple[Path, str]]:
+    """Return every tool group offered by an installed package, with the package's name."""
+    groups: dict[str, tuple[Path, str]] = {}
     for entry_point in importlib.metadata.entry_points(group=ENTRY_POINT):
+        source = entry_point.dist.name if entry_point.dist else entry_point.name
         try:
             root = Path(entry_point.load())
         except Exception:
-            logger.exception("Couldn't load the tool groups of '%s'", entry_point.name)
+            logger.exception("Couldn't load the tool groups of '%s'", source)
             continue
         if not root.is_dir():
-            logger.warning("'%s' names no folder of tool groups: %s", entry_point.name, root)
+            logger.warning("'%s' names no folder of tool groups: %s", source, root)
             continue
         for folder in sorted(root.iterdir()):
             if not (folder / MANIFEST).exists():
                 continue
             if folder.name in groups:
                 logger.warning(
-                    "Tool group '%s' is offered twice; keeping %s",
-                    folder.name, groups[folder.name],
+                    "Tool group '%s' is offered twice; keeping the one from %s",
+                    folder.name, groups[folder.name][1],
                 )
                 continue
-            groups[folder.name] = folder
+            groups[folder.name] = (folder, source)
     return groups
+
+
+def installed_groups() -> dict[str, Path]:
+    """Return every tool group offered by an installed package, by name."""
+    return {name: folder for name, (folder, _) in offered_groups().items()}
 
 
 def custom_groups(folder: Path | None) -> dict[str, Path]:

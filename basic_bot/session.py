@@ -27,7 +27,7 @@ user's message really arrived. Times are UTC; front ends convert them
 to local time for display.
 
 An agent is a folder, agent_path, holding its identity, persona,
-config, context, and tools. Its data, the conversation database and
+config, and context. Its data, the conversation database and
 the logs, goes in data_dir, which the front end chooses: for
 Bountiful, a data folder inside the agent's folder. The engine opens
 the database where it's told.
