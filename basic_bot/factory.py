@@ -203,7 +203,12 @@ def _build_store(agent_id: str, data_dir: Path):
     return SQLiteMessageStore(str(data_dir / f"{agent_id}.db"))
 
 
-def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
+def create_runtime(
+    agent_path: str | Path,
+    data_dir: str | Path,
+    every_agent: tuple[str, ...] = (),
+    custom_tools: Path | None = None,
+) -> BotRuntime:
     """Build a fully configured bot runtime from an agent's folder.
 
     agent_path holds the agent: agent.json, persona.md, context, tools,
@@ -219,7 +224,7 @@ def create_runtime(agent_path: str | Path, data_dir: str | Path) -> BotRuntime:
     agent_id = dashboard["id"]
 
     # Tools, first, since their groups' instructions join the prompt
-    tool_registry, tool_instructions = build_tools(agent_path)
+    tool_registry, tool_instructions = build_tools(agent_path, every_agent, custom_tools)
 
     # Stable prompt prefix, assembled once at startup. Order runs from
     # the user's own words to engine instructions, the instructions of

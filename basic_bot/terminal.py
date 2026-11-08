@@ -176,10 +176,17 @@ def _converse(session) -> None:
             print("\nStopped.")
 
 
-def chat(agent_path: Path, data_dir: Path) -> None:
+def chat(
+    agent_path: Path,
+    data_dir: Path,
+    every_agent: tuple[str, ...] = (),
+    custom_tools: Path | None = None,
+) -> None:
     """Open the agent's session and chat with it until the user leaves."""
     try:
-        session = Session.open(agent_path, data_dir)
+        session = Session.open(
+            agent_path, data_dir, every_agent=every_agent, custom_tools=custom_tools,
+        )
     except SessionError as e:
         sys.exit(f"ERROR: {e}")
 

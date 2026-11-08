@@ -1,43 +1,18 @@
-"""Tool registry assembly: the tools jack.
+"""Load an agent's tools.
 
-The engine's tools jack has one shape: a tool is a name, a schema, and
-a handler. Tools come in three kinds, and the engine knows none of the
-plugins or custom groups by name.
+A tool is a name, a schema, and a handler. Tools come in groups, and a
+group is a folder with a tool.json, one .py file per tool defining
+TOOL and handler(context, **input), and shared code in files whose
+names start with an underscore. A group may also carry settings.toml,
+its default settings, and instructions.md, which joins the system
+prompt.
 
-Default tools ship with the engine as its memory group, in
-basic_bot/tool_groups/memory, and every agent has them.
-
-Plugin tools (the tool box) come from installed packages. A package
-offers its groups by declaring a folder under the basic_bot.tool_box
-entry point; the engine reads them in place and never copies them.
-
-Custom tools (the tool shed) are the user's own groups, folders in the
-agent's tools/ folder. A custom group with the same name as a plugin
-takes its place for that agent, and the log says so.
-
-Plugin and custom groups load only when the agent has added them: the
-"tools" section of its agent.json names each one, with its settings.
-A custom folder that isn't named there is skipped, and a name with no
-group behind it is logged.
-
-A group is a folder with a tool.json manifest. Each tool is a .py file
-defining a TOOL dict (the schema) and a handler(context, **input)
-function. Files starting with _ are shared modules (e.g., _auth.py),
-importable by sibling tools in the same group with plain imports:
-`from _auth import auth_headers`.
-
-Each tool's handler receives the agent's id and its group's settings
-in its context, as context["agent_id"] and context["settings"], so one
-group serves every agent with that agent's own settings and keys. A
-description can name a setting as {{ name }}, filled in when the tools
-load.
-
-A group may also carry an instructions.md: guidance for using its
-tools, such as when to check a fact, that goes into the system prompt
-of every agent that has the group, and of no other. The system prompt
-changes only at startup, so it costs nothing in cache.
-
-The factory calls build_tools() once at startup.
+Every agent has the memory group, which comes with basic-bot. Other
+groups come from installed packages, which offer folders of groups
+under the basic_bot.tool_groups entry point, or from a folder of
+custom groups. A group loads when it is one the front end names for
+every agent, or one the agent has added in its agent.json. A custom
+group takes the place of an installed group with the same name.
 """
 
 import importlib.metadata
@@ -45,6 +20,7 @@ import importlib.util
 import logging
 import re
 import sys
+import tomllib
 from pathlib import Path
 
 import basic_bot.config as config
@@ -53,41 +29,25 @@ from basic_bot.agent import AgentError, load_agent, tool_groups
 logger = logging.getLogger(__name__)
 
 MEMORY_GROUP = Path(__file__).parent / "tool_groups" / "memory"
-TOOL_BOX_ENTRY_POINT = "basic_bot.tool_box"
+ENTRY_POINT = "basic_bot.tool_groups"
 MANIFEST = "tool.json"
-CUSTOM_DIR = "tools"
+SETTINGS = "settings.toml"
 INSTRUCTIONS = "instructions.md"
 
 _PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
 
-def load_belt() -> dict:
-    """Load the engine's own memory group."""
-    tools = _load_group(MEMORY_GROUP, {})
-    logger.info("Default tools loaded: %s", list(tools.keys()) or "none")
-    return tools
-
-
-# ---------------------------------------------------------------------------
-# Plugin and custom groups
-# ---------------------------------------------------------------------------
-
-def plugin_groups() -> dict[str, Path]:
-    """Every plugin tool group installed, by name.
-
-    Each package that plugs into the tools jack declares a folder of
-    groups under the basic_bot.tool_box entry point. If two packages
-    offer a group of the same name, the first found is kept.
-    """
+def installed_groups() -> dict[str, Path]:
+    """Return every tool group offered by an installed package, by name."""
     groups: dict[str, Path] = {}
-    for entry_point in importlib.metadata.entry_points(group=TOOL_BOX_ENTRY_POINT):
+    for entry_point in importlib.metadata.entry_points(group=ENTRY_POINT):
         try:
             root = Path(entry_point.load())
         except Exception:
-            logger.exception("Couldn't load tool box '%s'", entry_point.name)
+            logger.exception("Couldn't load the tool groups of '%s'", entry_point.name)
             continue
         if not root.is_dir():
-            logger.warning("Tool box '%s' names no folder: %s", entry_point.name, root)
+            logger.warning("'%s' names no folder of tool groups: %s", entry_point.name, root)
             continue
         for folder in sorted(root.iterdir()):
             if not (folder / MANIFEST).exists():
@@ -102,22 +62,31 @@ def plugin_groups() -> dict[str, Path]:
     return groups
 
 
-def custom_groups(agent_path: Path) -> dict[str, Path]:
-    """The agent's custom tool groups: folders in its tools/ with a manifest."""
-    tools_dir = agent_path / CUSTOM_DIR
+def custom_groups(folder: Path | None) -> dict[str, Path]:
+    """Return the custom tool groups in a folder, by name."""
     groups: dict[str, Path] = {}
-    if not tools_dir.is_dir():
+    if folder is None or not folder.is_dir():
         return groups
-    for entry in sorted(tools_dir.iterdir()):
+    for entry in sorted(folder.iterdir()):
         if not entry.is_dir() or entry.name.startswith(("_", ".")):
             continue
         if not (entry / MANIFEST).exists():
-            logger.warning(
-                "Skipping tools/%s/ — no %s manifest", entry.name, MANIFEST,
-            )
+            logger.warning("Skipping %s: it has no %s", entry, MANIFEST)
             continue
         groups[entry.name] = entry
     return groups
+
+
+def default_settings(folder: Path) -> dict:
+    """Return a group's default settings from its settings.toml."""
+    path = folder / SETTINGS
+    if not path.exists():
+        return {}
+    try:
+        return tomllib.loads(path.read_text())
+    except (OSError, tomllib.TOMLDecodeError) as e:
+        logger.error("Couldn't read %s: %s", path, e)
+        return {}
 
 
 def _fill(value: object, settings: dict, group: str) -> object:
@@ -199,62 +168,65 @@ def _load_group(group_dir: Path, settings: dict) -> dict:
     return registry
 
 
-def load_added(agent_path: Path) -> tuple[dict, dict, list[str]]:
-    """Load the plugin and custom groups the agent has added.
-
-    Returns the plugin tools, the custom tools, and the instructions of
-    the groups that carry them, in the groups' order. All are empty if
-    TOOL_BOX_ENABLED is off.
-    """
+def _wanted(agent_path: Path, every_agent: tuple[str, ...]) -> tuple[dict, set[str]]:
+    """Return the groups to load with their settings, and those the agent added."""
+    wanted: dict[str, dict | None] = {name: None for name in every_agent}
     if not config.TOOL_BOX_ENABLED:
-        logger.info("Plugin and custom tools disabled")
-        return {}, {}, []
-
+        logger.info("Added tools are turned off")
+        return wanted, set()
     try:
         added = tool_groups(load_agent(agent_path))
     except AgentError as e:
         logger.error("Couldn't read the agent's tool groups: %s", e)
         added = {}
+    wanted.update(added)
+    return wanted, set(added)
 
-    plugins = plugin_groups() if added else {}
-    custom = custom_groups(agent_path)
+
+def load_groups(
+    agent_path: Path, every_agent: tuple[str, ...], custom_dir: Path | None,
+) -> tuple[dict, list[str]]:
+    """Load the groups every agent has and the groups this agent added."""
+    wanted, added = _wanted(agent_path, every_agent)
+    installed = installed_groups() if wanted else {}
+    custom = custom_groups(custom_dir)
     for group in custom:
-        if group not in added:
-            logger.info("Skipping %s/%s/: not added", CUSTOM_DIR, group)
+        if group not in wanted:
+            logger.info("Skipping the custom group '%s': not added", group)
 
-    loaded = {"plugin": {}, "custom": {}}
+    registry: dict = {}
     instructions: list[str] = []
-    for group, settings in sorted(added.items()):
+    loaded: dict[str, list[str]] = {"every agent": [], "added": []}
+    for group, settings in wanted.items():
         if group in custom:
-            kind, folder = "custom", custom[group]
-            if group in plugins:
-                logger.info(
-                    "Using the custom %s/%s/ in place of the plugin", CUSTOM_DIR, group,
-                )
-        elif group in plugins:
-            kind, folder = "plugin", plugins[group]
-        else:
+            folder = custom[group]
+            if group in installed:
+                logger.info("Using the custom group '%s' in place of the installed one", group)
+        elif group in installed:
+            folder = installed[group]
+        elif group in added:
             logger.warning("agent.json adds '%s', which isn't installed", group)
             continue
+        else:
+            logger.warning("The tool group '%s' isn't installed", group)
+            continue
 
-        tools = _load_group(folder, settings)
+        tools = _load_group(folder, default_settings(folder) if settings is None else settings)
         for name in tools:
-            for other in loaded.values():
-                if name in other:
-                    logger.warning(
-                        "Tool '%s' from group '%s' replaces the one from '%s'",
-                        name, group, other[name]["group"],
-                    )
-                    del other[name]
-                    break
-        loaded[kind].update(tools)
+            if name in registry:
+                logger.warning(
+                    "Tool '%s' from group '%s' replaces the one from '%s'",
+                    name, group, registry[name]["group"],
+                )
+        registry.update(tools)
+        loaded["added" if group in added else "every agent"].extend(tools)
         text = _read_instructions(folder)
         if text and tools:
             instructions.append(text)
 
-    logger.info("Plugin tools loaded: %s", list(loaded["plugin"]) or "none")
-    logger.info("Custom tools loaded: %s", list(loaded["custom"]) or "none")
-    return loaded["plugin"], loaded["custom"], instructions
+    logger.info("Tools for every agent loaded: %s", loaded["every agent"] or "none")
+    logger.info("Added tools loaded: %s", loaded["added"] or "none")
+    return registry, instructions
 
 
 def _read_instructions(folder: Path) -> str:
@@ -273,24 +245,23 @@ def _read_instructions(folder: Path) -> str:
 # Assembly
 # ---------------------------------------------------------------------------
 
-def build_tools(agent_path: Path) -> tuple[dict, list[str]]:
-    """Assemble an agent's tools, and its tool groups' instructions.
-
-    Default tools load first; plugin and custom tools overlay them, so
-    one with the same name as a default tool replaces it. The
-    instructions go into the system prompt.
-    """
+def build_tools(
+    agent_path: Path,
+    every_agent: tuple[str, ...] = (),
+    custom_dir: Path | None = None,
+) -> tuple[dict, list[str]]:
+    """Assemble an agent's tools, and its tool groups' instructions."""
     agent_path = Path(agent_path)
-    registry = load_belt()
-    plugins, custom, instructions = load_added(agent_path)
-    for added in (plugins, custom):
-        for name in added:
-            if name in registry:
-                logger.warning(
-                    "Tool '%s' from group '%s' replaces the default one",
-                    name, added[name]["group"],
-                )
-        registry.update(added)
+    registry = _load_group(MEMORY_GROUP, {})
+    logger.info("Memory tools loaded: %s", list(registry) or "none")
+    others, instructions = load_groups(agent_path, every_agent, custom_dir)
+    for name in others:
+        if name in registry:
+            logger.warning(
+                "Tool '%s' from group '%s' replaces the memory tool",
+                name, others[name]["group"],
+            )
+    registry.update(others)
 
     logger.info(
         "Tool registry: %d tools [%s]",
