@@ -98,7 +98,7 @@ def _install_tool_dependencies() -> None:
 # its own interface, so the download is turned off. The build then
 # warns "no assets available - building without an embedded UI",
 # which is expected.
-COMMON_FLAGS = ["-DLLAMA_USE_PREBUILT_UI=OFF"]
+COMMON_FLAGS = ["-DLLAMA_USE_PREBUILT_UI=OFF", "-DLLAMA_OPENSSL=OFF"]
 
 
 def _build_config(backend: str) -> tuple[list[str], str]:
