@@ -213,7 +213,7 @@ class Session:
     def open(
         cls, agent_path: str | Path, data_dir: str | Path, *,
         log_to_terminal: bool = False,
-        every_agent: tuple[str, ...] = (),
+        built_in: tuple[str, ...] = (),
         custom_tools: Path | None = None,
     ) -> "Session":
         """Apply config, start logging, and build the runtime.
@@ -223,9 +223,8 @@ class Session:
         yet; call start() for that. The agent log always goes to
         logs/agent/{agent-id}.log in data_dir. With log_to_terminal,
         it also goes to the terminal, as it does for the web page.
-        every_agent names the tool groups the
-        agent has without adding them, and custom_tools is the folder
-        of custom tool groups.
+        built_in names the built-in tool groups, and custom_tools is
+        the folder of custom tool groups.
         """
         agent_path = Path(agent_path).resolve()
         data_dir = Path(data_dir).expanduser().resolve()
@@ -248,7 +247,7 @@ class Session:
         _handle_shutdown_signals()
 
         try:
-            runtime = create_runtime(agent_path, data_dir, every_agent, custom_tools)
+            runtime = create_runtime(agent_path, data_dir, built_in, custom_tools)
             versions = _versions()
         except (NoModelsError, ProfileError) as e:
             logger.error("Session could not open: %s", e)

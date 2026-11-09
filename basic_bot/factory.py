@@ -206,7 +206,7 @@ def _build_store(agent_id: str, data_dir: Path):
 def create_runtime(
     agent_path: str | Path,
     data_dir: str | Path,
-    every_agent: tuple[str, ...] = (),
+    built_in: tuple[str, ...] = (),
     custom_tools: Path | None = None,
 ) -> BotRuntime:
     """Build a fully configured bot runtime from an agent's folder.
@@ -224,7 +224,7 @@ def create_runtime(
     agent_id = dashboard["id"]
 
     # Tools, first, since their groups' instructions join the prompt
-    tool_registry, tool_instructions = build_tools(agent_path, every_agent, custom_tools)
+    tool_registry, tool_instructions = build_tools(agent_path, built_in, custom_tools)
 
     # Stable prompt prefix, assembled once at startup. Order runs from
     # the user's own words to engine instructions, the instructions of

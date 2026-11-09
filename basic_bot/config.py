@@ -40,9 +40,9 @@ ARCHIVE_RESULT_CHARS = 24000
 # History (UI loads last N messages at startup)
 HISTORY_LIMIT = 10
 
-# Plugin and custom tools. False loads only the default tools, whatever
-# the agent's agent.json has added.
-TOOL_BOX_ENABLED = True
+# Plugin tools. False loads only the memory and built-in tools,
+# whatever the agent's agent.json has added.
+PLUGINS_ENABLED = True
 
 # Log model reasoning/thinking content to the agent's log file
 LOG_REASONING = False

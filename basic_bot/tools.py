@@ -11,10 +11,10 @@ group is a folder that holds:
 
 Every agent has the memory group, which comes with basic-bot. Other
 groups come from installed packages, through the basic_bot.tool_groups
-entry point, or from a folder of custom groups. An agent gets a group
-if the session is opened with it for every agent, or if the agent
-adds it in agent.json. A custom group replaces an installed group
-with the same name.
+entry point, or from a folder of custom groups. An agent gets the
+built-in groups, which the session is given when it opens, and the
+plugin groups it adds in agent.json. A custom group replaces an
+installed group with the same name.
 """
 
 import importlib.metadata
@@ -176,11 +176,11 @@ def _load_group(group_dir: Path, settings: dict) -> dict:
     return registry
 
 
-def _wanted(agent_path: Path, every_agent: tuple[str, ...]) -> tuple[dict, set[str]]:
-    """Return the groups to load with their settings, and those the agent added."""
-    wanted: dict[str, dict | None] = {name: None for name in every_agent}
-    if not config.TOOL_BOX_ENABLED:
-        logger.info("Added tools are turned off")
+def _wanted(agent_path: Path, built_in: tuple[str, ...]) -> tuple[dict, set[str]]:
+    """Return the groups to load with their settings, and the plugins the agent added."""
+    wanted: dict[str, dict | None] = {name: None for name in built_in}
+    if not config.PLUGINS_ENABLED:
+        logger.info("Plugin tools are turned off")
         return wanted, set()
     try:
         added = tool_groups(load_agent(agent_path))
@@ -192,10 +192,10 @@ def _wanted(agent_path: Path, every_agent: tuple[str, ...]) -> tuple[dict, set[s
 
 
 def load_groups(
-    agent_path: Path, every_agent: tuple[str, ...], custom_dir: Path | None,
+    agent_path: Path, built_in: tuple[str, ...], custom_dir: Path | None,
 ) -> tuple[dict, list[str]]:
-    """Load the groups every agent has and the groups this agent added."""
-    wanted, added = _wanted(agent_path, every_agent)
+    """Load the built-in groups and the plugin groups this agent added."""
+    wanted, added = _wanted(agent_path, built_in)
     installed = installed_groups() if wanted else {}
     custom = custom_groups(custom_dir)
     for group in custom:
@@ -204,7 +204,7 @@ def load_groups(
 
     registry: dict = {}
     instructions: list[str] = []
-    loaded: dict[str, list[str]] = {"every agent": [], "added": []}
+    loaded: dict[str, list[str]] = {"built-in": [], "plugin": []}
     for group, settings in wanted.items():
         if group in custom:
             folder = custom[group]
@@ -227,13 +227,13 @@ def load_groups(
                     name, group, registry[name]["group"],
                 )
         registry.update(tools)
-        loaded["added" if group in added else "every agent"].extend(tools)
+        loaded["plugin" if group in added else "built-in"].extend(tools)
         text = _read_instructions(folder)
         if text and tools:
             instructions.append(text)
 
-    logger.info("Tools for every agent loaded: %s", loaded["every agent"] or "none")
-    logger.info("Added tools loaded: %s", loaded["added"] or "none")
+    logger.info("Built-in tools loaded: %s", loaded["built-in"] or "none")
+    logger.info("Plugin tools loaded: %s", loaded["plugin"] or "none")
     return registry, instructions
 
 
@@ -255,14 +255,14 @@ def _read_instructions(folder: Path) -> str:
 
 def build_tools(
     agent_path: Path,
-    every_agent: tuple[str, ...] = (),
+    built_in: tuple[str, ...] = (),
     custom_dir: Path | None = None,
 ) -> tuple[dict, list[str]]:
     """Assemble an agent's tools, and its tool groups' instructions."""
     agent_path = Path(agent_path)
     registry = _load_group(MEMORY_GROUP, {})
     logger.info("Memory tools loaded: %s", list(registry) or "none")
-    others, instructions = load_groups(agent_path, every_agent, custom_dir)
+    others, instructions = load_groups(agent_path, built_in, custom_dir)
     for name in others:
         if name in registry:
             logger.warning(
