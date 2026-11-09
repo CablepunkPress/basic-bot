@@ -1,20 +1,18 @@
-"""Terminal chat for a Bountiful agent.
+"""Chat with an agent in the terminal.
 
-A front end, called with an agent's folder and its data folder, as
-'bountiful chat' does. For testing the engine with nothing else
-installed, it also runs on its own, with Bountiful's Python:
+The bountiful command opens the agent's session and passes it to
+chat(). To test the harness alone, run this file with Bountiful's
+Python. It then opens the session itself:
 
     python -m basic_bot.terminal AGENT_FOLDER [DATA_FOLDER]
 
-The data folder defaults to the agent folder's data/, as Bountiful
-keeps it.
+The data folder defaults to data/ inside the agent's folder.
 
-Everything here goes through basic_bot.session. If this file ever
-needs something the session doesn't offer, that's engine work living
-in a front end, and it belongs in the session instead.
+Everything here goes through the session. If this file needs
+something the session doesn't offer, add it to the session.
 
-Engine logs go to the agent's log file in its data folder, so they
-don't interrupt the conversation.
+The agent's log goes to its file, not the terminal, so it doesn't
+interrupt the conversation.
 """
 
 import readline  # noqa: F401 — line editing and history for input()
@@ -176,31 +174,18 @@ def _converse(session) -> None:
             print("\nStopped.")
 
 
-def chat(
-    agent_path: Path,
-    data_dir: Path,
-    every_agent: tuple[str, ...] = (),
-    custom_tools: Path | None = None,
-) -> None:
-    """Open the agent's session and chat with it until the user leaves."""
+def chat(session: Session) -> None:
+    """Start the model and chat with the agent until the user leaves."""
+    print(f"{session.name}  (engine log: {session.log_path})")
+    print("Starting...", flush=True)
     try:
-        session = Session.open(
-            agent_path, data_dir, every_agent=every_agent, custom_tools=custom_tools,
-        )
+        session.start()
     except SessionError as e:
         sys.exit(f"ERROR: {e}")
-
-    with session:
-        print(f"{session.name}  (engine log: {session.log_path})")
-        print("Starting...", flush=True)
-        try:
-            session.start()
-        except SessionError as e:
-            sys.exit(f"ERROR: {e}")
-        print(_describe(session.controls()))
-        print("Type /help for commands.")
-        _converse(session)
-        print("Stopping...", flush=True)
+    print(_describe(session.controls()))
+    print("Type /help for commands.")
+    _converse(session)
+    print("Stopping...", flush=True)
 
 
 def main() -> None:
@@ -208,7 +193,12 @@ def main() -> None:
         sys.exit("Usage: python -m basic_bot.terminal AGENT_FOLDER [DATA_FOLDER]")
     agent_path = Path(sys.argv[1]).expanduser()
     data_dir = Path(sys.argv[2]).expanduser() if len(sys.argv) == 3 else agent_path / "data"
-    chat(agent_path, data_dir)
+    try:
+        session = Session.open(agent_path, data_dir)
+    except SessionError as e:
+        sys.exit(f"ERROR: {e}")
+    with session:
+        chat(session)
 
 
 if __name__ == "__main__":

@@ -1,18 +1,20 @@
 """Load an agent's tools.
 
-A tool is a name, a schema, and a handler. Tools come in groups, and a
-group is a folder with a tool.json, one .py file per tool defining
-TOOL and handler(context, **input), and shared code in files whose
-names start with an underscore. A group may also carry settings.toml,
-its default settings, and instructions.md, which joins the system
-prompt.
+A tool is a name, a schema, and a handler. Tools come in groups. A
+group is a folder that holds:
+
+- tool.json, which describes the group
+- one .py file per tool, with TOOL and handler(context, **input)
+- shared code, in files whose names start with an underscore
+- settings.toml, the group's default settings, if it has any
+- instructions.md, which joins the system prompt, if it has one
 
 Every agent has the memory group, which comes with basic-bot. Other
-groups come from installed packages, which offer folders of groups
-under the basic_bot.tool_groups entry point, or from a folder of
-custom groups. A group loads when it is one the front end names for
-every agent, or one the agent has added in its agent.json. A custom
-group takes the place of an installed group with the same name.
+groups come from installed packages, through the basic_bot.tool_groups
+entry point, or from a folder of custom groups. An agent gets a group
+if the session is opened with it for every agent, or if the agent
+adds it in agent.json. A custom group replaces an installed group
+with the same name.
 """
 
 import importlib.metadata

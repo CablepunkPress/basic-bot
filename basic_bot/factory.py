@@ -10,7 +10,7 @@ the runtime. Engine-core code reads from the runtime, never reaches
 outward.
 
 Logging is configured by whoever opens the runtime, normally
-basic_bot.session, so each front end decides where logs go.
+basic_bot.session, so whoever opens the session decides where logs go.
 """
 
 import logging
@@ -213,7 +213,7 @@ def create_runtime(
 
     agent_path holds the agent: agent.json, persona.md, context, and a
     config.toml if the user made one. data_dir is where its
-    database goes, chosen by the front end.
+    database goes, chosen by whoever opens the session.
     """
 
     agent_path = Path(agent_path).resolve()

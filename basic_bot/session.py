@@ -1,10 +1,8 @@
-"""Session: a running agent, as a front end sees it.
+"""A running agent, as a front end sees it.
 
-A front end opens a session, drives it, and closes it. It never
-touches the runtime, the router, servers, the store, or folding.
-The session holds the current host, model, Deep Reasoning setting,
-and effort, and decides which controls apply, so every front end
-shows the same thing.
+The bountiful command opens a session and hands it to a front end.
+The front end does everything through the session. It never touches
+the models, the servers, or the database.
 
     with Session.open(agent_path, data_dir) as session:
         session.start()
@@ -12,66 +10,17 @@ shows the same thing.
         if reply.memory_update_due:
             session.update_memory()
 
-send() returns as soon as the reply is written and the turn is saved,
-so a front end can show the answer right away. When the conversation
-has grown enough to fold, the reply says so, and the front end calls
-update_memory(), showing that the agent is updating its memory. If a
-front end doesn't, or an update is interrupted, the next send() runs
-the update before answering, so memory is always up to date before a
-new message is answered.
+The agent's folder holds who the agent is. Its data folder holds its
+database, its logs, and its saved cache.
 
-Each message is stamped with its own time: the user's when it
-arrives, the reply's when it's finished. The turn is saved only after
-the reply is written, so the session, not the store, knows when the
-user's message really arrived. Times are UTC; front ends convert them
-to local time for display.
+Every way of stopping ends in close(), except a force quit. close()
+stops every server the session started.
 
-An agent is a folder, agent_path, holding its identity, persona,
-config, and context. Its data, the conversation database and
-the logs, goes in data_dir, which the front end chooses: for
-Bountiful, a data folder inside the agent's folder. The engine opens
-the database where it's told.
+Modules read config values when their functions run, not when they're
+imported. This lets open() apply config.toml after everything is
+imported.
 
-Logs go in data_dir/logs/, in two kinds. The agent log,
-logs/agent/{agent-id}.log, is what the agent did: each session's
-start, with versions, its end, every settings change, tool calls,
-folds, and each request's timings, so it reads as a complete account
-of what happened. It rotates so it never grows past a fixed size. A
-front end can also echo it to its terminal. The server logs, in
-logs/server/, are what the agent's llama-servers did, one file per
-run (see basic_bot.infrastructure.server).
-
-The chat server's cache is saved in data_dir/slots/ whenever the
-server stops, and restored when it starts again with the same setup,
-so a restart, a model switch, an archive search, or the next session
-doesn't reread the whole conversation (see
-basic_bot.infrastructure.server).
-
-Between turns, the session warms the cache: right after a reply is
-saved, after a memory update, after a model is selected or its effort
-or Deep Reasoning is changed, and when the session starts, it has the
-server read the conversation as the next message will find it, ending
-with the last reply. The next request then only adds the new message.
-Without it, a model that can't rewind far (the Gemmas' sliding window,
-Qwen's recurrent state) rereads everything whenever the last turn
-reasoned at length or used a tool, since the engine doesn't send that
-reasoning back; with context checkpoints, warming makes that reread
-short and moves it out of the user's way. Warming runs in the
-background, so the session stays free: a message sent before it
-finishes waits at the server for it, losing nothing.
-
-Every polite way of stopping ends in close(), so llama-server is
-stopped rather than left running: Ctrl-C raises KeyboardInterrupt,
-and open() turns a closed terminal window (SIGHUP) or a logout or
-kill (SIGTERM) into SystemExit. Only a force quit skips close(), and
-then each server's watchdog stops it. Once shutdown begins, no new
-server is started, so cleanup still running can't leave one behind.
-
-Engine modules read config values when their functions run, never
-when they're imported. That's what lets open() apply config.toml
-overrides after everything here has been imported. A module that
-reads config at import, including through a default argument, would
-capture the value before the override.
+How the session works is in bountiful-docs, in technical/session.md.
 """
 
 import logging
@@ -206,7 +155,7 @@ def _stop_on_signal(signum, frame) -> None:
 
     Shutdown begins at once, so cleanup that runs while the program
     unwinds, like a fold resuming chat, doesn't start a server. Then
-    raising SystemExit unwinds the program normally, so the front end's
+    raising SystemExit unwinds the program normally, so the
     `with Session.open(...)` block runs close() and stops llama-server.
     """
     logger.info("Received %s, shutting down", signal.Signals(signum).name)
@@ -220,7 +169,7 @@ def _handle_shutdown_signals() -> None:
     Closing the terminal window sends SIGHUP; logout or `kill` sends
     SIGTERM. By default either ends Python on the spot, skipping
     close(). Python only allows handlers from the main thread, which
-    is where every front end opens its session.
+    is where a session is opened.
     """
     if threading.current_thread() is not threading.main_thread():
         return
@@ -273,8 +222,8 @@ class Session:
         database and logs go, created if needed. Nothing is started
         yet; call start() for that. The agent log always goes to
         logs/agent/{agent-id}.log in data_dir. With log_to_terminal,
-        it also goes to the terminal, for front ends that run in one,
-        like the web launcher. every_agent names the tool groups the
+        it also goes to the terminal, as it does for the web page.
+        every_agent names the tool groups the
         agent has without adding them, and custom_tools is the folder
         of custom tool groups.
         """
