@@ -1,33 +1,22 @@
 """Hardware profiles: choosing one when the machine is built, and
 loading it when an agent opens.
 
-Profiles ship with the engine package in basic_bot/profiles/. Each is
-a TOML file describing the models, launch args, reasoning controls,
-speculative decoding, sampling parameters, and UI metadata for one
-kind of machine, and its [needs] table states what that machine must
-have.
+Bountiful's profiles come with basic-bot, in basic_bot/profiles/. Each
+is a TOML file for one kind of machine. Its [needs] table says what
+the machine must have.
 
-The profile is chosen once, by the build (python -m basic_bot), and
-recorded in ~/.bountiful, which every agent on the machine shares.
-Opening an agent reads that record and runs no detection, so it costs
-nothing extra, the models on disk always match the profile in use,
-and a hosted engine never detects anything.
+The build chooses the profile once and records it in
+~/.bountiful/machine.toml. Every agent on the machine loads that
+profile. Opening an agent detects nothing.
 
-Choosing works from facts about the machine. The GPU backend comes
-from the operating system: Metal on macOS, Vulkan on Linux. The memory
-models can use comes from sysctl on a Mac and, on Linux, from the
-llama-server the build has just compiled. Selection takes the largest
-profile for that backend that fits the memory. No code names a
-machine, so a profile for new hardware needs no new code.
+The build can also be given a folder for a profile of the user's own.
+If the folder holds one, that profile is used instead of Bountiful's.
+It must be for this machine's backend. Only one may be in the folder.
 
-The profile is checked when it's chosen and again when it loads, so a
-mistake in a hand-edited file is reported with a clear message instead
-of failing in the middle of a conversation. Problems raise
-ProfileError rather than exiting, so a web server or a hosted service
-can report them.
+A profile is checked when it's chosen and again when it loads.
+Problems raise ProfileError, with a message for the user.
 
-Two gates determine whether a chat model appears in the UI:
-it must be in the profile and downloaded to disk.
+How a profile is chosen is in bountiful-docs, in technical/profiles.md.
 """
 
 import json
@@ -522,46 +511,96 @@ def _select(machine: Machine) -> tuple[str, dict]:
     return name, profile
 
 
+def _listed(names: list[str]) -> str:
+    """Names joined for a sentence: a, b, and c."""
+    if len(names) == 2:
+        return f"{names[0]} and {names[1]}"
+    return ", ".join(names[:-1]) + f", and {names[-1]}"
+
+
+def _custom(custom_dir: Path | None) -> Path | None:
+    """The one profile in the custom folder, if it holds one."""
+    if custom_dir is None:
+        return None
+    paths = sorted(custom_dir.resolve().glob("*.toml"))
+    if len(paths) > 1:
+        raise ProfileError(
+            f"Only one profile may be in {custom_dir}. "
+            f"It has {_listed([p.name for p in paths])}."
+        )
+    return paths[0] if paths else None
+
+
+def _own(path: Path, machine: Machine) -> tuple[str, dict]:
+    """A custom profile, which must be for this machine's backend."""
+    profile = _read(path)
+    problems = _check_format(profile)
+    if problems:
+        _raise_problems(path, problems)
+    backend = profile["needs"]["backend"]
+    if backend != machine.backend:
+        raise ProfileError(
+            f"{path.name} is a profile for {backend.capitalize()}, but "
+            f"this machine uses {machine.backend.capitalize()}."
+        )
+    return path.stem, profile
+
+
 # --- Choosing and recording ---
 
-def choose_profile() -> tuple[Machine, str]:
+def choose_profile(
+    custom_dir: Path | None = None,
+) -> tuple[Machine, str, bool]:
     """Detect the machine, choose its profile, and record the choice.
 
-    Called by the build. Returns the machine and the profile's name.
+    Called by the build. A profile in custom_dir is used instead of
+    Bountiful's. Returns the machine, the profile's name, and whether
+    it's a custom one.
     """
     global _loaded
     machine = detect_machine()
-    name, profile = _select(machine)
-    _validate(profile, PROFILES_DIR / f"{name}.toml")
+    custom = _custom(custom_dir)
+    if custom:
+        name, profile = _own(custom, machine)
+        path = custom
+    else:
+        name, profile = _select(machine)
+        path = PROFILES_DIR / f"{name}.toml"
+    _validate(profile, path)
 
     PROFILE_RECORD.parent.mkdir(parents=True, exist_ok=True)
     PROFILE_RECORD.write_text(
         "# The hardware profile this machine uses, chosen by\n"
         "# 'python3 build.py'. Run it again to choose again.\n"
         f"profile = {json.dumps(name)}\n"
-        f"backend = {json.dumps(machine.backend)}\n"
+        + (f"file = {json.dumps(str(custom))}\n" if custom else "")
+        + f"backend = {json.dumps(machine.backend)}\n"
         f"memory_gb = {machine.memory_gb}\n"
     )
-    logger.info("Chose hardware profile: %s", name)
+    logger.info("Chose hardware profile: %s%s", name, " (custom)" if custom else "")
     _loaded = (name, profile)
-    return machine, name
+    return machine, name, custom is not None
 
 
-def _recorded_name() -> str:
-    """The profile the build chose for this machine."""
+def _recorded() -> tuple[str, Path | None]:
+    """The profile the build chose, and its file if it's a custom one."""
     if not PROFILE_RECORD.exists():
         raise ProfileError(
             "This machine hasn't been set up for Bountiful yet. " + SETUP
         )
     try:
-        name = tomllib.loads(PROFILE_RECORD.read_text())["profile"]
+        record = tomllib.loads(PROFILE_RECORD.read_text())
+        name = record["profile"]
     except (OSError, tomllib.TOMLDecodeError, KeyError) as e:
         raise ProfileError(
             f"{PROFILE_RECORD} couldn't be read ({e}). " + SETUP
         ) from e
     if not isinstance(name, str):
         raise ProfileError(f"{PROFILE_RECORD} names no profile. " + SETUP)
-    return name
+    file = record.get("file")
+    if file is not None and not isinstance(file, str):
+        raise ProfileError(f"{PROFILE_RECORD} names no profile file. " + SETUP)
+    return name, Path(file) if file else None
 
 
 # --- Loading ---
@@ -570,8 +609,14 @@ def _load() -> tuple[str, dict]:
     """Load and check the recorded profile, once per process."""
     global _loaded
     if _loaded is None:
-        name = _recorded_name()
-        path = PROFILES_DIR / f"{name}.toml"
+        name, custom = _recorded()
+        path = custom or PROFILES_DIR / f"{name}.toml"
+        if custom and not path.exists():
+            raise ProfileError(
+                f"This machine was set up with your own profile, {name}, "
+                f"but {path} isn't there. Run 'python3 build.py' to "
+                f"choose again."
+            )
         if not path.exists():
             raise ProfileError(
                 f"This machine was set up with the {name} profile, which "

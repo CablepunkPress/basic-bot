@@ -1,7 +1,9 @@
 """The engine's build: llama.cpp, the hardware profile, and the models.
 
-Called by build.py in the bountiful repo, as `python -m basic_bot`,
-once the user has agreed to install. It asks nothing more, except
+Called by build.py in the bountiful repo, as
+`python -m basic_bot [CUSTOM_PROFILE_FOLDER]`, once the user has
+agreed to install. A profile in that folder is used instead of
+Bountiful's. It asks nothing more, except
 before a large new download on a machine that's already set up.
 
 Takes the GPU backend from the operating system, checks the build
@@ -18,6 +20,7 @@ file and resumes on the next run.
 """
 
 import sys
+from pathlib import Path
 from typing import NoReturn
 
 from basic_bot.infrastructure.llamacpp import build, check_prerequisites
@@ -54,6 +57,10 @@ def _build_config(backend: str) -> tuple[list[str], str]:
 
 
 def main() -> None:
+    if len(sys.argv) > 2:
+        sys.exit("Usage: python -m basic_bot [CUSTOM_PROFILE_FOLDER]")
+    custom_dir = Path(sys.argv[1]).expanduser() if len(sys.argv) == 2 else None
+
     try:
         backend = platform_backend()
     except ProfileError as e:
@@ -66,11 +73,12 @@ def main() -> None:
 
     print("\nHardware profile")
     try:
-        machine, name = choose_profile()
+        machine, name, custom = choose_profile(custom_dir)
         models = profile_models()
     except ProfileError as e:
         _fail(str(e))
-    print(f"    {backend_name}, {machine.memory_gb} GB for models: {name}")
+    label = f"{name} (custom)" if custom else name
+    print(f"    {backend_name}, {machine.memory_gb} GB for models: {label}")
 
     # A machine with verified models is already set up, so a large new
     # download there, such as a new default after an update, asks first.
