@@ -19,10 +19,12 @@ installed group with the same name.
 
 import importlib.metadata
 import importlib.util
+import json
 import logging
 import re
 import sys
 import tomllib
+from dataclasses import dataclass
 from pathlib import Path
 
 import basic_bot.config as config
@@ -37,6 +39,37 @@ SETTINGS = "settings.toml"
 INSTRUCTIONS = "instructions.md"
 
 _PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
+
+
+@dataclass(frozen=True)
+class Group:
+    """A tool group, as its tool.json describes it for people."""
+    name: str
+    source: str
+    description: str
+    sends: str
+    keys: list[dict]
+    folder: Path
+    tools: list[str]
+
+
+def read_group(folder: Path, source: str) -> Group:
+    """Read a group's tool.json and the names of its tools."""
+    try:
+        data = json.loads((folder / MANIFEST).read_text())
+    except (OSError, ValueError):
+        data = {}
+    if not isinstance(data, dict):
+        data = {}
+    return Group(
+        name=folder.name,
+        source=source,
+        description=str(data.get("description", "")),
+        sends=str(data.get("sends", "")),
+        keys=[k for k in data.get("keys", []) if isinstance(k, dict) and k.get("name")],
+        folder=folder,
+        tools=sorted(f.stem for f in folder.glob("*.py") if not f.name.startswith("_")),
+    )
 
 
 def offered_groups() -> dict[str, tuple[Path, str]]:
