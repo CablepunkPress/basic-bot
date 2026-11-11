@@ -223,12 +223,11 @@ def create_runtime(
     dashboard = load_agent(agent_path)
     agent_id = dashboard["id"]
 
-    # Tools, first, since their groups' instructions join the prompt
-    tool_registry, tool_instructions = build_tools(agent_path, built_in, custom_tools)
+    tool_registry = build_tools(agent_path, built_in, custom_tools)
 
     # Stable prompt prefix, assembled once at startup. Order runs from
-    # the user's own words to engine instructions, the instructions of
-    # the tool groups the agent has on, and optional domain knowledge.
+    # the user's own words to engine instructions and optional domain
+    # knowledge.
     # chat.py appends the TOOLS and MEMORY sections.
 
     # Persona — user-authored, in the agent directory
@@ -239,9 +238,6 @@ def create_runtime(
     # Instructions — engine-owned, every .md file in instructions/
     instructions_dir = Path(__file__).parent / "instructions"
     sections.extend(_read_markdown_dir(instructions_dir))
-
-    # Instructions from the agent's tool groups, such as Wikipedia's
-    sections.extend(tool_instructions)
 
     # Context — user-added domain knowledge, only if files exist
     context_parts = _read_markdown_dir(agent_path / "context")

@@ -7,7 +7,6 @@ group is a folder that holds:
 - one .py file per tool, with TOOL and handler(context, **input)
 - shared code, in files whose names start with an underscore
 - settings.toml, the group's default settings, if it has any
-- instructions.md, which joins the system prompt, if it has one
 
 Every agent has the memory group, which comes with basic-bot. Other
 groups come from installed packages, through the basic_bot.tool_groups
@@ -36,7 +35,6 @@ MEMORY_GROUP = Path(__file__).parent / "tool_groups" / "memory"
 ENTRY_POINT = "basic_bot.tool_groups"
 MANIFEST = "tool.json"
 SETTINGS = "settings.toml"
-INSTRUCTIONS = "instructions.md"
 
 _PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
@@ -226,7 +224,7 @@ def _wanted(agent_path: Path, built_in: tuple[str, ...]) -> tuple[dict, set[str]
 
 def load_groups(
     agent_path: Path, built_in: tuple[str, ...], custom_dir: Path | None,
-) -> tuple[dict, list[str]]:
+) -> dict:
     """Load the built-in groups and the plugin groups this agent added."""
     wanted, added = _wanted(agent_path, built_in)
     installed = installed_groups() if wanted else {}
@@ -236,7 +234,6 @@ def load_groups(
             logger.info("Skipping the custom group '%s': not added", group)
 
     registry: dict = {}
-    instructions: list[str] = []
     loaded: dict[str, list[str]] = {"built-in": [], "plugin": []}
     for group, settings in wanted.items():
         if group in custom:
@@ -261,25 +258,10 @@ def load_groups(
                 )
         registry.update(tools)
         loaded["plugin" if group in added else "built-in"].extend(tools)
-        text = _read_instructions(folder)
-        if text and tools:
-            instructions.append(text)
 
     logger.info("Built-in tools loaded: %s", loaded["built-in"] or "none")
     logger.info("Plugin tools loaded: %s", loaded["plugin"] or "none")
-    return registry, instructions
-
-
-def _read_instructions(folder: Path) -> str:
-    """A group's instructions.md, or "" if it has none or it can't be read."""
-    path = folder / INSTRUCTIONS
-    if not path.exists():
-        return ""
-    try:
-        return path.read_text().strip()
-    except OSError as e:
-        logger.error("Couldn't read %s: %s", path, e)
-        return ""
+    return registry
 
 
 # ---------------------------------------------------------------------------
@@ -290,12 +272,12 @@ def build_tools(
     agent_path: Path,
     built_in: tuple[str, ...] = (),
     custom_dir: Path | None = None,
-) -> tuple[dict, list[str]]:
-    """Assemble an agent's tools, and its tool groups' instructions."""
+) -> dict:
+    """Assemble an agent's tools."""
     agent_path = Path(agent_path)
     registry = _load_group(MEMORY_GROUP, {})
     logger.info("Memory tools loaded: %s", list(registry) or "none")
-    others, instructions = load_groups(agent_path, built_in, custom_dir)
+    others = load_groups(agent_path, built_in, custom_dir)
     for name in others:
         if name in registry:
             logger.warning(
@@ -309,4 +291,4 @@ def build_tools(
         len(registry),
         ", ".join(registry.keys()) or "none",
     )
-    return registry, instructions
+    return registry
