@@ -53,6 +53,13 @@ REFUSED_ROUNDS = 2
 # The parts of a source the record keeps
 SOURCE_FIELDS = ("title", "url", "section")
 
+REMINDER = (
+    "\n\nI planned to call {tool} and haven't yet. If I still need it, "
+    "I'll call it now.\n"
+)
+
+CUT_OFF_NOTE = "\n\n[This reply ran past its length limit and was cut short here.]"
+
 
 def _execute_tool(
     registry: dict, name: str, context: dict, tool_input: dict,
@@ -124,6 +131,28 @@ def _record_call(name: str, tool_input: dict, content: str) -> tuple[dict, str]:
     else:
         record["sources"] = []
     return record, content
+
+
+def _planned_tool(response: ChatResponse, names: list[str]) -> str | None:
+    """Return the tool the reasoning named last, unless the reply names it too."""
+    found = [
+        (response.reasoning.rfind(name), name)
+        for name in names if name in response.reasoning
+    ]
+    if not found:
+        return None
+    tool = max(found)[1]
+    return None if tool in response.text else tool
+
+
+def _shorten(text: str) -> str:
+    """Return a reply cut off at max_tokens, kept short, with a note saying so."""
+    limit = config.CUT_OFF_REPLY_CHARS
+    if len(text) > limit:
+        head = text[:limit]
+        space = max(head.rfind("\n"), head.rfind(" "))
+        text = head[:space] if space > 0 else head
+    return text.rstrip() + CUT_OFF_NOTE
 
 
 # ---------------------------------------------------------------------------
@@ -414,6 +443,8 @@ def _chat_loop(
     rounds = 0
     calls: list[dict] = []
     reasoned = False
+    reminded = False
+    prefill = None
     while True:
         response = provider.chat(
             messages=messages,
@@ -422,10 +453,28 @@ def _chat_loop(
             model_id=model_id,
             effort=effort,
             thinking=thinking,
+            prefill=prefill,
         )
+        prefill = None
         reasoned = reasoned or response.thinking
 
         if not response.tool_calls:
+            tool = None
+            if not reminded and rounds == 0 and response.reasoning:
+                tool = _planned_tool(response, list(tool_registry))
+            if tool:
+                logger.warning(
+                    "The reasoning planned %s, but the reply made no call; asking again",
+                    tool,
+                )
+                reminded = True
+                prefill = response.reasoning.rstrip() + REMINDER.format(tool=tool)
+                continue
+            if reminded and rounds == 0:
+                logger.warning("Still no tool call after the reminder")
+            if response.cut_off:
+                logger.warning("The reply ran past max_tokens; saving it shortened")
+                response.text = _shorten(response.text)
             return response, calls, reasoned
 
         rounds += 1

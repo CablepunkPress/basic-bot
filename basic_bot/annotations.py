@@ -46,6 +46,9 @@ from urllib.parse import urlparse
 # Any annotation, with or without created_at or tools
 PATTERN = re.compile(r"<!--\s*seq:\d+[^>]*-->")
 
+COMMENT = re.compile(r"<!--.*?(?:-->|\Z)", re.DOTALL)
+FENCE = re.compile(r"(```.*?```)", re.DOTALL)
+
 # The most of any one input shown, in characters
 INPUT_CHARS = 80
 
@@ -134,3 +137,12 @@ def annotate(seq: int, created_at: str | None, tools: list[dict] | None = None) 
 def strip(text: str) -> str:
     """Remove every annotation from text."""
     return PATTERN.sub("", text)
+
+
+def strip_comments(text: str) -> str:
+    """Remove every comment from a reply, except inside fenced code."""
+    parts = FENCE.split(text)
+    for i in range(0, len(parts), 2):
+        cleaned = COMMENT.sub("", parts[i])
+        parts[i] = re.sub(r"\n{3,}", "\n\n", cleaned)
+    return "".join(parts)

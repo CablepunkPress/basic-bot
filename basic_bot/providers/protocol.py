@@ -104,6 +104,7 @@ class ChatResponse:
     # for the rest of the turn, so the model keeps its plan across a
     # chain of tool calls; never stored.
     reasoning: str = ""
+    cut_off: bool = False
 
 
 class InferenceProvider(Protocol):
@@ -131,6 +132,7 @@ class InferenceProvider(Protocol):
         effort: str | None = None,
         thinking: bool | None = None,
         sampling: dict | None = None,
+        prefill: str | None = None,
     ) -> ChatResponse:
         """Send messages and return a response.
 
@@ -150,6 +152,9 @@ class InferenceProvider(Protocol):
 
         thinking and effort of None mean "use the model's default."
         Providers resolve them with ModelInfo.resolve().
+
+        prefill replaces the model's own opening words for its
+        reasoning, for this request only.
         """
         ...
 

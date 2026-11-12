@@ -208,7 +208,7 @@ default = true
 switch_key = "enable_thinking"
 budget = 1024
 # Force model to open reasoning channel
-prefill = "Let me read the user's latest message carefully. What is it asking? Is there a name, date, number, or detail I should check with a tool rather than give from memory, or is the user telling me something they already looked up?"
+prefill = "Let me read the user's latest message. What is it asking? I'll plan my steps, and if I need a tool, calling it comes first, since I can only answer from a result once I have it. So: is there a name, date, number, or detail I should check with a tool rather than give from memory, or is the user telling me something they already looked up?"
 
 [chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".sampling]
 temperature = 1.0

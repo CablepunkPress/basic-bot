@@ -62,7 +62,7 @@ import urllib.error
 import urllib.request
 
 import basic_bot.config as config
-from basic_bot.annotations import strip as strip_annotations
+from basic_bot.annotations import strip_comments
 from basic_bot.providers.protocol import (
     REASONING_OPTIONAL,
     ChatResponse,
@@ -164,9 +164,10 @@ class LocalProvider:
         effort: str | None = None,
         thinking: bool | None = None,
         sampling: dict | None = None,
+        prefill: str | None = None,
     ) -> ChatResponse:
         payload, budget = self._chat_payload(
-            messages, system, tools, thinking, effort, sampling,
+            messages, system, tools, thinking, effort, sampling, prefill,
         )
         data = self._post(payload)
         return self._parse_response(data, budget)
@@ -179,6 +180,7 @@ class LocalProvider:
         thinking: bool | None,
         effort: str | None,
         sampling: dict | None,
+        prefill: str | None = None,
     ) -> tuple[dict, int | None]:
         """The whole chat request, and its reasoning budget.
 
@@ -194,14 +196,16 @@ class LocalProvider:
         # after a tool result it's already in the middle of its work.
         # "reasoning_content" is the name llama-server accepts; v0.7.0
         # rejects anything else, where v0.5.0 quietly ignored it.
+        opening = prefill if prefill is not None else self._prefill
         if (
-            self._prefill and reasoning_on and config.FORCE_REASONING
+            opening and reasoning_on
+            and (prefill is not None or config.FORCE_REASONING)
             and messages and messages[-1]["role"] == "user"
         ):
             payload["messages"].append({
                 "role": "assistant",
                 "content": "",
-                "reasoning_content": self._prefill,
+                "reasoning_content": opening,
             })
             payload["continue_final_message"] = "reasoning_content"
             payload["add_generation_prompt"] = False
@@ -417,8 +421,8 @@ class LocalProvider:
         choice = data["choices"][0]
         message = choice["message"]
 
-        text = message.get("content") or ""
-        text = strip_annotations(text).strip()
+        raw = message.get("content") or ""
+        text = strip_comments(raw).strip()
 
         tool_calls = []
         for tc in message.get("tool_calls") or []:
@@ -454,6 +458,8 @@ class LocalProvider:
         self._log_timing(data, reasoned=thinking)
 
         finish_reason = choice.get("finish_reason")
+        if config.LOG_REASONING:
+            logger.info("Reply (finish reason: %s): %s", finish_reason, raw)
         if finish_reason == "length":
             logger.warning(
                 "Response truncated — hit max_tokens (%d)", self._max_tokens,
@@ -465,6 +471,7 @@ class LocalProvider:
             thinking=thinking,
             tool_calls=tool_calls,
             reasoning=reasoning or "",
+            cut_off=finish_reason == "length",
         )
 
     def _log_timing(
