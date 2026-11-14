@@ -1,111 +1,9 @@
-# Hardware Profile: Metal 32GB
-# Designed for: Apple M6 Mac Mini 32GB unified memory
-#
-# Format and needs
-# format is the version of this file's layout, so the engine can tell
-# when a profile was written for a different version of it.
-# [needs] states what the machine must have:
-#   backend     the GPU backend llama.cpp is built with: "metal" or "vulkan"
-#   memory_gb   the memory the models can use: unified memory on a Mac,
-#               the graphics card's own memory with Vulkan
-#
-# Reasoning tables
-# A [reasoning] table describes how a model reasons, in the engine's
-# terms, and how those terms translate for this model's chat template.
-# No table: the model does not reason.
-#   mode                    "optional" (can be switched off) or "always"
-#   default                 optional only: on or off when nothing is chosen
-#   switch_key              optional only: chat_template_kwargs key for on/off
-#   effort_levels           levels the model accepts, lowest to highest
-#   effort_default          level used when nothing is chosen
-#   effort_key              chat_template_kwargs key for the level
-#   effort_needs_reasoning  optional only: true if effort does nothing
-#                           while reasoning is off
-#   budget                  the most tokens the model may spend reasoning
-#                           on one request: one number, or a table by
-#                           effort level (a level left out has no limit).
-#                           When it runs out, llama-server tells the model
-#                           to answer. A guard against reasoning that never
-#                           ends; max_tokens still caps the whole reply.
-#                           Starting values, tuned from the log's "Reasoning
-#                           budget reached" lines.
-#   budget_start_tag        where reasoning starts and ends, for a template
-#   budget_end_tag          llama.cpp can't read them from. Without them
-#                           there, the budget is ignored without a word.
-#                           Test each model's budget once (models.md).
-#
-# Pinned downloads
-# Each url names a specific commit, not main, so a publisher's later
-# re-upload can't change what gets downloaded. sha256 and size come
-# from Hugging Face's API for that commit and are checked after
-# download. To move to a newer file, update all three together.
-# The build downloads the embedding, summary, and default chat
-# models; 'bountiful models' offers the other chat models.
-# display_name is the name people see. Chat models need one; for
-# the embedding and summary models it's optional, and the file
-# name stands in without it.
-#
-# Draft tables (speculative decoding)
-# A [draft] table speeds up a chat model: a small, fast drafter
-# proposes tokens, and the model checks them all in one pass. The
-# output is the model's own; only the speed changes. Either:
-#   type = "mtp"   drafting layers built into the model file
-# or a separate drafter file, pinned like any model:
-#   file, url, sha256, size
-#   gpu_layers     drafter layers to run on the GPU
-# or both, for a drafter file whose type llama.cpp can't read from
-# it, such as Gemma 4's MTP assistants.
-#
-# cache_ram_mib
-# llama-server keeps copies of earlier prompts' states in ordinary
-# memory, up to 8192 MiB unless told otherwise, in case a request
-# returns to one. One conversation rarely does, and on this Mac that
-# memory is what the models need. 0 turns them off.
-#
-# cache_type_k, cache_type_v (on a model, and on a drafter file)
-# The KV cache holds every token of the current prompt, for the model
-# and separately for its drafter, so llama-server's memory follows the
-# longest prompt of a session. On October 25 a Wikipedia chain reached
-# about 10,100 tokens and 6.5 GB with Muse, and with about 23.8 GB of
-# wired weights, memory pressure turned yellow. q8_0 stores the cache
-# at 8 bits instead of 16, roughly halving it (Muse then peaked at
-# about 3 GB); a quantized V cache needs flash attention.
-#
-# ctx_checkpoints
-# For a model whose cache can't be cut back to an earlier point
-# (sliding-window attention, as in the Gemmas, or a recurrent state,
-# as in Qwen3.8), llama-server saves copies of the cache, context
-# checkpoints, so it can return to an earlier point in a conversation:
-# up to 32 by default, about 425 MiB each for the Gemma 4 31B, made
-# silently two or three per request. With none, memory stays flat, but
-# a turn that goes back rereads the whole conversation (most turns,
-# since earlier turns' reasoning and tool steps aren't sent again).
-# 0 is the starting point (October 26); the number is raised as it's
-# tested, one model at a time, here in its own entry: it depends on
-# the model's design, not the agent. Warming showed 0 isn't enough: after a lookup turn
-# or a long reply, Gemma rereads everything, and Qwen3.8 rereads after
-# every turn, since a recurrent state can't go back even one token.
-# Muse sets none, so it keeps the default of 32: its checkpoints are
-# about 63 MiB each (October 26), and they're how its cache goes back.
-
-# prefill (in a [reasoning] table)
-# The opening words of the model's reasoning, written for it at the
-# start of each turn, so a model that would skip reasoning on turns it
-# judges easy reasons anyway. End it in an open question. An agent's
-# config.toml can turn it off with force_reasoning = false.
-
 format = 1
 
 [needs]
 backend = "metal"
 memory_gb = 32
 
-# --- Embedding ---
-# Base: https://huggingface.co/mistralai/Ministral-3-8B-Base-2512
-#   └─ Post-Training: https://huggingface.co/mistralai/Ministral-3-8B-Instruct-2512
-#      └─ Fine-Tuning: https://huggingface.co/nvidia/Nemotron-3-Embed-8B-BF16
-#          └─ Quantization: https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF
-# 8-bit = ~8.46 GB
 [embedding]
 file = "Nemotron-3-Embed-8B-Q8_0.gguf"
 url = "https://huggingface.co/Abiray/Nemotron-3-Embed-8B-GGUF/resolve/1ffb81e403311c4dc6879b9c3cbb6ebfa18b86df/Nemotron-3-Embed-8B-Q8_0.gguf"
@@ -120,12 +18,6 @@ ctx_size = 16384
 batch_size = 16384
 ubatch_size = 16384
 
-
-# --- Summary ---
-# Base: https://huggingface.co/google/gemma-4-12B
-#   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-12B-it
-#       └─ Quantization: https://huggingface.co/bartowski/gemma-4-12B-it-GGUF
-# 6-bit, with 8-bit embed and output weights = ~10.48 GB
 [summary]
 file = "gemma-4-12B-it-Q6_K_L.gguf"
 url = "https://huggingface.co/bartowski/gemma-4-12B-it-GGUF/resolve/2ae7d41be21ca62de00a2d320ee9cec50daa3aa6/gemma-4-12B-it-Q6_K_L.gguf"
@@ -138,17 +30,9 @@ family = "Gemma"
 gpu_layers = -1
 flash_attn = "on"
 ctx_size = 16384
-# The longest summary it may write: four paragraphs of four sentences
-# run to about 600 tokens (the October 28 summary was 286). Lower than
-# the 8,192 it was, so a summary that loops stops within about three
-# minutes, and the prompt has more room (ctx_size - max_tokens - 1).
 max_tokens = 2048
-# The most of any one message the summary model sees. Longer is an
-# anomaly, like the runaway reply of October 28 (seq 398, about 15,000
-# tokens), shown cut with a note. Test agent's longest ordinary message was
-# about 550 tokens.
 message_tokens = 2048
-ctx_checkpoints = 0   # one request per fold never goes back
+ctx_checkpoints = 0
 
 [summary.reasoning]
 mode = "optional"
@@ -156,49 +40,10 @@ default = false
 switch_key = "enable_thinking"
 
 [summary.sampling]
-# 0.6 rather than Google's 1.0: in testing on the same batch, six runs
-# at 0.6 had no speaker, invention, or number errors, against several
-# at 1.0 and 0.4. A summary should be faithful rather than varied.
 temperature = 0.6
 top_p = 0.95
 top_k = 64
 presence_penalty = 0.0
-
-
-# --- Chat Models ---
-
-#------------
-#   MoE
-#------------
-
-# --- Gemma 4 26B A4B ---
-# Base: https://huggingface.co/google/gemma-4-26B-A4B
-#   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-26B-A4B-it
-#       └─ QAT: https://huggingface.co/google/gemma-4-26B-A4B-it-qat-q4_0-unquantized
-#           └─ Quantization: https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF
-# Mixture of experts: 25.2B parameters, 3.8B active per token (8 of
-# 128 experts plus one shared), 30 layers, mostly sliding-window
-# attention like the 31B. ~14.2 GB, plus the MTP drafter, ~0.25 GB.
-# Google's quantization-aware training (QAT): trained to be cut to
-# 4 bits, so it keeps more quality than an ordinary 4-bit file.
-# Unsloth's Dynamic 4-bit (UD-Q4_K_XL) of Google's unquantized QAT
-# checkpoint, and the drafter from the same repo, derived from the QAT
-# model at 4 bits. Google's card says a QAT model's drafter must be a
-# QAT checkpoint of the same precision; this one is.
-# From the Gemma 4 model cards:
-# - Thinking is off unless switched on per request with
-#   chat_template_kwargs {"enable_thinking": true}. No effort levels.
-# - Google recommends temperature 1.0, top_p 0.95, top_k 64 for all
-#   uses, with or without thinking.
-# - Earlier turns should carry only final answers, not thinking; the
-#   chat template embedded in the GGUF handles this.
-# - Vision needs the separate mmproj file, which isn't downloaded yet.
-# - Google's benchmarks put it a little behind the 31B on most tests,
-#   and well behind on Tau2, agentic tool use (68.2% against 76.9%),
-#   and long-context retrieval (MRCR v2 128k, 44.1% against 66.4%).
-# - With only 3.8B parameters read per token, it should generate
-#   several times faster than the 31B on the M6's bandwidth.
-# Under test from October 27 against the 31B, for the default.
 
 [chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl"]
 file = "gemma-4-26B-A4B-it-qat-UD-Q4_K_XL.gguf"
@@ -213,14 +58,11 @@ family = "Gemma"
 rank = 1
 gpu_layers = -1
 flash_attn = "on"
-# As the 31B, so a long recall_message result fits.
 ctx_size = 65536
 max_tokens = 4096
 cache_ram_mib = 0
 cache_type_k = "q8_0"
 cache_type_v = "q8_0"
-# The 31B's value to start; this model's checkpoints should be about
-# half the size, with half the layers. Its slot file will tell.
 ctx_checkpoints = 4
 
 [chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".reasoning]
@@ -228,10 +70,6 @@ mode = "optional"
 default = true
 switch_key = "enable_thinking"
 budget = 1024
-# Like Muse, it skips reasoning on turns it judges easy, and then
-# never considers its tools: on October 28 it answered a question
-# about Brazil from memory, wrongly, with thinking=False. This opens
-# its reasoning for it on every turn (see the header).
 prefill = "Let me read the user's latest message. What is it asking? I'll plan my steps, and if I need a tool, calling it comes first, since I can only answer from a result once I have it. So: is there a name, date, number, or detail I should check with a tool rather than give from memory, or is the user telling me something they already looked up?"
 
 [chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".draft]
@@ -247,232 +85,3 @@ cache_type_v = "q8_0"
 temperature = 1.0
 top_p = 0.95
 top_k = 64
-
-#------------
-#   Dense
-#------------
-
-# --- Gemma 4 31B ---
-# Base: https://huggingface.co/google/gemma-4-31B
-#   └─ Fine-Tuning: https://huggingface.co/google/gemma-4-31B-it
-#       └─ Quantization: https://huggingface.co/bartowski/google_gemma-4-31B-it-GGUF
-# Dense, 30.7B parameters, 60 layers, mostly sliding-window attention
-# (a 1,024-token window; context up to 256K).
-# 4-bit: ~19.6 GB, plus the MTP drafter, ~0.5 GB.
-# From the Gemma 4 model cards:
-# - Thinking is off unless switched on per request with
-#   chat_template_kwargs {"enable_thinking": true}. No effort levels.
-# - Google recommends temperature 1.0, top_p 0.95, top_k 64 for all
-#   uses, with or without thinking.
-# - Earlier turns should carry only final answers, not thinking; the
-#   chat template embedded in the GGUF handles this.
-# - Vision needs the separate mmproj file, which isn't downloaded yet.
-# - The MTP drafter is Google's gemma-4-31B-it-assistant. llama.cpp
-#   can't tell its type from the file, so the draft table states it.
-#   Google claims up to 3x faster generation; on the M6's bandwidth
-#   this dense model is slow without it.
-# The default chat model since October 25: in the head-to-head it was
-# right on every question, read every turn correctly, and planned its
-# reasoning step by step, following its persona and instructions.
-# Memory: most of its layers use sliding-window attention, so
-# llama-server keeps context checkpoints (see the header). With the
-# default of 32, nine short turns took llama-server from 2.2 to 14 GB;
-# with none, it stayed near 2.4 GB.
-
-[chat."gemma-4-31b-it-q4_k_m"]
-file = "google_gemma-4-31B-it-Q4_K_M.gguf"
-url = "https://huggingface.co/bartowski/google_gemma-4-31B-it-GGUF/resolve/619aca7589c72be65dd968de8602ad23d68b5c14/google_gemma-4-31B-it-Q4_K_M.gguf"
-sha256 = "2959c1b0a4f792493bb0092846ea06aec54547e47be979c282634d938d501b75"
-size = 19598489952
-default = false
-alias = "gemma-4-31b-it-q4_k_m"
-display_name = "Gemma 4 31B Q4_K_M"
-publisher = "Google"
-family = "Gemma"
-rank = 2
-gpu_layers = -1
-flash_attn = "on"
-# 256K is the most the model takes (Google's card). Only its global
-# layers grow with this; the sliding-window ones hold 1,024 tokens
-# whatever it is. Doubled from 32768 on October 26, after one
-# recall_message result filled half of it.
-ctx_size = 65536
-max_tokens = 4096
-cache_ram_mib = 0
-cache_type_k = "q8_0"
-cache_type_v = "q8_0"
-ctx_checkpoints = 4
-
-[chat."gemma-4-31b-it-q4_k_m".reasoning]
-mode = "optional"
-default = true
-switch_key = "enable_thinking"
-budget = 1024
-
-[chat."gemma-4-31b-it-q4_k_m".draft]
-type = "mtp"
-file = "mtp-google_gemma-4-31B-it-Q8_0.gguf"
-url = "https://huggingface.co/bartowski/google_gemma-4-31B-it-GGUF/resolve/619aca7589c72be65dd968de8602ad23d68b5c14/mtp-google_gemma-4-31B-it-Q8_0.gguf"
-sha256 = "743b2b719e448f9a06e774b4f33dd7a391a73e94d32297c7590256484562eb52"
-size = 514705920
-cache_type_k = "q8_0"
-cache_type_v = "q8_0"
-
-[chat."gemma-4-31b-it-q4_k_m".sampling]
-temperature = 1.0
-top_p = 0.95
-top_k = 64
-
-
-# --- Muse Glimmer 30B ---
-# Base: https://huggingface.co/meta-models/Muse-Glimmer-30B
-#   └─ Quantization: https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF
-# 4-bit: ~19.7 GB
-
-# From the GGUF model card:
-# - llama-server must run with --jinja. The chat template is embedded in
-#   the GGUF and handles reasoning strength and output parsing.
-# - Reasoning cannot be switched off. --reasoning off and
-#   reasoning_effort "none" have no effect.
-# - Strength is set per request with
-#   chat_template_kwargs {"reasoning_strength": "<level>"}.
-#   Levels: low / medium / high / xhigh. Default: high.
-#   The template also accepts a "Reasoning strength: <level>" or
-#   "Reasoning effort: <level>" line in the system prompt.
-# - Thinking arrives separately in reasoning_content.
-# - llama-server divides -c across -np slots. A generation that runs out
-#   of context returns no answer and no error.
-# - Stop tokens are <|end_of_text|> and <|eot|>. Never stop on <|eom|>.
-# - DFlash drafter (separate file, ~1.6 GB) enables speculative
-#   decoding: faster generation, same output. A startup warning,
-#   "[spec] failed to measure draft model memory", is harmless.
-# - The template writes "Reasoning strength: X." at the end of the
-#   system message, defaulting to high. Changing effort therefore
-#   invalidates the prompt cache: the whole conversation is re-read.
-#   Choose a default you rarely need to change.
-# Optional since October 25, when the Gemma 4 31B became the default:
-# in the head-to-head it answered broad questions from memory and
-# got details wrong, and argued with itself where Gemma planned.
-
-[chat."muse-glimmer-30b-q4_k_xl"]
-file = "Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
-url = "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/resolve/70bf1b61ac09f91b24d39038091b41c582bc5d7a/Muse-Glimmer-30B-KQuant-Dynamic-Q4_K_XL.gguf"
-sha256 = "ac7023d6a4c704eb9af54ab53e476a66b7f5b6c0ef2fc4a8dde5253c291a6c38"
-size = 19653960832
-default = false
-alias = "muse-glimmer-30b-q4_k_xl"
-display_name = "Muse Glimmer 30B Q4_K_XL"
-publisher = "Meta"
-family = "Muse"
-rank = 3
-gpu_layers = -1
-flash_attn = "on"
-ctx_size = 131072
-max_tokens = 4096
-cache_ram_mib = 0
-cache_type_k = "q8_0"
-cache_type_v = "q8_0"
-ctx_checkpoints = 32
-
-[chat."muse-glimmer-30b-q4_k_xl".reasoning]
-mode = "always"
-effort_levels = ["low", "medium", "high", "xhigh"]
-effort_default = "high"
-effort_key = "reasoning_strength"
-# On October 24, at high, Muse reasoned for two minutes without
-# answering until it was stopped. About 70 seconds at high.
-budget = { low = 512, medium = 768, high = 1024, xhigh = 2048 }
-# llama.cpp's Muse parser doesn't give the budget these, so they're
-# named here: reasoning is a " to=self" message ending in <|eom|>.
-# The leading space is part of the tag. Tested October 24.
-budget_start_tag = " to=self<|message|>"
-budget_end_tag = "<|eom|>"
-# Muse skips reasoning on turns it judges easy, and on those turns it
-# never considers its tools: on October 25 every answer it gave
-# without reasoning came from memory, and most were wrong. This opens
-# its reasoning for it on every turn (see the header).
-prefill = "Before I answer: is there a specific name, date, number, or detail here that I should check with a tool rather than give from memory, or is the user telling me something they already looked up? Let me work it out:"
-
-[chat."muse-glimmer-30b-q4_k_xl".draft]
-file = "dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
-url = "https://huggingface.co/meta-models/Muse-Glimmer-30B-GGUF/resolve/70bf1b61ac09f91b24d39038091b41c582bc5d7a/dflash-Muse-Glimmer-30B-Q4_K_M.gguf"
-sha256 = "b2e808bf656086fe86bd0d0bd990f01d33e377537a07c02d45371517c8b264ef"
-size = 1631208128
-gpu_layers = 99   # as in Meta's example
-cache_type_k = "q8_0"
-cache_type_v = "q8_0"
-
-[chat."muse-glimmer-30b-q4_k_xl".sampling]
-temperature = 1.0
-top_p = 0.95
-top_k = 64
-
-
-# --- Qwen3.8 27B ---
-# Base: https://huggingface.co/Qwen/Qwen3.8-27B
-#   └─ Quantization: https://huggingface.co/bartowski/Qwen3.8-27B-GGUF
-# 5-bit: ~20.9 GB
-# Hybrid architecture (qwen3_5). Never use it as the summary model.
-
-# From model card:
-# - Thinking is on by default and can be disabled per request:
-#   chat_template_kwargs {"enable_thinking": false}
-# - Effort uses reasoning_effort, an API parameter, not prompt text.
-#   Levels: xhigh (default) / medium / low. There is no "high".
-#   Whether llama-server passes it through is not yet verified.
-# - preserve_thinking is on by default: the template keeps thinking
-#   from all earlier turns in the conversation. The engine sends
-#   stored replies without their thinking, so it matters only within
-#   one turn's tool calls.
-# - At xhigh, on October 24, it reasoned for over 1,700 tokens on a
-#   two-sentence correction without finishing. Its ordinary xhigh
-#   turn was 435 tokens. The default is medium, since there is no high.
-# - bartowski's quantizations include Qwen's MTP drafting layers,
-#   enabled with --spec-type draft-mtp. No separate file.
-
-[chat."qwen3.8-27b-q5_k_m"]
-file = "Qwen3.8-27B-Q5_K_M.gguf"
-url = "https://huggingface.co/bartowski/Qwen3.8-27B-GGUF/resolve/87410e7b9a5c21e6ca70c0c9cc5237de909fe621/Qwen3.8-27B-Q5_K_M.gguf"
-sha256 = "9f0a899d43b29285a02da149f9b62f007d7b5d5fd59afe9f46dda1b891636b0a"
-size = 20923877088
-default = false
-alias = "qwen3.8-27b-q5_k_m"
-display_name = "Qwen3.8 27B Q5_K_M"
-publisher = "Alibaba"
-family = "Qwen"
-rank = 4
-gpu_layers = -1
-flash_attn = "on"
-ctx_size = 32768
-max_tokens = 4096
-cache_ram_mib = 0
-cache_type_k = "q8_0"
-cache_type_v = "q8_0"
-ctx_checkpoints = 8
-
-[chat."qwen3.8-27b-q5_k_m".reasoning]
-mode = "optional"
-default = true
-switch_key = "enable_thinking"
-effort_levels = ["low", "medium", "xhigh"]
-effort_default = "medium"
-effort_key = "reasoning_effort"   # not yet verified
-effort_needs_reasoning = true
-budget = { low = 512, medium = 768, xhigh = 1536 }
-
-[chat."qwen3.8-27b-q5_k_m".draft]
-type = "mtp"
-
-[chat."qwen3.8-27b-q5_k_m".sampling.thinking]
-temperature = 1.0
-top_p = 0.95
-top_k = 20
-min_p = 0.0
-presence_penalty = 0.0
-
-[chat."qwen3.8-27b-q5_k_m".sampling.non_thinking]
-temperature = 0.7
-top_p = 0.80
-top_k = 20
-min_p = 0.0
-presence_penalty = 1.5
