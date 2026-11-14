@@ -124,6 +124,7 @@ class Controls:
     reasoning_on: bool
     effort_levels: list[str] | None  # None: don't show effort
     effort: str | None
+    settings_shown: bool
 
 
 def _utc_now() -> str:
@@ -307,7 +308,11 @@ class Session:
     # --- Controls ---
 
     def controls(self) -> Controls:
-        """What to show, from the current choices and the model's rules."""
+        """What to show, from the current choices and the model's rules.
+
+        The model, reasoning, and effort settings are shown only when
+        there is more than one chat model to choose from.
+        """
         models = self._router.get_models()
         model_id = self._model_id or self._router.get_default_model()
         info = models[model_id]
@@ -318,19 +323,21 @@ class Session:
         if info.effort_needs_reasoning and not reasoning_on:
             effort_levels = None
 
+        host_models = sorted(
+            (m for m in models.values() if m.host == info.host),
+            key=lambda m: m.rank,
+        )
         return Controls(
             host=info.host,
             hosts=self._router.hosts(),
             model=info,
-            models=sorted(
-                (m for m in models.values() if m.host == info.host),
-                key=lambda m: m.rank,
-            ),
+            models=host_models,
             reasoning_shown=info.reasoning != REASONING_NONE,
             reasoning_locked=info.reasoning == REASONING_ALWAYS,
             reasoning_on=reasoning_on,
             effort_levels=effort_levels,
             effort=effort,
+            settings_shown=len(host_models) > 1,
         )
 
     def select_host(self, host: str) -> None:
