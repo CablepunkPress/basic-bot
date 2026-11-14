@@ -26,6 +26,11 @@ from typing import Protocol
 
 logger = logging.getLogger(__name__)
 
+
+class RequestCancelled(Exception):
+    """A request was cancelled while it waited for its answer."""
+
+
 # Reasoning modes
 REASONING_NONE = "none"            # the model does not reason
 REASONING_OPTIONAL = "optional"    # the user can switch reasoning on and off
@@ -156,6 +161,10 @@ class InferenceProvider(Protocol):
         prefill replaces the model's own opening words for its
         reasoning, for this request only.
         """
+        ...
+
+    def cancel(self) -> None:
+        """Cancel the chat request in progress, if there is one."""
         ...
 
     def warm(

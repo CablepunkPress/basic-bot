@@ -138,6 +138,11 @@ class ChatRouter:
             self._start_server()
         return model_id
 
+    def cancel(self) -> None:
+        """Cancel the chat request in progress, on whichever model has one."""
+        for provider in self._providers.values():
+            provider.cancel()
+
     # --- Suspend and resume ---
 
     def suspend(self) -> None:

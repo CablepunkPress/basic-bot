@@ -32,6 +32,7 @@ answers straight from the result still reasoned.
 
 import json
 import logging
+import threading
 from datetime import datetime, timezone
 
 import basic_bot.config as config
@@ -40,6 +41,7 @@ from basic_bot.providers.protocol import (
     ChatResponse,
     InferenceProvider,
     ModelInfo,
+    RequestCancelled,
 )
 from basic_bot.runtime import BotRuntime
 from basic_bot.shutdown import shutting_down
@@ -57,6 +59,18 @@ REMINDER = (
     "\n\nI planned to call {tool} and haven't yet. If I still need it, "
     "I'll call it now.\n"
 )
+
+
+
+class TurnInterrupted(Exception):
+    """The user interrupted the turn before it was saved."""
+
+
+def _check(stop: threading.Event | None) -> None:
+    """Raise TurnInterrupted if the user has interrupted the turn."""
+    if stop is not None and stop.is_set():
+        raise TurnInterrupted
+
 
 CUT_OFF_NOTE = "\n\n[This reply ran past its length limit and was cut short here.]"
 
@@ -230,6 +244,7 @@ def chat_with_model(
     thinking: bool | None = None,
     *,
     sent_at: str | None = None,
+    stop: threading.Event | None = None,
 ) -> dict:
     """Chat using conversation memory and tools.
 
@@ -238,6 +253,9 @@ def chat_with_model(
     sent_at is when the message arrived, a UTC ISO timestamp. The
     session supplies it, so the time the model sees is the time saved
     with the message. Without one, it's the current time.
+
+    stop is set when the user interrupts the turn. The turn then ends
+    with TurnInterrupted, and no fallback is tried.
 
     Returns a result dict with the reply text and metadata reflecting
     what was actually used (not what was requested, where detectable).
@@ -297,7 +315,7 @@ def chat_with_model(
         response, calls, reasoned = _chat_loop(
             provider, messages, system_prompt,
             tool_schemas, context, runtime.tool_registry,
-            model_id, level, reasoning_on,
+            model_id, level, reasoning_on, stop,
         )
 
         if response.model_used != model_id:
@@ -324,12 +342,17 @@ def chat_with_model(
             "tools": calls,
         }
 
+    except TurnInterrupted:
+        raise
+
     except Exception:
         # A request cut off by shutdown isn't a failure to recover from:
         # the servers are being stopped on purpose, and retrying would
         # only be declined. The session explains it to the user.
         if shutting_down():
             raise
+        if stop is not None and stop.is_set():
+            raise TurnInterrupted from None
 
         # Retry on the fallback model at its lightest settings. If that
         # is exactly what just failed, retrying would change nothing,
@@ -355,8 +378,10 @@ def chat_with_model(
             response, calls, reasoned = _chat_loop(
                 provider, _prepare_messages(window), system_prompt,
                 tool_schemas, context, runtime.tool_registry,
-                fallback_id, fb_level, fb_reasoning,
+                fallback_id, fb_level, fb_reasoning, stop,
             )
+        except TurnInterrupted:
+            raise
         except Exception:
             logger.error("Fallback to %s also failed", fallback_info.display_name)
             raise
@@ -425,6 +450,7 @@ def _chat_loop(
     model_id: str,
     effort: str | None,
     thinking: bool,
+    stop: threading.Event | None = None,
 ) -> tuple[ChatResponse, list[dict], bool]:
     """Call the provider in a loop, executing tools until no more are requested.
 
@@ -446,15 +472,20 @@ def _chat_loop(
     reminded = False
     prefill = None
     while True:
-        response = provider.chat(
-            messages=messages,
-            system=system,
-            tools=tool_schemas or None,
-            model_id=model_id,
-            effort=effort,
-            thinking=thinking,
-            prefill=prefill,
-        )
+        _check(stop)
+        try:
+            response = provider.chat(
+                messages=messages,
+                system=system,
+                tools=tool_schemas or None,
+                model_id=model_id,
+                effort=effort,
+                thinking=thinking,
+                prefill=prefill,
+            )
+        except RequestCancelled:
+            raise TurnInterrupted from None
+        _check(stop)
         prefill = None
         reasoned = reasoned or response.thinking
 
@@ -529,5 +560,6 @@ def _chat_loop(
                 record, result = _record_call(tc.name, tc.input, result)
                 calls.append(record)
                 results.append({"tool_call_id": tc.id, "content": result})
+                _check(stop)
 
         messages.append({"role": "tool_result", "results": results})

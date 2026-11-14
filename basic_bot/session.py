@@ -36,7 +36,7 @@ from pathlib import Path
 
 import basic_bot.config as config
 from basic_bot.agent import AgentError, load_agent
-from basic_bot.chat import chat_with_model, warm_request
+from basic_bot.chat import TurnInterrupted, chat_with_model, warm_request
 from basic_bot.factory import create_runtime
 from basic_bot.fold import build_metadata, should_fold
 from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT, LLAMA_VERSION
@@ -75,6 +75,16 @@ class SessionError(Exception):
 
 class SessionBusy(SessionError):
     """The session is still answering; try again when it's done."""
+
+
+class SessionInterrupted(SessionError):
+    """The user interrupted the turn, so nothing of it was saved."""
+
+
+INTERRUPTED = (
+    "You interrupted the agent, so this message wasn't sent. "
+    "You can send it again."
+)
 
 
 @dataclass
@@ -201,6 +211,8 @@ class Session:
         self.data_dir = data_dir
         self.log_path = log_path
         self._lock = threading.Lock()
+        self._stop = threading.Event()
+        self._turn = False
 
         # The user's choices. None means "this model's default."
         self._model_id: str | None = None
@@ -404,12 +416,13 @@ class Session:
         if not message:
             raise SessionError("Type a message to send.")
 
-        with self._busy():
+        with self._busy(), self._turn_running():
             store = self._runtime.store
 
             if should_fold(store, DEFAULT_USER):
                 logger.info("Memory update still due from an earlier turn; running it first")
                 self._fold_if_due()
+            self._raise_if_interrupted()
 
             model_id = self._model_id or self._router.get_default_model()
 
@@ -417,11 +430,15 @@ class Session:
                 result = chat_with_model(
                     self._runtime, DEFAULT_USER, message,
                     model_id, self._effort, self._thinking,
-                    sent_at=sent_at,
+                    sent_at=sent_at, stop=self._stop,
                 )
+            except TurnInterrupted:
+                self._raise_if_interrupted()
+                raise
             except ServerError as e:
                 raise SessionError(str(e)) from e
             except Exception as e:
+                self._raise_if_interrupted()
                 if shutting_down():
                     logger.info("Stopped before the reply was finished")
                     raise SessionError(
@@ -431,6 +448,7 @@ class Session:
                 raise SessionError(f"The model couldn't answer: {e}") from e
 
             replied_at = _utc_now()
+            self._raise_if_interrupted()
 
             seq = store.save_turn(
                 DEFAULT_USER, message, result["reply"],
@@ -552,6 +570,35 @@ class Session:
             limit = config.HISTORY_LIMIT
         limit = min(limit, config.WINDOW_CEILING)
         return get_messages(self._runtime.store, DEFAULT_USER, limit)
+
+    def interrupt(self) -> bool:
+        """Stop the turn in progress, so nothing of it is saved.
+
+        A fold is never stopped: a turn interrupted during one stops
+        when the fold is done. Returns whether a turn was running.
+        """
+        if not self._turn:
+            return False
+        logger.info("Interrupt requested")
+        self._stop.set()
+        self._router.cancel()
+        return True
+
+    def _raise_if_interrupted(self) -> None:
+        """Raise SessionInterrupted if the user interrupted this turn."""
+        if self._stop.is_set():
+            logger.info("Turn interrupted; nothing was saved")
+            raise SessionInterrupted(INTERRUPTED)
+
+    @contextmanager
+    def _turn_running(self):
+        """Mark a turn as running, so interrupt() can stop it."""
+        self._stop.clear()
+        self._turn = True
+        try:
+            yield
+        finally:
+            self._turn = False
 
     # --- Locking ---
 

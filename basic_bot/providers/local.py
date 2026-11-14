@@ -56,10 +56,12 @@ send, so it counts the same prompt.
 stdlib urllib only — no SDK for localhost HTTP.
 """
 
+import http.client
 import json
 import logging
-import urllib.error
-import urllib.request
+import socket
+import threading
+import urllib.parse
 
 import basic_bot.config as config
 from basic_bot.annotations import strip_comments
@@ -67,6 +69,7 @@ from basic_bot.providers.protocol import (
     REASONING_OPTIONAL,
     ChatResponse,
     ModelInfo,
+    RequestCancelled,
     ToolCall,
 )
 
@@ -91,16 +94,12 @@ TOKENIZE_PATH = "/tokenize"
 DETOKENIZE_PATH = "/detokenize"
 
 
-def _error_text(e: urllib.error.HTTPError) -> str:
-    """The server's own explanation of an error, or the HTTP reason.
-
-    llama-server answers an error with {"error": {"message": ...}}.
-    """
+def _error_text(body: bytes, reason: str) -> str:
+    """Return the server's own explanation of an error, or the HTTP reason."""
     try:
-        body = json.loads(e.read().decode("utf-8"))
-        message = body["error"]["message"]
+        message = json.loads(body.decode("utf-8"))["error"]["message"]
     except Exception:
-        return str(e.reason)
+        return reason
     return str(message)[:300]
 
 
@@ -136,6 +135,10 @@ class LocalProvider:
         }
         self._prefill = reasoning.get("prefill")
 
+        self._lock = threading.Lock()
+        self._active: http.client.HTTPConnection | None = None
+        self._cancelled = False
+
         logger.info(
             "Local provider configured: %s → %s", model_id, self._endpoint,
         )
@@ -169,8 +172,19 @@ class LocalProvider:
         payload, budget = self._chat_payload(
             messages, system, tools, thinking, effort, sampling, prefill,
         )
-        data = self._post(payload)
+        data = self._post(payload, cancellable=True)
         return self._parse_response(data, budget)
+
+    def cancel(self) -> None:
+        """Close the chat request's connection, so llama-server stops generating."""
+        with self._lock:
+            self._cancelled = True
+            conn = self._active
+        if conn is not None and conn.sock is not None:
+            try:
+                conn.sock.shutdown(socket.SHUT_RDWR)
+            except OSError:
+                pass
 
     def _chat_payload(
         self,
@@ -522,32 +536,58 @@ class LocalProvider:
 
     # --- HTTP ---
 
-    def _post(self, payload: dict, path: str = CHAT_PATH) -> dict:
+    def _post(self, payload: dict, path: str = CHAT_PATH, cancellable: bool = False) -> dict:
+        """Send a request to llama-server and return its JSON answer.
+
+        A cancellable request can be ended from another thread by cancel().
+        """
         url = self._base_url + path
-        body = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(
-            url,
-            data=body,
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self._api_key}",
-            },
+        parts = urllib.parse.urlsplit(self._base_url)
+        conn = http.client.HTTPConnection(
+            parts.hostname or "localhost", parts.port, timeout=config.REQUEST_TIMEOUT,
         )
+        if cancellable:
+            with self._lock:
+                self._cancelled = False
+                self._active = conn
         try:
-            with urllib.request.urlopen(req, timeout=config.REQUEST_TIMEOUT) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            if e.code == 400:
-                raise RuntimeError(
-                    f"Local inference server rejected the request "
-                    f"(HTTP 400): {_error_text(e)}"
-                ) from e
-            raise RuntimeError(
-                f"Local inference server error at {url} — "
-                f"HTTP {e.code}: {_error_text(e)}"
-            ) from e
-        except urllib.error.URLError as e:
+            conn.connect()
+            if cancellable and self._cancelled:
+                raise RequestCancelled("The request was cancelled before it was sent.")
+            conn.request(
+                "POST",
+                parts.path + path,
+                body=json.dumps(payload).encode("utf-8"),
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {self._api_key}",
+                },
+            )
+            response = conn.getresponse()
+            body = response.read()
+        except RequestCancelled:
+            raise
+        except (OSError, http.client.HTTPException) as e:
+            if cancellable and self._cancelled:
+                raise RequestCancelled("The request was cancelled.") from e
             raise RuntimeError(
                 f"Local inference server unreachable at {url} — "
                 f"is llama-server running? ({e})"
             ) from e
+        finally:
+            if cancellable:
+                with self._lock:
+                    self._active = None
+            conn.close()
+
+        if response.status == 400:
+            raise RuntimeError(
+                f"Local inference server rejected the request "
+                f"(HTTP 400): {_error_text(body, response.reason)}"
+            )
+        if response.status >= 300:
+            raise RuntimeError(
+                f"Local inference server error at {url} — "
+                f"HTTP {response.status}: {_error_text(body, response.reason)}"
+            )
+        return json.loads(body.decode("utf-8"))
