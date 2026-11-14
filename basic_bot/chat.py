@@ -32,6 +32,7 @@ answers straight from the result still reasoned.
 
 import json
 import logging
+import re
 import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
@@ -147,8 +148,23 @@ def _record_call(name: str, tool_input: dict, content: str) -> tuple[dict, str]:
     return record, content
 
 
+def _faked_call(text: str, names: list[str]) -> str | None:
+    """Return a tool the reply writes out as a call, such as search_archive(...)."""
+    for name in names:
+        if re.search(rf"\b{re.escape(name)}\s*\(", text):
+            return name
+    return None
+
+
 def _planned_tool(response: ChatResponse, names: list[str]) -> str | None:
-    """Return the tool the reasoning named last, unless the reply names it too."""
+    """Return the tool a reply without a call should have called, if any.
+
+    A tool the reply writes out as a call counts first. Otherwise it is
+    the tool the reasoning named last, unless the reply names it too.
+    """
+    faked = _faked_call(response.text, names)
+    if faked:
+        return faked
     found = [
         (response.reasoning.rfind(name), name)
         for name in names if name in response.reasoning
@@ -495,11 +511,11 @@ def _chat_loop(
 
         if not response.tool_calls:
             tool = None
-            if not reminded and rounds == 0 and response.reasoning:
+            if not reminded and rounds == 0:
                 tool = _planned_tool(response, list(tool_registry))
             if tool:
                 logger.warning(
-                    "The reasoning planned %s, but the reply made no call; asking again",
+                    "The reply needed %s but made no call; asking again",
                     tool,
                 )
                 reminded = True
