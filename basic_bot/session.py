@@ -37,6 +37,7 @@ from pathlib import Path
 import basic_bot.config as config
 from basic_bot.agent import AgentError, load_agent
 from basic_bot.chat import TurnInterrupted, chat_with_model, warm_request
+from basic_bot.events import Events
 from basic_bot.factory import create_runtime
 from basic_bot.fold import build_metadata, should_fold
 from basic_bot.infrastructure.llamacpp import LLAMA_COMMIT, LLAMA_VERSION
@@ -213,6 +214,7 @@ class Session:
         self._lock = threading.Lock()
         self._stop = threading.Event()
         self._turn = False
+        self.events = Events()
 
         # The user's choices. None means "this model's default."
         self._model_id: str | None = None
@@ -431,6 +433,7 @@ class Session:
                     self._runtime, DEFAULT_USER, message,
                     model_id, self._effort, self._thinking,
                     sent_at=sent_at, stop=self._stop,
+                    narrate=lambda text: self.events.publish("narration", text),
                 )
             except TurnInterrupted:
                 self._raise_if_interrupted()

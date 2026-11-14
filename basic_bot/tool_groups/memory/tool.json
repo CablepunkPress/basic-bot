@@ -1,6 +1,7 @@
 {
     "name": "memory",
     "description": "Search and recall the agent's past conversations with you",
+    "narration": "I'm checking my memory…",
     "sends": "Nothing. These tools only read the agent's own database.",
     "keys": []
 }

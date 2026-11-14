@@ -3,7 +3,8 @@
 A tool is a name, a schema, and a handler. Tools come in groups. A
 group is a folder that holds:
 
-- tool.json, which describes the group
+- tool.json, which describes the group and says what the agent tells
+  the user while one of its tools runs
 - one .py file per tool, with TOOL and handler(context, **input)
 - shared code, in files whose names start with an underscore
 - settings.toml, the group's default settings, if it has any
@@ -35,6 +36,7 @@ MEMORY_GROUP = Path(__file__).parent / "tool_groups" / "memory"
 ENTRY_POINT = "basic_bot.tool_groups"
 MANIFEST = "tool.json"
 SETTINGS = "settings.toml"
+NARRATION = "I'm using one of my tools…"
 
 _PLACEHOLDER = re.compile(r"\{\{\s*(\w+)\s*\}\}")
 
@@ -45,6 +47,7 @@ class Group:
     name: str
     source: str
     description: str
+    narration: str
     sends: str
     keys: list[dict]
     folder: Path
@@ -63,6 +66,7 @@ def read_group(folder: Path, source: str) -> Group:
         name=folder.name,
         source=source,
         description=str(data.get("description", "")),
+        narration=str(data.get("narration", "")),
         sends=str(data.get("sends", "")),
         keys=[k for k in data.get("keys", []) if isinstance(k, dict) and k.get("name")],
         folder=folder,
@@ -178,6 +182,7 @@ def _load_group(group_dir: Path, settings: dict) -> dict:
     """
     registry: dict = {}
     group = group_dir.name
+    narration = read_group(group_dir, "").narration or NARRATION
     shared_names = [p.stem for p in group_dir.glob("_*.py")]
 
     sys.path.insert(0, str(group_dir))
@@ -198,6 +203,7 @@ def _load_group(group_dir: Path, settings: dict) -> dict:
                     "handler": module.handler,
                     "group": group,
                     "settings": settings,
+                    "narration": narration,
                 }
     finally:
         sys.path.remove(str(group_dir))

@@ -33,6 +33,7 @@ answers straight from the result still reasoned.
 import json
 import logging
 import threading
+from collections.abc import Callable
 from datetime import datetime, timezone
 
 import basic_bot.config as config
@@ -59,7 +60,6 @@ REMINDER = (
     "\n\nI planned to call {tool} and haven't yet. If I still need it, "
     "I'll call it now.\n"
 )
-
 
 
 class TurnInterrupted(Exception):
@@ -245,6 +245,7 @@ def chat_with_model(
     *,
     sent_at: str | None = None,
     stop: threading.Event | None = None,
+    narrate: Callable[[str], None] | None = None,
 ) -> dict:
     """Chat using conversation memory and tools.
 
@@ -256,6 +257,8 @@ def chat_with_model(
 
     stop is set when the user interrupts the turn. The turn then ends
     with TurnInterrupted, and no fallback is tried.
+
+    narrate is called with each tool's narration as the tool starts.
 
     Returns a result dict with the reply text and metadata reflecting
     what was actually used (not what was requested, where detectable).
@@ -315,7 +318,7 @@ def chat_with_model(
         response, calls, reasoned = _chat_loop(
             provider, messages, system_prompt,
             tool_schemas, context, runtime.tool_registry,
-            model_id, level, reasoning_on, stop,
+            model_id, level, reasoning_on, stop, narrate,
         )
 
         if response.model_used != model_id:
@@ -378,7 +381,7 @@ def chat_with_model(
             response, calls, reasoned = _chat_loop(
                 provider, _prepare_messages(window), system_prompt,
                 tool_schemas, context, runtime.tool_registry,
-                fallback_id, fb_level, fb_reasoning, stop,
+                fallback_id, fb_level, fb_reasoning, stop, narrate,
             )
         except TurnInterrupted:
             raise
@@ -451,6 +454,7 @@ def _chat_loop(
     effort: str | None,
     thinking: bool,
     stop: threading.Event | None = None,
+    narrate: Callable[[str], None] | None = None,
 ) -> tuple[ChatResponse, list[dict], bool]:
     """Call the provider in a loop, executing tools until no more are requested.
 
@@ -556,6 +560,8 @@ def _chat_loop(
         else:
             for tc in response.tool_calls:
                 logger.info("Executing tool: %s", tc.name)
+                if narrate is not None and tc.name in tool_registry:
+                    narrate(tool_registry[tc.name]["narration"])
                 result = _execute_tool(tool_registry, tc.name, context, tc.input)
                 record, result = _record_call(tc.name, tc.input, result)
                 calls.append(record)
