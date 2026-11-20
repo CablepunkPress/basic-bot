@@ -57,10 +57,7 @@ REFUSED_ROUNDS = 2
 # The parts of a source the record keeps
 SOURCE_FIELDS = ("title", "url", "section")
 
-REMINDER = (
-    "\n\nI planned to call {tool} and haven't yet. If I still need it, "
-    "I'll call it now.\n"
-)
+REMINDER = "\n\nI planned to call {tool} and haven't yet, so I'll call it now.\n"
 
 
 class TurnInterrupted(Exception):
