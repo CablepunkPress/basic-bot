@@ -38,6 +38,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 
 import basic_bot.config as config
+from basic_bot.annotations import strip_comments
 from basic_bot.memory import load_history, load_window
 from basic_bot.providers.protocol import (
     ChatResponse,
@@ -156,7 +157,9 @@ def _faked_call(text: str, names: list[str]) -> str | None:
 def _planned_tool(response: ChatResponse, names: list[str]) -> str | None:
     """Return the tool a reply without a call should have called, if any.
 
-    A tool the reply writes out as a call counts first. Otherwise it is
+    The reply is read as the model wrote it, before its comments are
+    removed. A tool the reply writes out as a call, even inside a
+    made-up annotation, counts first. Otherwise it is
     the tool the reasoning named last, unless the reply names it too.
     """
     faked = _faked_call(response.text, names)
@@ -506,18 +509,20 @@ def _chat_loop(
         prefill = None
         reasoned = reasoned or response.thinking
 
+        tool = None
+        if not response.tool_calls and not reminded and rounds == 0:
+            tool = _planned_tool(response, list(tool_registry))
+        if tool:
+            logger.warning(
+                "The reply needed %s but made no call; asking again",
+                tool,
+            )
+            reminded = True
+            prefill = response.reasoning.rstrip() + REMINDER.format(tool=tool)
+            continue
+        response.text = strip_comments(response.text).strip()
+
         if not response.tool_calls:
-            tool = None
-            if not reminded and rounds == 0:
-                tool = _planned_tool(response, list(tool_registry))
-            if tool:
-                logger.warning(
-                    "The reply needed %s but made no call; asking again",
-                    tool,
-                )
-                reminded = True
-                prefill = response.reasoning.rstrip() + REMINDER.format(tool=tool)
-                continue
             if reminded and rounds == 0:
                 logger.warning("Still no tool call after the reminder")
             if response.cut_off:

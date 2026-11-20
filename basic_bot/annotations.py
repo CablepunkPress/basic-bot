@@ -35,7 +35,7 @@ The pattern also recognizes the older form, <!-- seq:12 -->, so text
 saved before created_at was added, and replies that echo any form, are
 cleaned the same way. Nothing inside an annotation may contain ">",
 which would end the pattern early, so inputs are cleaned of it. This
-is the only definition: memory, the summary, and the providers all
+is the only definition: memory, the summary, and the chat loop all
 use it.
 """
 

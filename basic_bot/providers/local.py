@@ -64,7 +64,6 @@ import threading
 import urllib.parse
 
 import basic_bot.config as config
-from basic_bot.annotations import strip_comments
 from basic_bot.providers.protocol import (
     REASONING_OPTIONAL,
     ChatResponse,
@@ -436,7 +435,7 @@ class LocalProvider:
         message = choice["message"]
 
         raw = message.get("content") or ""
-        text = strip_comments(raw).strip()
+        text = raw.strip()
 
         tool_calls = []
         for tc in message.get("tool_calls") or []:
