@@ -190,8 +190,9 @@ class MessageStore(Protocol):
         """Find nearest turn vectors by cosine similarity.
 
         Returns:
-            [{"content": str, "seq_start": int, "seq_end": int}, ...]
-            ordered by similarity, up to limit results.
+            [{"content": str, "seq_start": int, "seq_end": int, "score": float}, ...]
+            ordered by similarity, up to limit results. score is the
+            cosine similarity, from -1 to 1.
         """
         ...
 

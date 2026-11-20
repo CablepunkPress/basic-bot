@@ -1,10 +1,13 @@
 """Search the archive of past conversations by meaning."""
 
 import json
+import logging
 
 import basic_bot.config as config
 from _archive import fit_messages
 from basic_bot.rag import search_memory
+
+logger = logging.getLogger(__name__)
 
 TOOL = {
     "name": "search_archive",
@@ -37,6 +40,12 @@ def handler(context: dict, **tool_input) -> str:
     user_id = context["user_id"]
     query = tool_input.get("query", "")
     results = search_memory(store, user_id, query, context["embedder"])
+    logger.info(
+        "Archive search for %r: %s", query,
+        ", ".join(
+            f"#{r['seq_start']}–#{r['seq_end']} {r['score']:.3f}" for r in results
+        ) or "nothing stored",
+    )
 
     if not results:
         return json.dumps({"results": [], "note": "No matching past conversations found."})

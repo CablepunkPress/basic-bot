@@ -456,8 +456,9 @@ class SQLiteMessageStore:
                     "content": row["content"],
                     "seq_start": row["seq_start"],
                     "seq_end": row["seq_end"],
+                    "score": sim,
                 }
-                for _, row in scored[:limit]
+                for sim, row in scored[:limit]
             ]
         finally:
             conn.close()

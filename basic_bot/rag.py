@@ -109,7 +109,8 @@ def search_memory(
 ) -> list[dict]:
     """Search past conversation turns by semantic similarity.
 
-    Returns up to limit results, each with verbatim content and seq range.
+    Returns up to limit results, each with verbatim content, seq range,
+    and similarity score, best first.
     """
     if limit is None:
         limit = config.RAG_RESULT_LIMIT
