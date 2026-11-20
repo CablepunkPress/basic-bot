@@ -391,14 +391,16 @@ class Session:
 
     def _select(self, model_id: str) -> None:
         """Select a model and reset settings. Caller holds the lock."""
+        switching = self._model_id is not None and self._model_id != model_id
         self._model_id = model_id
         self._thinking = None
         self._effort = None
 
         info = self._router.get_models()[model_id]
         logger.info(
-            "Selecting %s (%s); settings reset to its defaults",
+            "Selecting %s (%s)%s",
             info.display_name, info.host,
+            "; settings reset to its defaults" if switching else "",
         )
         try:
             self._router.select(model_id)
