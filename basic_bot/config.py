@@ -26,6 +26,8 @@ REQUEST_TIMEOUT = 1200
 # Number of most similar past turn pairs from semantic search
 RAG_RESULT_LIMIT = 5
 
+RAG_MIN_SCORE = 0.25
+
 # The archive tools, recall_message and search_archive. A message
 # longer than ARCHIVE_MESSAGE_CHARS is shown cut, with a note saying
 # how long it is; it stays whole in the store. A result shows messages

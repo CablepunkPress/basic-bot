@@ -47,8 +47,12 @@ def handler(context: dict, **tool_input) -> str:
         ) or "nothing stored",
     )
 
+    results = [r for r in results if r["score"] >= config.RAG_MIN_SCORE]
     if not results:
-        return json.dumps({"results": [], "note": "No matching past conversations found."})
+        return json.dumps({
+            "results": [],
+            "note": "Nothing close was found in our past conversations.",
+        })
 
     room = config.ARCHIVE_RESULT_CHARS
     formatted = []
