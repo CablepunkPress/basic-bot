@@ -9,8 +9,8 @@ group is a folder that holds:
 - shared code, in files whose names start with an underscore
 - settings.toml, the group's default settings, if it has any
 
-Every agent has the memory group, which comes with basic-bot. Other
-groups come from installed packages, through the basic_bot.tool_groups
+Every agent has the core groups, memory and system, which come with
+basic-bot. Other groups come from installed packages, through the basic_bot.tool_groups
 entry point, or from a folder of custom groups. An agent gets the
 built-in groups, which the session is given when it opens, and the
 plugin groups it adds in agent.json. A custom group replaces an
@@ -32,7 +32,9 @@ from basic_bot.agent import AgentError, load_agent, tool_groups
 
 logger = logging.getLogger(__name__)
 
-MEMORY_GROUP = Path(__file__).parent / "tool_groups" / "memory"
+CORE_GROUPS = [
+    Path(__file__).parent / "tool_groups" / name for name in ("memory", "system")
+]
 ENTRY_POINT = "basic_bot.tool_groups"
 MANIFEST = "tool.json"
 SETTINGS = "settings.toml"
@@ -281,13 +283,15 @@ def build_tools(
 ) -> dict:
     """Assemble an agent's tools."""
     agent_path = Path(agent_path)
-    registry = _load_group(MEMORY_GROUP, {})
-    logger.info("Memory tools loaded: %s", list(registry) or "none")
+    registry: dict = {}
+    for folder in CORE_GROUPS:
+        registry.update(_load_group(folder, {}))
+    logger.info("Core tools loaded: %s", list(registry) or "none")
     others = load_groups(agent_path, built_in, custom_dir)
     for name in others:
         if name in registry:
             logger.warning(
-                "Tool '%s' from group '%s' replaces the memory tool",
+                "Tool '%s' from group '%s' replaces the core tool",
                 name, others[name]["group"],
             )
     registry.update(others)

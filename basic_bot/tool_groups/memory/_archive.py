@@ -1,7 +1,7 @@
 """Show archived messages the same way in both memory tools."""
 
 import basic_bot.config as config
-from basic_bot.annotations import render_tools, to_seconds
+from basic_bot.annotations import render_tools, strip, to_seconds
 
 CUT_NOTE = (
     "\n[Cut for length: this message is {total:,} characters long, far "
@@ -25,7 +25,7 @@ def _cut(content: str) -> tuple[str, int]:
 
 def _format_message(msg: dict) -> tuple[dict, int]:
     """Format a message for a tool's result, and count the characters shown."""
-    content, shown = _cut(msg["content"])
+    content, shown = _cut(strip(msg["content"]).strip())
     formatted = {
         "seq": msg["seq"],
         "role": msg["role"],

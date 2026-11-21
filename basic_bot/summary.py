@@ -35,8 +35,8 @@ the caller, both set with the summary model in the hardware profile:
 The same batch always gives the same prompt, so a fold never fails
 for its size, and a retried fold sends exactly what the first one did.
 
-A reply's line shows the tools used to write it, as the chat model
-saw them in its annotations (see basic_bot.annotations):
+A reply's line shows the tools used to write it, as the memory tools
+show them (see basic_bot.annotations):
 
     Assistant [tools: search_web(query="Sierra AI founders") → sierra.ai]: …
 

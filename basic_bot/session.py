@@ -481,7 +481,7 @@ class Session:
                 result = chat_with_model(
                     self._runtime, DEFAULT_USER, message,
                     model_id, self._effort, self._thinking,
-                    sent_at=sent_at, stop=self._stop,
+                    stop=self._stop,
                     narrate=lambda text: self.events.publish("narration", text),
                 )
             except TurnInterrupted:

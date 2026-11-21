@@ -1,0 +1,7 @@
+{
+    "name": "system",
+    "description": "Read the date and time from your computer",
+    "narration": "I'm checking the date and time…",
+    "sends": "Nothing. This tool only reads your computer's clock.",
+    "keys": []
+}

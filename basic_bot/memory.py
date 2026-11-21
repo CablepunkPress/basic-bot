@@ -6,16 +6,14 @@ has no opinion about whether data lives in Firestore, SQLite, or
 anything else.
 
 Messages from storage carry seq, created_at, and metadata. This module
-strips them down to role/content for the context window, but prefixes
-each message with an annotation of its seq and created_at, and for a
-reply, the tools used to write it (see basic_bot.annotations). So the
-model can refer to messages by number, knows when each was written,
-and knows which of its past replies came from a lookup. The richer
-data is available to callers that need it (history endpoint, UI).
+strips them down to role and content for the context window, so the
+model sees the conversation as plain messages. The model reads a
+message's number, time, and tools only through its memory tools. The
+richer data is available to callers that need it (history endpoint,
+UI).
 """
 
 import basic_bot.config as config
-from basic_bot.annotations import annotate
 from basic_bot.annotations import strip as strip_annotations
 from basic_bot.store import MessageStore
 
@@ -43,17 +41,14 @@ def tools_of(message: dict) -> list[dict] | None:
 
 
 def _as_seen(message: dict) -> dict[str, str]:
-    """One stored message as the model sees it, annotation first.
+    """One stored message as the model sees it.
 
     load_history and load_window both use this, so warming and the
     turn it warms for build the same text, token for token.
     """
     return {
         "role": message["role"],
-        "content": (
-            annotate(message["seq"], message.get("created_at"), tools_of(message))
-            + strip_annotations(message["content"]).strip()
-        ),
+        "content": strip_annotations(message["content"]).strip(),
     }
 
 
@@ -64,8 +59,8 @@ def load_history(
     """The stored conversation as the model sees it, before a new message.
 
     Returns (messages, summary, state): everything after the summary
-    boundary, stripped to role/content and each prefixed with its
-    annotation, exactly as load_window begins the next turn's prompt.
+    boundary, stripped to role and content, exactly as load_window
+    begins the next turn's prompt.
     Warming reads this, so the cache it prepares matches that prompt
     token for token.
     """
@@ -79,17 +74,12 @@ def load_window(
     store: MessageStore,
     user_id: str,
     current_message: str,
-    sent_at: str,
 ) -> tuple[list[dict[str, str]], str, dict]:
     """Assemble the model's context: verbatim window + summary + position.
 
-    sent_at is when the current message arrived, a UTC ISO timestamp.
-    It's the time saved with the message, so the annotation the model
-    sees now matches the one it will see on every later turn.
-
     Returns (messages, summary, position) where messages is the API-ready
-    list stripped to role/content (everything after the summary boundary,
-    plus the incoming turn), each prefixed with its annotation.
+    list stripped to role and content: everything after the summary
+    boundary, plus the incoming turn.
     """
     state = store.get_state(user_id)
     after = state["summarized_through"]
@@ -97,11 +87,7 @@ def load_window(
 
     messages = [_as_seen(m) for m in window]
 
-    current_seq = state["next_seq"]
-    messages.append({
-        "role": "user",
-        "content": annotate(current_seq, sent_at) + current_message,
-    })
+    messages.append({"role": "user", "content": current_message})
 
     latest = state["next_seq"] - 1
     position = {

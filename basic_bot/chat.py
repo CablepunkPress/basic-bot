@@ -12,18 +12,17 @@ changes only at startup or at a fold. The transcript only grows.
 Nothing that changes from turn to turn is written into the prompt.
 The current model and settings reach the model only through the
 provider: as API parameters, or through the model's own chat
-template. The reply's metadata records them for the user. The
-current time reaches the model through the newest message's
-annotation, which records when that message arrived.
+template. The reply's metadata records them for the user. The model
+asks for the current time with the date_and_time tool.
 
 Each turn keeps a record of its tool calls, saved with the reply (see
 basic_bot.store): the tool, its input, how it went, and the sources
 its result named. A tool names its sources with a "sources" list at
 the top of its result. The record keeps them, and they're taken out of
 the result before the model reads it, since the model already sees
-the same addresses in the result itself. On later turns the reply's
-annotation shows the record (see basic_bot.annotations), so the model
-knows which of its past answers came from a lookup.
+the same addresses in the result itself. On later turns the model
+sees the record only through recall_message and search_archive, which
+show the tools each reply used.
 
 The reply's thinking means the model reasoned at any step of the
 turn, not only the last. A turn that reasons, calls a tool, and then
@@ -35,7 +34,6 @@ import logging
 import re
 import threading
 from collections.abc import Callable
-from datetime import datetime, timezone
 
 import basic_bot.config as config
 from basic_bot.annotations import strip_comments
@@ -259,17 +257,12 @@ def chat_with_model(
     effort: str | None = None,
     thinking: bool | None = None,
     *,
-    sent_at: str | None = None,
     stop: threading.Event | None = None,
     narrate: Callable[[str], None] | None = None,
 ) -> dict:
     """Chat using conversation memory and tools.
 
     effort and thinking of None mean "use the model's default."
-
-    sent_at is when the message arrived, a UTC ISO timestamp. The
-    session supplies it, so the time the model sees is the time saved
-    with the message. Without one, it's the current time.
 
     stop is set when the user interrupts the turn. The turn then ends
     with TurnInterrupted, and no fallback is tried.
@@ -280,9 +273,6 @@ def chat_with_model(
     what was actually used (not what was requested, where detectable).
     """
     provider: InferenceProvider = runtime.chat_provider
-
-    if sent_at is None:
-        sent_at = datetime.now(timezone.utc).isoformat()
 
     if model_id is None:
         model_id = provider.get_default_model()
@@ -301,7 +291,7 @@ def chat_with_model(
     logger.info("Processing chat for user %s", user_id)
 
     window, summary, position = load_window(
-        runtime.store, user_id, user_message, sent_at,
+        runtime.store, user_id, user_message,
     )
     summarized_through = position["summarized_through"]
     logger.info(
