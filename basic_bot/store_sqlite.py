@@ -477,3 +477,14 @@ class SQLiteMessageStore:
             raise
         finally:
             conn.close()
+
+    # --- Backups ---
+
+    def backup(self, path: Path) -> None:
+        source = self._connect()
+        target = sqlite3.connect(path)
+        try:
+            source.backup(target)
+        finally:
+            target.close()
+            source.close()

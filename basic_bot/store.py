@@ -15,6 +15,7 @@ All timestamps are stored in UTC, as ISO strings. Converting to local
 time is for display, never for storage.
 """
 
+from pathlib import Path
 from typing import Protocol
 
 
@@ -207,4 +208,10 @@ class MessageStore(Protocol):
         Returns:
             Number of vectors deleted.
         """
+        ...
+
+    # --- Backups ---
+
+    def backup(self, path: Path) -> None:
+        """Write a consistent copy of the whole store to path."""
         ...

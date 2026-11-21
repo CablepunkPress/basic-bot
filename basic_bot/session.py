@@ -11,7 +11,7 @@ the models, the servers, or the database.
             session.update_memory()
 
 The agent's folder holds who the agent is. Its data folder holds its
-database, its logs, and its saved cache.
+database, its logs, its saved cache, and its backups.
 
 Every way of stopping ends in close(), except a force quit. close()
 stops every server the session started.
@@ -23,8 +23,10 @@ imported.
 How the session works is in bountiful-docs, in technical/session.md.
 """
 
+import fcntl
 import logging
 import signal
+import sqlite3
 import threading
 import tomllib
 from contextlib import contextmanager
@@ -33,9 +35,11 @@ from datetime import datetime, timezone
 from importlib.metadata import PackageNotFoundError, version
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import TextIO
 
 import basic_bot.config as config
 from basic_bot.agent import AgentError, load_agent
+from basic_bot.backups import back_up
 from basic_bot.chat import TurnInterrupted, chat_with_model, warm_request
 from basic_bot.events import Events
 from basic_bot.factory import create_runtime
@@ -203,11 +207,33 @@ def _versions() -> str:
     )
 
 
+def _lock(data_dir: Path, agent: dict) -> TextIO:
+    """Lock the agent for this process, or refuse if it's already running.
+
+    The lock is released when the file is closed or the process ends,
+    however it ends.
+    """
+    data_dir.mkdir(parents=True, exist_ok=True)
+    handle = open(data_dir / f"{agent['id']}.lock", "w")
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        handle.close()
+        raise SessionError(
+            f"{agent['name']} is already running, in another window or terminal."
+        ) from None
+    return handle
+
+
 class Session:
     """A running agent. Create with Session.open()."""
 
-    def __init__(self, runtime, agent_config: dict, data_dir: Path, log_path: Path):
+    def __init__(
+        self, runtime, agent_config: dict, data_dir: Path, log_path: Path,
+        agent_lock: TextIO,
+    ):
         self._runtime = runtime
+        self._agent_lock = agent_lock
         self._router = runtime.chat_provider
         self.agent_config = agent_config
         self.data_dir = data_dir
@@ -231,10 +257,12 @@ class Session:
         built_in: tuple[str, ...] = (),
         custom_tools: Path | None = None,
     ) -> "Session":
-        """Apply config, start logging, and build the runtime.
+        """Lock the agent, apply config, start logging, and build the runtime.
 
         agent_path is the agent's folder; data_dir is where its
-        database and logs go, created if needed. Nothing is started
+        database and logs go, created if needed. The agent is locked
+        first, so a second session of the same agent is refused before
+        it touches anything. Nothing is started
         yet; call start() for that. The agent log always goes to
         logs/agent/{agent-id}.log in data_dir. With log_to_terminal,
         it also goes to the terminal, as it does for the web page.
@@ -244,9 +272,11 @@ class Session:
         agent_path = Path(agent_path).resolve()
         data_dir = Path(data_dir).expanduser().resolve()
         try:
-            agent_id = load_agent(agent_path)["id"]
+            agent = load_agent(agent_path)
         except AgentError as e:
             raise SessionError(str(e)) from e
+        agent_id = agent["id"]
+        agent_lock = _lock(data_dir, agent)
 
         # Overrides before anything reads config
         agent_config = _read_config(agent_path)
@@ -266,17 +296,26 @@ class Session:
             versions = _versions()
         except (NoModelsError, ProfileError) as e:
             logger.error("Session could not open: %s", e)
+            agent_lock.close()
             raise SessionError(str(e)) from e
 
         logger.info("Session opened: %s", versions)
         logger.info("Agent data: %s", data_dir)
-        return cls(runtime, agent_config, data_dir, log_path)
+        return cls(runtime, agent_config, data_dir, log_path, agent_lock)
 
     def start(self) -> None:
-        """Start the default model."""
+        """Start the default model, then back up the database."""
         with self._busy():
             self._select(self._router.get_default_model())
+            self._back_up()
             self._warm()
+
+    def _back_up(self) -> None:
+        """Back up the database, logging a failure rather than stopping."""
+        try:
+            back_up(self._runtime.store, self.data_dir, self.agent_id)
+        except (OSError, sqlite3.Error) as e:
+            logger.error("Could not back up the database: %s", e)
 
     def close(self) -> None:
         """Stop every server this session started.
@@ -288,6 +327,7 @@ class Session:
         begin_shutdown()
         stop_all()
         logger.info("Session closed")
+        self._agent_lock.close()
 
     def __enter__(self) -> "Session":
         return self
