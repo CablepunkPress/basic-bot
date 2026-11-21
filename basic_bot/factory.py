@@ -150,7 +150,7 @@ def _summary_limits() -> tuple[int, int]:
 
     llama-server rejects a prompt that fills the context, and with
     context shift off it stops writing when the context is full
-    (server-context.cpp, v0.7.0). So the prompt may take what's left
+    (server-context.cpp, v1.0.0). So the prompt may take what's left
     after max_tokens, less the one token the server keeps free, and
     the longest summary the model may write always has room.
     """

@@ -26,12 +26,12 @@ from typing import NoReturn
 
 from basic_bot.paths import BOUNTIFUL_HOME, LLAMA_DIR, SERVER_BIN
 
-LLAMA_VERSION = "v0.7.0"
+LLAMA_VERSION = "v1.0.0"
 # The commit the tag points to. A tag can be moved; a commit can't.
 # Check with:
-#   git ls-remote https://github.com/ggml-org/llama.cpp.git 'refs/tags/v0.7.0*'
+#   git ls-remote https://github.com/ggml-org/llama.cpp.git 'refs/tags/v1.0.0*'
 # For an annotated tag, use the line ending in ^{}.
-LLAMA_COMMIT = "620d2225cc436ab0b001e3200e590e3b286ef9ab"
+LLAMA_COMMIT = "b1b770d90d94cad9e9ea5b993bdbc383a522fb28"
 
 LLAMA_REPO = "https://github.com/ggml-org/llama.cpp.git"
 VERSION_FILE = LLAMA_DIR / ".bountiful-version"

@@ -54,7 +54,7 @@ The session says where the files go, the agent's slots/ folder; without
 that, nothing is saved. Before the chat server stops (a model switch,
 an archive search or a fold needing its memory, or the session
 closing), its cache is saved there with llama-server's slot save, which
-in llama.cpp v0.7.0 also keeps the drafter's state and any context
+in llama.cpp v1.0.0 also keeps the drafter's state and any context
 checkpoints. Right after a chat server starts, a file saved by that
 same server setup is restored, so the next request reads only what's
 new. A file is named for the model and a short hash of everything it
@@ -212,8 +212,6 @@ def _build_launch_args(entry: dict) -> list[str]:
         args += ["--ubatch-size", str(entry["ubatch_size"])]
     if "n_cpu_moe" in entry:
         args += ["--n-cpu-moe", str(entry["n_cpu_moe"])]
-    if entry.get("no_mmap"):
-        args += ["--no-mmap"]
     if "alias" in entry:
         args += ["--alias", entry["alias"]]
     if entry.get("embeddings", False):

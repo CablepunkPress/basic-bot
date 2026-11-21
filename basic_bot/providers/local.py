@@ -207,7 +207,7 @@ class LocalProvider:
 
         # Open the model's reasoning for it, at the start of a turn only:
         # after a tool result it's already in the middle of its work.
-        # "reasoning_content" is the name llama-server accepts; v0.7.0
+        # "reasoning_content" is the name llama-server accepts; v1.0.0
         # rejects anything else, where v0.5.0 quietly ignored it.
         opening = prefill if prefill is not None else self._prefill
         if (
@@ -255,7 +255,7 @@ class LocalProvider:
         The request chat() would build is rendered by /apply-template,
         and the text counted by /tokenize with special tokens added and
         parsed, which is how llama-server tokenizes a chat prompt
-        (server-context.cpp, v0.7.0). The count is exact.
+        (server-context.cpp, v1.0.0). The count is exact.
         """
         payload, _ = self._chat_payload(
             messages, system, tools, thinking, effort, None,
