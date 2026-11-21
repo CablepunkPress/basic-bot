@@ -1,8 +1,8 @@
 """How a message's record is shown, and cleaning notes out of text.
 
-The conversation goes into the prompt as plain messages. A message's
-number, time, and tools reach the model only through the memory tools,
-as fields of their results:
+A message's number and time reach the model only through the memory
+tools, as fields of their results. Those tools show a reply's tools
+too, in this form:
 
     "seq": 108, "created_at": "2026-10-11T21:50:13+00:00",
     "tools": "search_web(query=\"Sierra AI founders\") → sierra.ai, techcrunch.com"
@@ -83,6 +83,16 @@ def _site(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
+def sites_of(record: dict) -> list[str]:
+    """The sites one call's answer came from, each once, at most SITES of them."""
+    sites: list[str] = []
+    for source in record.get("sources") or []:
+        site = _site(source.get("url", "")) if isinstance(source, dict) else ""
+        if site and site not in sites:
+            sites.append(site)
+    return sites[:SITES]
+
+
 def _render_call(record: dict) -> str:
     """One call: search_web(query="…") → example.com, other.org"""
     inputs = record.get("input") or {}
@@ -91,13 +101,9 @@ def _render_call(record: dict) -> str:
 
     text += OUTCOME_NOTES.get(record.get("outcome", "ok"), "")
 
-    sites = []
-    for source in record.get("sources") or []:
-        site = _site(source.get("url", "")) if isinstance(source, dict) else ""
-        if site and site not in sites:
-            sites.append(site)
+    sites = sites_of(record)
     if sites:
-        text += " → " + ", ".join(sites[:SITES])
+        text += " → " + ", ".join(sites)
     return text
 
 

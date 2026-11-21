@@ -1,30 +1,54 @@
-"""Conversation memory — orchestration layer.
+"""What the model sees of the conversation.
 
-Assembles the model's context window from stored messages and summaries.
-All storage access goes through the MessageStore protocol. This module
-has no opinion about whether data lives in Firestore, SQLite, or
-anything else.
+The prompt holds the summary and every message after it. This module
+reads those messages from the store and turns each into what the model
+is shown. A user's message is shown as it was written. So is a reply,
+but a reply that used tools comes after its calls, each followed by a
+short note standing in for the result:
 
-Messages from storage carry seq, created_at, and metadata. This module
-strips them down to role and content for the context window, so the
-model sees the conversation as plain messages. The model reads a
-message's number, time, and tools only through its memory tools. The
-richer data is available to callers that need it (history endpoint,
-UI).
+    the call           search_web(query="Sierra AI founders")
+    the note           Result from an earlier turn, not kept. ...
+    the reply          Sierra was founded by ...
+
+A call and its note are messages in the form every chat API uses for
+tool calls, and the model's own chat template shows them the way it
+shows calls during a turn. So the model can see which of its replies
+came from a lookup, and what a real call looks like. A result is shown
+whole only during the turn that called for it. Afterward the note says
+it wasn't kept, so the model calls the tool again rather than recalling
+what the result said.
+
+A message's number and time aren't shown. The model reads them through
+its memory tools.
+
+Warming and the turn it prepares for build their messages here, the
+same way, so the chat server's cache matches the turn's prompt.
 """
 
 import basic_bot.config as config
+from basic_bot.annotations import sites_of
 from basic_bot.annotations import strip as strip_annotations
+from basic_bot.providers.protocol import ToolCall
 from basic_bot.store import MessageStore
+
+KEPT = (
+    "Result from an earlier turn, not kept. The reply after it was "
+    "written from it. To see it again, call the tool again."
+)
+NOTES = {
+    "nothing found": "Result from an earlier turn: nothing was found.",
+    "error": "Result from an earlier turn: the tool failed.",
+    "refused": "Not run: the turn had reached its limit of tool calls.",
+}
 
 
 def get_messages(
     store: MessageStore, user_id: str, limit: int | None = None,
 ) -> list[dict]:
-    """Get recent messages for a user, in chronological order.
+    """Return the user's most recent messages, oldest first, with all their fields.
 
-    Returns full message dicts including seq and metadata. The default
-    limit is read from config when called, so overrides apply.
+    This is for the page's history, not the prompt. The limit is read
+    from config when called, so an agent's config.toml applies.
     """
     if limit is None:
         limit = config.WINDOW_FLOOR
@@ -32,67 +56,94 @@ def get_messages(
 
 
 def tools_of(message: dict) -> list[dict] | None:
-    """A stored message's tool record, or None if it has none.
+    """Return a stored message's record of tool calls.
 
-    None for a user's message, and for a reply saved before tools were
-    recorded; [] for a reply that used no tools.
+    It's None for a user's message and for a reply saved before tools
+    were recorded, and an empty list for a reply that used no tools.
     """
     return (message.get("metadata") or {}).get("tools")
 
 
-def _as_seen(message: dict) -> dict[str, str]:
-    """One stored message as the model sees it.
+def _note(record: dict) -> str:
+    """Return the note that stands in for one call's result."""
+    note = NOTES.get(record.get("outcome", "ok"))
+    if note:
+        return note
+    sites = sites_of(record)
+    return KEPT + (f" Sources: {', '.join(sites)}." if sites else "")
 
-    load_history and load_window both use this, so warming and the
-    turn it warms for build the same text, token for token.
+
+def _as_seen(message: dict) -> list[dict]:
+    """Return one stored message as the model sees it.
+
+    A reply that used tools becomes each call and its note, in the
+    order the calls were made, then the reply. Each call's id comes
+    from the reply's number, so it's the same every time it's built.
     """
-    return {
+    seen: list[dict] = []
+    if message["role"] == "assistant":
+        for i, record in enumerate(tools_of(message) or [], start=1):
+            call_id = f"call_{message['seq']}_{i}"
+            call = ToolCall(
+                name=record.get("tool", "unknown"),
+                input=record.get("input") or {},
+                id=call_id,
+            )
+            seen.append({"role": "assistant", "content": "", "tool_calls": [call]})
+            seen.append({
+                "role": "tool_result",
+                "results": [{"tool_call_id": call_id, "content": _note(record)}],
+            })
+    seen.append({
         "role": message["role"],
         "content": strip_annotations(message["content"]).strip(),
-    }
+    })
+    return seen
+
+
+def _shown(window: list[dict]) -> list[dict]:
+    """Return the stored messages as the model sees them, in order."""
+    return [part for message in window for part in _as_seen(message)]
 
 
 def load_history(
     store: MessageStore,
     user_id: str,
-) -> tuple[list[dict[str, str]], str, dict]:
-    """The stored conversation as the model sees it, before a new message.
+) -> tuple[list[dict], str, dict]:
+    """Return the conversation as the model sees it before a new message.
 
-    Returns (messages, summary, state): everything after the summary
-    boundary, stripped to role and content, exactly as load_window
-    begins the next turn's prompt.
-    Warming reads this, so the cache it prepares matches that prompt
-    token for token.
+    Returns the messages after the summary, the summary, and the
+    conversation's state. Warming uses this, and the messages are the
+    ones load_window starts the next turn's prompt with.
     """
     state = store.get_state(user_id)
     window = store.get_messages_after(user_id, state["summarized_through"])
-    messages = [_as_seen(m) for m in window]
-    return messages, state["summary"], state
+    return _shown(window), state["summary"], state
 
 
 def load_window(
     store: MessageStore,
     user_id: str,
     current_message: str,
-) -> tuple[list[dict[str, str]], str, dict]:
-    """Assemble the model's context: verbatim window + summary + position.
+) -> tuple[list[dict], str, dict]:
+    """Return the conversation as the model sees it, with the new message.
 
-    Returns (messages, summary, position) where messages is the API-ready
-    list stripped to role and content: everything after the summary
-    boundary, plus the incoming turn.
+    Returns the messages after the summary followed by the new one, the
+    summary, and where the conversation stands: how many messages there
+    are in all, how many are summarized, how many come after the
+    summary, and the numbers of the first and last of those.
     """
     state = store.get_state(user_id)
     after = state["summarized_through"]
     window = store.get_messages_after(user_id, after)
 
-    messages = [_as_seen(m) for m in window]
-
+    messages = _shown(window)
     messages.append({"role": "user", "content": current_message})
 
-    latest = state["next_seq"] - 1
     position = {
-        "total": latest,
+        "total": state["next_seq"] - 1,
         "summarized_through": after,
+        "count": len(window),
         "window_start": window[0]["seq"] if window else None,
         "window_end": window[-1]["seq"] if window else None,
     }

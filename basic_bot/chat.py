@@ -20,9 +20,10 @@ basic_bot.store): the tool, its input, how it went, and the sources
 its result named. A tool names its sources with a "sources" list at
 the top of its result. The record keeps them, and they're taken out of
 the result before the model reads it, since the model already sees
-the same addresses in the result itself. On later turns the model
-sees the record only through recall_message and search_archive, which
-show the tools each reply used.
+the same addresses in the result itself. On later turns each call is
+shown before its reply with a short note in place of the result (see
+basic_bot.memory), and recall_message and search_archive show the
+record too.
 
 The reply's thinking means the model reasoned at any step of the
 turn, not only the last. A turn that reasons, calls a tool, and then
@@ -233,10 +234,7 @@ def _prepare_messages(window: list[dict]) -> list[dict]:
     A fresh copy is built per attempt so a fallback never inherits a
     failed attempt's tool calls, which the tool loop appends.
     """
-    return [
-        {"role": m["role"], "content": m["content"]}
-        for m in window
-    ]
+    return [dict(m) for m in window]
 
 
 def _lightest_settings(model_info: ModelInfo) -> tuple[bool, str | None]:
@@ -296,7 +294,7 @@ def chat_with_model(
     summarized_through = position["summarized_through"]
     logger.info(
         "Context: %d prior messages, summary=%s, boundary=seq %s",
-        len(window) - 1, bool(summary), summarized_through,
+        position["count"], bool(summary), summarized_through,
     )
 
     # One system prompt for every attempt — it does not depend on the model
