@@ -164,6 +164,16 @@ class MessageStore(Protocol):
         """
         ...
 
+    def count_messages_by_date(
+        self, user_id: str, after: str, before: str,
+    ) -> list[tuple[str, int]]:
+        """Count the messages on each UTC day between after and before.
+
+        The dates are read as in get_messages_by_date. Only days with
+        messages are listed, as (date, count) pairs in date order.
+        """
+        ...
+
     # --- Vector storage (RAG) ---
 
     def store_vectors(

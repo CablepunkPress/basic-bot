@@ -11,6 +11,7 @@ TOOL = {
         "Look up specific past messages by their sequence number or by date. "
         "Use this when the user references a specific message number like #222, "
         "or asks about a conversation from a specific date or time period. "
+        "Dates are UTC calendar dates, and every time in the results is in UTC. "
         "For topic-based searches, use search_archive instead."
     ),
     "input_schema": {
@@ -30,11 +31,15 @@ TOOL = {
             },
             "after_date": {
                 "type": "string",
-                "description": "Start date in ISO format (e.g., '2026-06-01'). Use with before_date.",
+                "description": "The first day to include, as a UTC date in ISO format (e.g., '2026-06-01'). Use with before_date.",
             },
             "before_date": {
                 "type": "string",
-                "description": "End date in ISO format (e.g., '2026-06-07'). Use with after_date.",
+                "description": (
+                    "The last day to include, as a UTC date in ISO format (e.g., '2026-06-07'). "
+                    "Both days are included, so for a single day give the same date for both. "
+                    "Use with after_date."
+                ),
             },
         },
     },
@@ -57,6 +62,21 @@ def _stopped_note(shown: list[dict], messages: list[dict]) -> str | None:
         f"Stopped after #{last} to keep this result short. "
         f"{len(messages) - len(shown)} more message(s) matched; "
         f"ask for #{following} onward to read them."
+    )
+
+
+def _date_note(shown: list[dict], matched: int, before_date: str) -> str | None:
+    """What a date search left out, and how to read on, or None."""
+    if len(shown) >= matched:
+        return None
+    first, last = shown[0]["seq"], shown[-1]["seq"]
+    return (
+        f"Showing #{first}–#{last}, the first {len(shown)} of {matched} messages "
+        f"in this range. Days missing from messages_per_day have no messages. "
+        f"To read on, call recall_message with start_seq {last + 1} and "
+        f"end_seq {last + MAX_SEQ_RANGE}, and stop when the messages are from after "
+        f"{before_date}. Or give a single day's date for both after_date "
+        f"and before_date."
     )
 
 
@@ -127,19 +147,19 @@ def handler(context: dict, **tool_input) -> str:
 
         if not messages:
             return json.dumps({
-                "error": f"No messages found between {after_date} and {before_date}.",
+                "error": f"No messages found from {after_date} to {before_date}, UTC, both days included.",
             })
 
+        days = store.count_messages_by_date(user_id, after_date, before_date)
+        matched = sum(n for _, n in days)
         shown, _ = fit_messages(messages, room)
         return json.dumps({
-            "date_range": f"{after_date} to {before_date}",
-            "count": len(shown),
+            "date_range": f"{after_date} to {before_date}, UTC, both days included",
+            "matched": matched,
+            "shown": len(shown),
+            "messages_per_day": dict(days),
             "messages": shown,
-            "note": _notes(
-                f"Results capped at {MAX_DATE_RESULTS}. There may be more messages in this date range."
-                if len(messages) >= MAX_DATE_RESULTS else None,
-                _stopped_note(shown, messages),
-            ),
+            "note": _date_note(shown, matched, before_date),
         })
 
     return json.dumps({

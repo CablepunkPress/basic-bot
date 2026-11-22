@@ -11,7 +11,9 @@ TOOL = {
         "of your own, and neither your training nor the conversation tells "
         "you today's date. Use this whenever you need the date, the day, or "
         "the time: when the user asks, or before you work out how long ago "
-        "or how soon something is."
+        "or how soon something is. Tell the user the date and time in their "
+        "own time zone, unless they ask for UTC. The times your memory tools "
+        "show are in UTC."
     ),
     "input_schema": {"type": "object", "properties": {}},
 }

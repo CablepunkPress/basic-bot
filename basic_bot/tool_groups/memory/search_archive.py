@@ -18,7 +18,8 @@ TOOL = {
         "your conversations, never facts about the world, so don't search it "
         "to check a name, date, or fact: answer those from what you know, or "
         "with a reference tool if you have one. "
-        "Returns verbatim excerpts from past turns with their sequence numbers. "
+        "Returns verbatim excerpts from past turns with their sequence numbers "
+        "and when they were written, in UTC. "
         "For looking up a specific message number or date, use recall_message instead."
     ),
     "input_schema": {

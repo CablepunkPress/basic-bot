@@ -138,6 +138,19 @@ def _cosine_similarity(a: list[float], b: list[float]) -> float:
     return dot / (norm_a * norm_b)
 
 
+def _utc_bounds(after: str, before: str) -> tuple[str, str]:
+    """Return the first and last moments of a date range, in UTC.
+
+    A date without a time covers its whole UTC day, so both dates are
+    included.
+    """
+    start = datetime.fromisoformat(after).replace(tzinfo=timezone.utc)
+    end = datetime.fromisoformat(before).replace(tzinfo=timezone.utc)
+    if "T" not in before:
+        end = end + timedelta(days=1) - timedelta(microseconds=1)
+    return start.isoformat(), end.isoformat()
+
+
 class SQLiteMessageStore:
     """MessageStore backed by a local SQLite database.
 
@@ -370,19 +383,14 @@ class SQLiteMessageStore:
     def get_messages_by_date(
         self, user_id: str, after: str, before: str, limit: int = 50,
     ) -> list[dict]:
+        start, end = _utc_bounds(after, before)
         conn = self._connect()
         try:
-            after_dt = datetime.fromisoformat(after).replace(tzinfo=timezone.utc)
-            before_dt = datetime.fromisoformat(before).replace(tzinfo=timezone.utc)
-
-            if "T" not in before:
-                before_dt = before_dt + timedelta(days=1) - timedelta(seconds=1)
-
             rows = conn.execute(
                 "SELECT * FROM messages "
                 "WHERE session_id = ? AND created_at >= ? AND created_at <= ? "
                 "ORDER BY created_at LIMIT ?",
-                (user_id, after_dt.isoformat(), before_dt.isoformat(), limit),
+                (user_id, start, end, limit),
             ).fetchall()
             return [
                 {
@@ -394,6 +402,23 @@ class SQLiteMessageStore:
                 }
                 for r in rows
             ]
+        finally:
+            conn.close()
+
+    def count_messages_by_date(
+        self, user_id: str, after: str, before: str,
+    ) -> list[tuple[str, int]]:
+        start, end = _utc_bounds(after, before)
+        conn = self._connect()
+        try:
+            rows = conn.execute(
+                "SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS n "
+                "FROM messages "
+                "WHERE session_id = ? AND created_at >= ? AND created_at <= ? "
+                "GROUP BY day ORDER BY day",
+                (user_id, start, end),
+            ).fetchall()
+            return [(r["day"], r["n"]) for r in rows]
         finally:
             conn.close()
 
