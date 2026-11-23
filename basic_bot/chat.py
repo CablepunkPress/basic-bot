@@ -32,7 +32,6 @@ answers straight from the result still reasoned.
 
 import json
 import logging
-import re
 import threading
 from collections.abc import Callable
 
@@ -56,8 +55,6 @@ REFUSED_ROUNDS = 2
 
 # The parts of a source the record keeps
 SOURCE_FIELDS = ("title", "url", "section")
-
-REMINDER = "\n\nI planned to call {tool} and haven't yet, so I'll call it now.\n"
 
 
 class TurnInterrupted(Exception):
@@ -143,35 +140,6 @@ def _record_call(name: str, tool_input: dict, content: str) -> tuple[dict, str]:
     else:
         record["sources"] = []
     return record, content
-
-
-def _faked_call(text: str, names: list[str]) -> str | None:
-    """Return a tool the reply writes out as a call, such as search_archive(...)."""
-    for name in names:
-        if re.search(rf"\b{re.escape(name)}\s*\(", text):
-            return name
-    return None
-
-
-def _planned_tool(response: ChatResponse, names: list[str]) -> str | None:
-    """Return the tool a reply without a call should have called, if any.
-
-    The reply is read as the model wrote it, before its comments are
-    removed. A tool the reply writes out as a call, even inside a
-    made-up annotation, counts first. Otherwise it is
-    the tool the reasoning named last, unless the reply names it too.
-    """
-    faked = _faked_call(response.text, names)
-    if faked:
-        return faked
-    found = [
-        (response.reasoning.rfind(name), name)
-        for name in names if name in response.reasoning
-    ]
-    if not found:
-        return None
-    tool = max(found)[1]
-    return None if tool in response.text else tool
 
 
 def _shorten(text: str) -> str:
@@ -477,8 +445,6 @@ def _chat_loop(
     rounds = 0
     calls: list[dict] = []
     reasoned = False
-    reminded = False
-    prefill = None
     while True:
         _check(stop)
         try:
@@ -489,30 +455,14 @@ def _chat_loop(
                 model_id=model_id,
                 effort=effort,
                 thinking=thinking,
-                prefill=prefill,
             )
         except RequestCancelled:
             raise TurnInterrupted from None
         _check(stop)
-        prefill = None
         reasoned = reasoned or response.thinking
-
-        tool = None
-        if not response.tool_calls and not reminded and rounds == 0:
-            tool = _planned_tool(response, list(tool_registry))
-        if tool:
-            logger.warning(
-                "The reply needed %s but made no call; asking again",
-                tool,
-            )
-            reminded = True
-            prefill = response.reasoning.rstrip() + REMINDER.format(tool=tool)
-            continue
         response.text = strip_comments(response.text).strip()
 
         if not response.tool_calls:
-            if reminded and rounds == 0:
-                logger.warning("Still no tool call after the reminder")
             if response.cut_off:
                 logger.warning("The reply ran past max_tokens; saving it shortened")
                 response.text = _shorten(response.text)

@@ -7,7 +7,7 @@ but a reply that used tools comes after its calls, each followed by a
 short note standing in for the result:
 
     the call           search_web(query="Sierra AI founders")
-    the note           Result from an earlier turn, not kept. ...
+    the note           This result was shown in full during that turn, ...
     the reply          Sierra was founded by ...
 
 A call and its note are messages in the form every chat API uses for
@@ -15,8 +15,8 @@ tool calls, and the model's own chat template shows them the way it
 shows calls during a turn. So the model can see which of its replies
 came from a lookup, and what a real call looks like. A result is shown
 whole only during the turn that called for it. Afterward the note says
-it wasn't kept, so the model calls the tool again rather than recalling
-what the result said.
+it has been removed since, so the model calls the tool again rather
+than recalling what the result said.
 
 A message's number and time aren't shown. The model reads them through
 its memory tools.
@@ -32,8 +32,9 @@ from basic_bot.providers.protocol import ToolCall
 from basic_bot.store import MessageStore
 
 KEPT = (
-    "Result from an earlier turn, not kept. The reply after it was "
-    "written from it. To see it again, call the tool again."
+    "This result was shown in full during that turn, and the reply after "
+    "it was written from it. It has been removed since. To see it again, "
+    "call the tool again."
 )
 NOTES = {
     "nothing found": "Result from an earlier turn: nothing was found.",

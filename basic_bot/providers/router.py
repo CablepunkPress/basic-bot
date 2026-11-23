@@ -223,7 +223,6 @@ class ChatRouter:
         effort: str | None = None,
         thinking: bool | None = None,
         sampling: dict | None = None,
-        prefill: str | None = None,
     ) -> ChatResponse:
         model_id = self.select(model_id)
         provider = self._providers[model_id]
@@ -236,5 +235,4 @@ class ChatRouter:
             effort=effort,
             thinking=thinking,
             sampling=sampling,
-            prefill=prefill,
         )

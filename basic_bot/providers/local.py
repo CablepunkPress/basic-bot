@@ -166,10 +166,9 @@ class LocalProvider:
         effort: str | None = None,
         thinking: bool | None = None,
         sampling: dict | None = None,
-        prefill: str | None = None,
     ) -> ChatResponse:
         payload, budget = self._chat_payload(
-            messages, system, tools, thinking, effort, sampling, prefill,
+            messages, system, tools, thinking, effort, sampling,
         )
         data = self._post(payload, cancellable=True)
         return self._parse_response(data, budget)
@@ -193,7 +192,6 @@ class LocalProvider:
         thinking: bool | None,
         effort: str | None,
         sampling: dict | None,
-        prefill: str | None = None,
     ) -> tuple[dict, int | None]:
         """The whole chat request, and its reasoning budget.
 
@@ -209,10 +207,9 @@ class LocalProvider:
         # after a tool result it's already in the middle of its work.
         # "reasoning_content" is the name llama-server accepts; v1.0.0
         # rejects anything else, where v0.5.0 quietly ignored it.
-        opening = prefill if prefill is not None else self._prefill
+        opening = self._prefill
         if (
-            opening and reasoning_on
-            and (prefill is not None or config.FORCE_REASONING)
+            opening and reasoning_on and config.FORCE_REASONING
             and messages and messages[-1]["role"] == "user"
         ):
             payload["messages"].append({
