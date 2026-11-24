@@ -72,6 +72,15 @@ switch_key = "enable_thinking"
 budget = 1024
 prefill = "Let me read the user's latest message. What is it asking? I'll plan my steps, and if I need a tool, calling it comes first, since I can only answer from a result once I have it. So: is there a name, date, number, or detail I should check with a tool rather than give from memory, or is the user telling me something they already looked up?"
 
+[chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".draft]
+type = "mtp"
+file = "mtp-gemma-4-26B-A4B-it.gguf"
+url = "https://huggingface.co/unsloth/gemma-4-26B-A4B-it-qat-GGUF/resolve/7b92b5b28818151e8669af2e45e88d6086f490dd/mtp-gemma-4-26B-A4B-it.gguf"
+sha256 = "7272d97595f0d4c74bd7b623492b7dbdaafd8b7c72f329a8270ba4eca68f768a"
+size = 251939328
+cache_type_k = "q8_0"
+cache_type_v = "q8_0"
+
 [chat."gemma-4-26b-a4b-it-qat-ud-q4_k_xl".sampling]
 temperature = 1.0
 top_p = 0.95
